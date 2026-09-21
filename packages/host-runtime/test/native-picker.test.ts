@@ -8,6 +8,9 @@ import { describe, expect, it } from "vitest";
 import {
   NativeSelectionStore,
   effortForThinkingOption,
+  nativePermissionLevel,
+  nativePlanMode,
+  permissionModeForLevel,
   overlayNativeSelection,
   planConfigEdits,
   projectNativeModels,
@@ -130,5 +133,50 @@ describe("native Model picker projection", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+  it("maps the official permission selector without inferring full access", () => {
+    const workspace = { permissions: ":workspace" };
+    expect(
+      nativePermissionLevel({
+        ...workspace,
+        approvalPolicy: { granular: {} },
+        approvalsReviewer: "user",
+      }),
+    ).toBe("ask");
+    expect(
+      nativePermissionLevel({
+        ...workspace,
+        approvalPolicy: "on-request",
+        approvalsReviewer: "guardian_subagent",
+      }),
+    ).toBe("auto-review");
+    expect(
+      nativePermissionLevel({ permissions: ":danger-full-access", approvalPolicy: "never" }),
+    ).toBe("full-access");
+    expect(nativePermissionLevel({ sandboxPolicy: { type: "dangerFullAccess" } })).toBe(
+      "full-access",
+    );
+    // "never" is echoed by responses and appears under the ask level; it never grants access.
+    expect(
+      nativePermissionLevel({
+        approvalPolicy: "never",
+        approvalsReviewer: "user",
+        sandboxPolicy: { type: "workspaceWrite" },
+      }),
+    ).toBe("ask");
+    expect(nativePermissionLevel({ approvalPolicy: "never" })).toBe("ask");
+    expect(nativePermissionLevel({ model: "gpt" })).toBeUndefined();
+  });
+
+  it("selects only Permission Modes the Harness offers and reads the Plan toggle", () => {
+    const claude = ["plan", "default", "acceptEdits", "auto", "bypassPermissions"];
+    expect(permissionModeForLevel("ask", claude)).toBe("default");
+    expect(permissionModeForLevel("auto-review", claude)).toBe("auto");
+    expect(permissionModeForLevel("auto-review", ["default", "acceptEdits"])).toBe("acceptEdits");
+    expect(permissionModeForLevel("full-access", claude)).toBe("bypassPermissions");
+    expect(permissionModeForLevel("full-access", ["default"])).toBeUndefined();
+    expect(nativePlanMode({ collaborationMode: { mode: "plan", settings: {} } })).toBe(true);
+    expect(nativePlanMode({ collaborationMode: { mode: "default", settings: {} } })).toBe(false);
+    expect(nativePlanMode({})).toBeUndefined();
   });
 });

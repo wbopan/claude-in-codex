@@ -54,6 +54,8 @@ export interface ExternalThread {
   requestedModel?: HarnessModelRef;
   requestedThinkingOptionId?: HarnessThinkingOptionId;
   requestedPermissionModeId?: HarnessPermissionModeId;
+  /** Level last chosen in the official permission selector; restored when Plan mode ends. */
+  nativePermissionLevel?: "ask" | "auto-review" | "full-access";
   record: StoredThreadRecordV1;
   sessionId: string;
   stateObserver: SessionStateObserver;

@@ -134,6 +134,101 @@ export function requestedNativeSelection(params: JsonObject): RequestedNativeSel
   };
 }
 
+/** The three levels of the official permission selector, plus the Plan collaboration mode. */
+export type NativePermissionLevel = "ask" | "auto-review" | "full-access";
+
+const FULL_ACCESS_PROFILE = ":danger-full-access";
+const FULL_ACCESS_SANDBOXES = new Set(["dangerFullAccess", "danger-full-access"]);
+const AUTO_REVIEWERS = new Set(["guardian_subagent", "auto_review"]);
+
+/**
+ * Permission level carried by `thread/start` or `thread/settings/update`.
+ *
+ * Full access is recognised only by its explicit profile or sandbox. `approvalPolicy: "never"`
+ * alone is not a signal: responses echo it, and treating it as consent would silently turn the
+ * most restrictive level into the least restrictive one.
+ */
+export function nativePermissionLevel(params: JsonObject): NativePermissionLevel | undefined {
+  const profileOf = (value: unknown): string | undefined =>
+    typeof value === "string"
+      ? value
+      : isRecord(value) && typeof value.id === "string"
+        ? value.id
+        : undefined;
+  const profile =
+    profileOf(params.permissions) ??
+    profileOf(params.activePermissionProfile) ??
+    profileOf(params.permissionProfile);
+  const sandbox =
+    isRecord(params.sandboxPolicy) && typeof params.sandboxPolicy.type === "string"
+      ? params.sandboxPolicy.type
+      : typeof params.sandbox === "string"
+        ? params.sandbox
+        : undefined;
+  if (profile === FULL_ACCESS_PROFILE || (sandbox && FULL_ACCESS_SANDBOXES.has(sandbox)))
+    return "full-access";
+  if (typeof params.approvalsReviewer === "string") {
+    return AUTO_REVIEWERS.has(params.approvalsReviewer) ? "auto-review" : "ask";
+  }
+  return profile !== undefined || params.approvalPolicy !== undefined ? "ask" : undefined;
+}
+
+/** Whether the request turns the native Plan collaboration mode on (`true`) or off (`false`). */
+export function nativePlanMode(params: JsonObject): boolean | undefined {
+  const mode = isRecord(params.collaborationMode) ? params.collaborationMode.mode : undefined;
+  return typeof mode === "string" ? mode === "plan" : undefined;
+}
+
+/** Harness Permission Mode for a native level, limited to the modes the Harness offers. */
+export function permissionModeForLevel(
+  level: NativePermissionLevel,
+  offered: readonly string[],
+): string | undefined {
+  const preference = {
+    ask: ["default"],
+    "auto-review": ["auto", "acceptEdits"],
+    "full-access": ["bypassPermissions"],
+  }[level];
+  return preference.find((id) => offered.includes(id));
+}
+
+/** Permission-related fields of a request, reduced to enum-like values for tracing/mapping. */
+export function requestedNativePermission(params: JsonObject): JsonObject {
+  const kind = (value: unknown): JsonValue =>
+    typeof value === "string"
+      ? value
+      : isRecord(value) && typeof value.type === "string"
+        ? value.type
+        : value === undefined
+          ? null
+          : isRecord(value)
+            ? Object.keys(value).sort().join(",")
+            : null;
+  // Shape only: paths and long strings are replaced so a trace never records the workspace.
+  const shape = (value: unknown, depth = 0): JsonValue => {
+    if (typeof value === "string")
+      return value.includes("/") || value.length > 40 ? "<str>" : value;
+    if (value === null || typeof value === "boolean" || typeof value === "number") return value;
+    if (Array.isArray(value))
+      return depth > 3 ? "<array>" : value.slice(0, 4).map((v) => shape(v, depth + 1));
+    if (isRecord(value))
+      return depth > 3
+        ? "<object>"
+        : Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shape(v, depth + 1)]));
+    return null;
+  };
+  const mode = isRecord(params.collaborationMode) ? params.collaborationMode.mode : undefined;
+  return {
+    permissions: shape(params.permissions),
+    approvalPolicy: kind(params.approvalPolicy),
+    approvalsReviewer: kind(params.approvalsReviewer),
+    sandbox: kind(params.sandbox),
+    sandboxPolicy: kind(params.sandboxPolicy),
+    permissionProfile: kind(params.permissionProfile ?? params.activePermissionProfile),
+    collaborationMode: typeof mode === "string" ? mode : null,
+  };
+}
+
 const SELECTION_KEY = /^(?:profiles\.(?<profile>[^.]+)\.)?(?<key>model|model_reasoning_effort)$/u;
 
 export interface NativeSelection {

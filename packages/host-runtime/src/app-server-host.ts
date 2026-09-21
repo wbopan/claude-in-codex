@@ -80,6 +80,7 @@ import {
   updateStartResultSchema,
   updateStatusResultSchema,
   type AccountCreditsSnapshot,
+  harnessPermissionModeIdSchema,
   type HarnessModelRef,
   type HarnessPermissionModeId,
   type HarnessThinkingOptionId,
@@ -168,6 +169,10 @@ import {
   overlayNativeSelection,
   planConfigEdits,
   projectNativeModels,
+  nativePermissionLevel,
+  nativePlanMode,
+  permissionModeForLevel,
+  requestedNativePermission,
   requestedNativeSelection,
   thinkingOptionForEffort,
 } from "./native-picker.js";
@@ -1763,12 +1768,16 @@ export class AppServerHost {
       await this.#writer.json(rpcError(request, -32076, CROSS_HARNESS_MESSAGE));
       return true;
     }
-    const failure = await this.#applyNativeSelection(resolution.thread, selection);
+    const failure =
+      (await this.#applyNativeSelection(resolution.thread, selection)) ??
+      (await this.#applyNativePermission(resolution.thread, params, "level-and-plan"));
     this.#traceNativePicker({
       event: "thread/settings/update",
       harnessId: resolution.thread.harnessId,
       model: selection.model ?? null,
       nativeEffort: selection.effort ?? null,
+      keys: Object.keys(params).sort(),
+      permission: requestedNativePermission(params),
       outcome: failure ? `${failure.code}: ${failure.message}` : "ok",
     });
     await this.#writer.json(
@@ -1860,6 +1869,56 @@ export class AppServerHost {
         await this.#persistNativeSelection(thread);
       }
     }
+    return undefined;
+  }
+
+  async #offeredPermissionModes(harnessId: ExternalHarnessId): Promise<string[]> {
+    const adapter = this.#externalAdapters.get(harnessId);
+    const inspection = adapter
+      ? harnessInspectionSchema.safeParse(await adapter.inspect({}).catch(() => undefined))
+      : undefined;
+    return inspection?.success && inspection.data.status === "ready"
+      ? (inspection.data.permissionModes?.modes.map(({ id }) => id as string) ?? [])
+      : [];
+  }
+
+  /**
+   * Follow the official permission selector and Plan toggle with the Harness Permission Mode.
+   * Plan wins while it is on; turning it off restores the Thread's selected level.
+   */
+  async #applyNativePermission(
+    thread: ExternalThread,
+    params: JsonObject,
+    scope: "level-and-plan" | "plan-only",
+  ): Promise<{ code: number; message: string } | undefined> {
+    if (!thread.session.capabilities.configuration.selectPermissionMode) return undefined;
+    const level = scope === "level-and-plan" ? nativePermissionLevel(params) : undefined;
+    const plan = nativePlanMode(params);
+    if (level) thread.nativePermissionLevel = level;
+    const inPlan = thread.requestedPermissionModeId === "plan";
+    if (level === undefined && (plan === undefined || plan === inPlan)) return undefined;
+    const offered = await this.#offeredPermissionModes(thread.harnessId);
+    const wanted =
+      (plan ?? inPlan) && offered.includes("plan")
+        ? "plan"
+        : permissionModeForLevel(thread.nativePermissionLevel ?? "ask", offered);
+    const parsed = harnessPermissionModeIdSchema.safeParse(wanted);
+    if (!parsed.success || parsed.data === thread.requestedPermissionModeId) return undefined;
+    const result = await thread.session.execute({
+      type: "permissionMode.select",
+      permissionModeId: parsed.data,
+    });
+    this.#traceNativePicker({
+      event: "permissionMode.select",
+      harnessId: thread.harnessId,
+      nativeLevel: thread.nativePermissionLevel ?? null,
+      plan: plan ?? null,
+      permissionModeId: parsed.data,
+      outcome: result.ok ? "ok" : result.error.message,
+    });
+    if (!result.ok) return { code: -32078, message: result.error.message };
+    thread.requestedPermissionModeId = parsed.data;
+    await this.#persistNativeSelection(thread);
     return undefined;
   }
 
@@ -3348,8 +3407,21 @@ export class AppServerHost {
         requestedThinkingOptionId = thinkingOptionForEffort(nativeEffort, inspection.data.catalog);
       }
     }
-    const requestedPermissionModeId =
+    let requestedPermissionModeId =
       route && route.harnessId !== "codex" ? route.permissionModeId : undefined;
+    const startLevel = nativePermissionLevel(params);
+    if (!requestedPermissionModeId) {
+      // The official permission selector and Plan toggle choose the Harness Permission Mode.
+      const offered = await this.#offeredPermissionModes(harnessId);
+      const wanted =
+        nativePlanMode(params) === true && offered.includes("plan")
+          ? "plan"
+          : startLevel
+            ? permissionModeForLevel(startLevel, offered)
+            : undefined;
+      const parsed = harnessPermissionModeIdSchema.safeParse(wanted);
+      if (parsed.success) requestedPermissionModeId = parsed.data;
+    }
     const transportModelId =
       route && route.harnessId === harnessId && route.transportModelId
         ? route.transportModelId
@@ -3406,6 +3478,8 @@ export class AppServerHost {
       nativeEffort: nativeEffort ?? null,
       requestedThinkingOptionId: requestedThinkingOptionId ?? null,
       sessionThinkingOptionId: session.initialState.effectiveThinkingOptionId ?? null,
+      sessionPermissionModeId: session.initialState.effectivePermissionModeId ?? null,
+      permission: requestedNativePermission(params),
     });
     await this.#externalRuntime.idleRelease.runOperation(record.hostThreadId, async () => {
       try {
@@ -3430,6 +3504,7 @@ export class AppServerHost {
           ...(requestedThinkingOptionId ? { requestedThinkingOptionId } : {}),
           ...(requestedPermissionModeId ? { requestedPermissionModeId } : {}),
         });
+        if (startLevel) externalThread.nativePermissionLevel = startLevel;
         this.#routeObservationTracker.bindCreatedThread(request.id, externalThread.id);
         await this.#writer.json(
           rpcEnvelope(request, {
@@ -3438,9 +3513,14 @@ export class AppServerHost {
               model: this.#nativeThreadSelection(externalThread).model,
               modelProvider: "codexhost",
               cwd,
+              // Echo the requested policy. Rewriting a granular policy to "never" made later
+              // Turns claim an approval-free Thread the user never selected.
               approvalPolicy:
-                typeof params.approvalPolicy === "string" ? params.approvalPolicy : "never",
-              approvalsReviewer: "user",
+                typeof params.approvalPolicy === "string" || isRecord(params.approvalPolicy)
+                  ? params.approvalPolicy
+                  : "never",
+              approvalsReviewer:
+                typeof params.approvalsReviewer === "string" ? params.approvalsReviewer : "user",
               sandbox: sandboxResult(params),
               reasoningEffort: this.#nativeThreadSelection(externalThread).reasoningEffort,
               serviceTier: "flex",
@@ -3939,11 +4019,19 @@ export class AppServerHost {
         return;
       }
     }
-    const selectionFailure = await this.#applyNativeSelection(
+    this.#traceNativePicker({
+      event: "turn/start",
+      harnessId: thread.harnessId,
+      permission: requestedNativePermission(params),
+    });
+    const nativeSelectionFailure = await this.#applyNativeSelection(
       thread,
       requestedNativeSelection(params),
       "ignore",
     );
+    // A Turn echoes approval fields from Host responses, so only its Plan toggle is trusted.
+    const selectionFailure =
+      nativeSelectionFailure ?? (await this.#applyNativePermission(thread, params, "plan-only"));
     if (selectionFailure) {
       await this.#writer.json(rpcError(request, selectionFailure.code, selectionFailure.message));
       return;
