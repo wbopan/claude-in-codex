@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   NativeSelectionStore,
+  effortForThinkingOption,
   overlayNativeSelection,
   planConfigEdits,
   projectNativeModels,
@@ -61,6 +62,11 @@ describe("native Model picker projection", () => {
     expect(thinkingOptionForEffort("none", catalog)).toBe("off");
     expect(thinkingOptionForEffort("xhigh", catalog)).toBeUndefined();
     expect(thinkingOptionForEffort(null, catalog)).toBeUndefined();
+    // The reverse mapping keeps a reopened Thread on a picker-visible effort.
+    expect(effortForThinkingOption("high")).toBe("high");
+    expect(effortForThinkingOption("off")).toBe("none");
+    expect(effortForThinkingOption("auto")).toBe("medium");
+    expect(effortForThinkingOption(undefined)).toBe("medium");
   });
 
   it("gives collaborationMode precedence over top-level Model and effort", () => {

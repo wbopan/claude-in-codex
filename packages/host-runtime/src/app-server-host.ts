@@ -15,6 +15,7 @@ import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harn
 import type { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
+import { appendFileSync } from "node:fs";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 
@@ -161,6 +162,7 @@ import {
 import type { HostUpdateCoordinator } from "./update-coordinator.js";
 import {
   NativeSelectionStore,
+  effortForThinkingOption,
   isNativeRouteModel,
   overlayNativeSelection,
   planConfigEdits,
@@ -1560,6 +1562,24 @@ export class AppServerHost {
     await this.#forwardOfficialRequest(request, frame);
   }
 
+  /** Sanitized acceptance trace of native picker decisions. Never records prompts or replies. */
+  #traceNativePicker(event: JsonObject): void {
+    const environment = this.#options.environment ?? process.env;
+    const enabled =
+      environment.CODEXHOST_NATIVE_PICKER_TRACE === "1" ||
+      environment.CODEXHOST_STARTUP_TRACE === "1";
+    if (!enabled || !environment.CODEXHOST_DATA_DIR) return;
+    try {
+      appendFileSync(
+        path.join(path.resolve(environment.CODEXHOST_DATA_DIR), "native-picker-trace.jsonl"),
+        `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`,
+        { mode: 0o600 },
+      );
+    } catch {
+      // Tracing is diagnostic only.
+    }
+  }
+
   /** Official `model/list` plus one entry per Model of every ready external Harness. */
   async #listNativeModels(request: JsonRpcRequest): Promise<void> {
     const params = isRecord(request.params) ? request.params : {};
@@ -1719,10 +1739,23 @@ export class AppServerHost {
     if (await this.#writeResolutionError(request, resolution)) return true;
     if (resolution.kind !== "external") {
       if (!isNativeRouteModel(selection.model)) return false;
+      this.#traceNativePicker({
+        event: "cross-harness-rejected",
+        threadHarnessId: "codex",
+        requestedModelIsRoute: true,
+        method: request.method,
+      });
       await this.#writer.json(rpcError(request, -32076, CROSS_HARNESS_MESSAGE));
       return true;
     }
     const failure = await this.#applyNativeSelection(resolution.thread, selection);
+    this.#traceNativePicker({
+      event: "thread/settings/update",
+      harnessId: resolution.thread.harnessId,
+      model: selection.model ?? null,
+      nativeEffort: selection.effort ?? null,
+      outcome: failure ? `${failure.code}: ${failure.message}` : "ok",
+    });
     await this.#writer.json(
       failure
         ? rpcError(request, failure.code, failure.message)
@@ -1755,6 +1788,11 @@ export class AppServerHost {
         return { code: -32602, message: errorMessage(error) };
       }
       if (!route || route.harnessId !== thread.harnessId) {
+        this.#traceNativePicker({
+          event: "cross-harness-rejected",
+          threadHarnessId: thread.harnessId,
+          requestedHarnessId: route?.harnessId ?? null,
+        });
         return { code: -32076, message: CROSS_HARNESS_MESSAGE };
       }
       const current =
@@ -1767,6 +1805,11 @@ export class AppServerHost {
       ) {
         const result = await thread.session.execute({ type: "model.select", model: route.model });
         if (!result.ok) return { code: -32078, message: result.error.message };
+        this.#traceNativePicker({
+          event: "model.select",
+          harnessId: thread.harnessId,
+          model: route.model.id,
+        });
         thread.requestedModel = route.model;
         await this.#persistNativeSelection(thread);
       }
@@ -1784,13 +1827,47 @@ export class AppServerHost {
           ? thinkingOptionForEffort(selection.effort, inspection.data.catalog)
           : undefined;
       if (thinkingOptionId && thinkingOptionId !== thread.requestedThinkingOptionId) {
+        const beforeRevision = thread.stateObserver.revision;
         const result = await thread.session.execute({ type: "thinking.select", thinkingOptionId });
         if (!result.ok) return { code: -32078, message: result.error.message };
+        const confirmed = await Promise.race([
+          thread.stateObserver.waitForChange(beforeRevision).catch(() => undefined),
+          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 3_000)),
+        ]);
+        this.#traceNativePicker({
+          event: "thinking.select",
+          harnessId: thread.harnessId,
+          nativeEffort: selection.effort,
+          thinkingOptionId,
+          sessionThinkingOptionId: confirmed?.effectiveThinkingOptionId ?? null,
+        });
         thread.requestedThinkingOptionId = thinkingOptionId;
         await this.#persistNativeSelection(thread);
       }
     }
     return undefined;
+  }
+
+  /**
+   * Model and effort reported for an external Thread. The Model must equal a `model/list` entry
+   * id, otherwise the official picker labels a reopened Thread as a custom Model.
+   */
+  #nativeThreadSelection(input: {
+    harnessId: ExternalHarnessId;
+    transportModelId: string;
+    requestedModel?: HarnessModelRef | undefined;
+    requestedThinkingOptionId?: HarnessThinkingOptionId | undefined;
+  }): { model: string; reasoningEffort: string } {
+    const decoded = decodeExternalTransportSelection(input.harnessId, input.transportModelId);
+    const model = input.requestedModel ?? decoded?.model;
+    return {
+      model: model
+        ? encodeExternalTransportSelection(input.harnessId, { model })
+        : input.transportModelId,
+      reasoningEffort: effortForThinkingOption(
+        input.requestedThinkingOptionId ?? decoded?.thinkingOptionId,
+      ),
+    };
   }
 
   async #persistNativeSelection(thread: ExternalThread): Promise<void> {
@@ -3307,6 +3384,14 @@ export class AppServerHost {
       return;
     }
     const session = sessionResult.value;
+    this.#traceNativePicker({
+      event: "thread/start",
+      harnessId,
+      model: requestedModel?.id ?? null,
+      nativeEffort: nativeEffort ?? null,
+      requestedThinkingOptionId: requestedThinkingOptionId ?? null,
+      sessionThinkingOptionId: session.initialState.effectiveThinkingOptionId ?? null,
+    });
     await this.#externalRuntime.idleRelease.runOperation(record.hostThreadId, async () => {
       try {
         if (session.initialState.nativeRef) {
@@ -3335,14 +3420,14 @@ export class AppServerHost {
           rpcEnvelope(request, {
             result: {
               thread,
-              model: transportModelId,
+              model: this.#nativeThreadSelection(externalThread).model,
               modelProvider: "codexhost",
               cwd,
               approvalPolicy:
                 typeof params.approvalPolicy === "string" ? params.approvalPolicy : "never",
               approvalsReviewer: "user",
               sandbox: sandboxResult(params),
-              reasoningEffort: "medium",
+              reasoningEffort: this.#nativeThreadSelection(externalThread).reasoningEffort,
               serviceTier: "flex",
               multiAgentMode: "explicitRequestOnly",
               activePermissionProfile: null,
@@ -3473,7 +3558,7 @@ export class AppServerHost {
     await this.#writer.json(
       rpcEnvelope(request, {
         result: threadForkResult(result.responseThread, {
-          model: result.derived.transportModelId,
+          ...this.#nativeThreadSelection(result.derived),
           cwd: result.derived.cwd,
           ...(fork.runtimeWorkspaceRoots
             ? { runtimeWorkspaceRoots: fork.runtimeWorkspaceRoots }
@@ -3713,7 +3798,7 @@ export class AppServerHost {
       turns: params.excludeTurns === true ? [] : turns,
     };
     const result = threadForkResult(responseThread, {
-      model: thread.transportModelId,
+      ...this.#nativeThreadSelection(thread),
       cwd: thread.cwd,
       runtimeWorkspaceRoots: Array.isArray(params.runtimeWorkspaceRoots)
         ? params.runtimeWorkspaceRoots.filter((value): value is string => typeof value === "string")

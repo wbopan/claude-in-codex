@@ -185,6 +185,7 @@ export function threadForkResult(
     approvalPolicy?: string;
     sandbox: JsonObject;
     serviceTier?: string;
+    reasoningEffort?: string;
   },
 ): JsonObject {
   return {
@@ -199,7 +200,7 @@ export function threadForkResult(
     approvalsReviewer: "user",
     sandbox: input.sandbox,
     activePermissionProfile: null,
-    reasoningEffort: "medium",
+    reasoningEffort: input.reasoningEffort ?? "medium",
     multiAgentMode: "explicitRequestOnly",
   };
 }

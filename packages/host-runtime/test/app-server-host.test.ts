@@ -5082,10 +5082,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
       effectiveModel: model,
       effectiveThinkingOptionId: low,
     });
+    // The response names the picker entry; Thinking travels as the official reasoning effort.
     expect(
-      (fixture.collector.messages.find((message) => requestId(message, 1))?.result as JsonObject)
-        .model,
-    ).toBe(carrier);
+      fixture.collector.messages.find((message) => requestId(message, 1))?.result,
+    ).toMatchObject({ model: encodePiTransportModel(model), reasoningEffort: "low" });
     writeRequest(fixture.desktopInput, {
       id: 33,
       method: "turn/start",
@@ -6743,7 +6743,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     ).resolves.toMatchObject({
       result: {
         thread: { id: threadId, turns: [{ id: persistedTurnId }] },
-        model: "codexhost/pi-native",
+        model: "codexhost/pi-native@fake-model-v1.secondary",
         initialTurnsPage: null,
       },
     });

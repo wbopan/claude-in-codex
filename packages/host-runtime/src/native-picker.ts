@@ -98,6 +98,14 @@ export function thinkingOptionForEffort(
   return catalog.thinkingOptions.find(({ id }) => id === wanted)?.id;
 }
 
+/** Map a Thinking option back to the official effort the picker shows for a Thread. */
+export function effortForThinkingOption(thinkingOptionId: string | undefined): string {
+  if (thinkingOptionId === "off") return "none";
+  return (NATIVE_EFFORTS as readonly string[]).includes(thinkingOptionId ?? "")
+    ? (thinkingOptionId as string)
+    : FALLBACK_EFFORT;
+}
+
 export interface RequestedNativeSelection {
   model?: string;
   effort?: string;
