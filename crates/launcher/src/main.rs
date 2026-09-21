@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-mod active_update;
 mod compatibility;
 #[cfg(target_os = "macos")]
 mod debug_instance;
@@ -30,8 +29,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
-use active_update::start_pending_update;
-use active_update::update_waiting_for_launcher_exit;
 #[cfg(target_os = "windows")]
 use codexhost_platform::{
     APPX_RESUME_ARGUMENT, DesktopProcess, launch_desktop, resume_packaged_application,
@@ -74,17 +71,7 @@ const LAUNCHER_EXECUTABLE_ENV: &str = "CODEXHOST_LAUNCHER_EXECUTABLE";
 const RUNTIME_DESCRIPTOR_PATH_ENV: &str = "CODEXHOST_RUNTIME_DESCRIPTOR_PATH";
 const CONTROL_PORT_ENV: &str = "CODEXHOST_CONTROL_PORT";
 const CONTROL_NONCE_ENV: &str = "CODEXHOST_CONTROL_NONCE";
-const NPM_NODE_PATH_ENV: &str = "CODEXHOST_NPM_NODE_PATH";
-const NPM_CLI_PATH_ENV: &str = "CODEXHOST_NPM_CLI_PATH";
-const NPM_LAUNCHER_PATH_ENV: &str = "CODEXHOST_NPM_LAUNCHER_PATH";
-const NPM_PACKAGE_ROOT_ENV: &str = "CODEXHOST_NPM_PACKAGE_ROOT";
 const CODEXHOST_CLI_PATH_ENV: &str = "CODEXHOST_CLI_PATH";
-const NPM_UPDATE_RUNTIME_ENV: [&str; 4] = [
-    NPM_NODE_PATH_ENV,
-    NPM_CLI_PATH_ENV,
-    NPM_LAUNCHER_PATH_ENV,
-    NPM_PACKAGE_ROOT_ENV,
-];
 const START_MENU_ARGUMENT: &str = "--start-menu";
 const READY_LINE: &str = "ready";
 const STARTUP_TRACE_ENV: &str = "CODEXHOST_STARTUP_TRACE";
@@ -622,42 +609,6 @@ fn wait_for_desktop_exit(
     }
 }
 
-fn should_stop_desktop_for_update(helper_started: bool) -> bool {
-    if helper_started {
-        return true;
-    }
-    match update_waiting_for_launcher_exit() {
-        Ok(waiting) => waiting,
-        Err(error) => {
-            eprintln!("codexhost launcher: pending update exit state could not be read: {error}");
-            false
-        }
-    }
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn stop_managed_desktop_for_update(
-    desktop: &mut DesktopSession,
-    controller: &mut SupervisedChild,
-) -> Result<(), Box<dyn Error>> {
-    let _ = stop_desktop_controller(controller);
-    desktop.shutdown(Duration::from_secs(2))?;
-    desktop.cleanup_escaped(Duration::from_secs(2))?;
-    desktop.disarm_cleanup();
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn stop_managed_desktop_for_update(
-    desktop: &mut DesktopProcess,
-    controller: &mut SupervisedChild,
-) -> Result<(), Box<dyn Error>> {
-    let _ = stop_desktop_controller(controller);
-    let _ = desktop.kill();
-    let _ = desktop.wait();
-    Ok(())
-}
-
 fn stop_desktop_controller(controller: &mut SupervisedChild) -> Result<(), Box<dyn Error>> {
     if let Some(status) = controller.try_wait()? {
         controller.disarm_cleanup();
@@ -736,29 +687,8 @@ fn supervise_desktop(
     let _runtime = publish_runtime_descriptor(descriptor_path, control)?;
     startup_trace("runtime descriptor published");
     notify_ready_and_detach()?;
-    #[cfg(target_os = "macos")]
-    let mut started_update_request = None;
     let mut last_desktop_tree_refresh = Instant::now();
     loop {
-        #[cfg(target_os = "macos")]
-        if debug_root.is_none()
-            && let Err(error) = start_pending_update(&mut started_update_request)
-        {
-            eprintln!("codexhost launcher: pending update could not be started: {error}");
-        }
-        #[cfg(target_os = "macos")]
-        let helper_started = started_update_request.is_some();
-        #[cfg(target_os = "linux")]
-        let helper_started = false;
-        if debug_root.is_none() && should_stop_desktop_for_update(helper_started) {
-            if let Err(error) = stop_managed_desktop_for_update(&mut desktop, &mut controller) {
-                eprintln!(
-                    "codexhost launcher: managed Desktop could not be stopped for update: {error}"
-                );
-            } else {
-                return Ok(());
-            }
-        }
         if let Some(status) = controller.try_wait()? {
             let _ = desktop.shutdown(Duration::from_secs(2));
             return Err(
@@ -844,15 +774,6 @@ fn supervise_desktop(
     startup_trace("runtime descriptor published");
     notify_ready_and_detach()?;
     loop {
-        if should_stop_desktop_for_update(false) {
-            if let Err(error) = stop_managed_desktop_for_update(&mut desktop, &mut controller) {
-                eprintln!(
-                    "codexhost launcher: managed Desktop could not be stopped for update: {error}"
-                );
-            } else {
-                return Ok(());
-            }
-        }
         if let Some(status) = controller.try_wait()? {
             if let Some(desktop_status) =
                 wait_for_desktop_exit(&mut desktop, Duration::from_secs(1))?
@@ -937,26 +858,8 @@ fn desktop_environment(
     {
         environment.push(("CODEXHOST_NATIVE_APP_TOOLS".into(), "0".into()));
     }
-    environment.extend(npm_update_runtime_environment(env::vars_os()));
     environment.extend(desktop_path_overrides::forwarded(env::vars_os()));
     environment
-}
-
-/// Forward absolute npm update paths. AppX and LaunchServices do not inherit
-/// the Launcher process environment.
-fn npm_update_runtime_environment(
-    variables: impl IntoIterator<Item = (OsString, OsString)>,
-) -> Vec<(OsString, OsString)> {
-    let variables = variables.into_iter().collect::<Vec<_>>();
-    NPM_UPDATE_RUNTIME_ENV
-        .iter()
-        .filter_map(|name| {
-            variables.iter().find_map(|(candidate, value)| {
-                (candidate == name && Path::new(value).is_absolute())
-                    .then(|| (OsString::from(*name), value.clone()))
-            })
-        })
-        .collect()
 }
 
 #[cfg(target_os = "windows")]
@@ -1316,13 +1219,11 @@ mod tests {
     use super::wait_for_desktop_exit;
     use super::{
         CONTROL_NONCE_ENV, CONTROL_PORT_ENV, DEFAULT_AGENT_ENV, HOST_NODE_PATH_ENV,
-        LAUNCHER_EXECUTABLE_ENV, LAUNCHER_PID_ENV, NPM_CLI_PATH_ENV, NPM_LAUNCHER_PATH_ENV,
-        NPM_NODE_PATH_ENV, NPM_PACKAGE_ROOT_ENV, RUNTIME_DESCRIPTOR_PATH_ENV,
+        LAUNCHER_EXECUTABLE_ENV, LAUNCHER_PID_ENV, RUNTIME_DESCRIPTOR_PATH_ENV,
         ResolvedLaunchOptions, RuntimeControl, STARTUP_TRACE_ENV, absolute_directory,
         allocate_runtime_control, desktop_controller_command, desktop_environment, emit_ready_line,
-        managed_desktop_data_directory, npm_update_runtime_environment, parse_inspect_options,
-        parse_launch_options, read_bounded_controller_line, read_bounded_loopback_url,
-        validate_loopback_root_url,
+        managed_desktop_data_directory, parse_inspect_options, parse_launch_options,
+        read_bounded_controller_line, read_bounded_loopback_url, validate_loopback_root_url,
     };
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::{DESKTOP_TREE_REFRESH_INTERVAL, desktop_tree_refresh_due};
@@ -1629,53 +1530,6 @@ mod tests {
         assert_eq!(
             value(CONTROL_NONCE_ENV),
             Some(&OsString::from(&control.nonce))
-        );
-    }
-
-    #[test]
-    fn npm_update_runtime_environment_forwards_only_absolute_paths() {
-        let fixture_root = std::env::current_dir()
-            .expect("resolve current directory")
-            .join("npm-runtime-fixture");
-        let node_path = fixture_root.join("node");
-        let cli_path = fixture_root.join("npm/bin/npm-cli.js");
-        let package_root = fixture_root.join("@codexhost/cli-platform");
-        let forwarded = npm_update_runtime_environment([
-            (
-                OsString::from(NPM_NODE_PATH_ENV),
-                node_path.clone().into_os_string(),
-            ),
-            (
-                OsString::from(NPM_CLI_PATH_ENV),
-                cli_path.clone().into_os_string(),
-            ),
-            (
-                OsString::from(NPM_LAUNCHER_PATH_ENV),
-                OsString::from("codexhost.js"),
-            ),
-            (
-                OsString::from(NPM_PACKAGE_ROOT_ENV),
-                package_root.clone().into_os_string(),
-            ),
-            (
-                OsString::from("UNRELATED"),
-                fixture_root.join("unrelated").into_os_string(),
-            ),
-        ]);
-
-        assert_eq!(
-            forwarded,
-            [
-                (
-                    OsString::from(NPM_NODE_PATH_ENV),
-                    node_path.into_os_string(),
-                ),
-                (OsString::from(NPM_CLI_PATH_ENV), cli_path.into_os_string(),),
-                (
-                    OsString::from(NPM_PACKAGE_ROOT_ENV),
-                    package_root.into_os_string(),
-                ),
-            ]
         );
     }
 

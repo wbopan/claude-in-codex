@@ -124,16 +124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codexhost-updater"
-version = "0.9.1"
-dependencies = [
- "codexhost-platform",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

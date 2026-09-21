@@ -46,9 +46,6 @@ export async function verifySnapshot(root) {
   ]) {
     if (!actual[required]) throw new Error(`Missing runtime file: ${required}`);
   }
-  if (actual["app/codexhost-distribution.json"]) {
-    throw new Error("Local snapshots must not enable the upstream installer updater.");
-  }
   return manifest;
 }
 

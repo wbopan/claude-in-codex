@@ -65,8 +65,6 @@ try {
     throw new Error("Source changed while building; no snapshot was published.");
   }
   await cp(prepared.payloadRoot, output, { recursive: true, force: false });
-  // Source-owned versions are upgraded through Git, outside the official installer updater.
-  await rm(path.join(output, "app/codexhost-distribution.json"));
   await copyFile(path.join(root, "tools/fork/launch.mjs"), path.join(output, "launch.mjs"));
   const launcher = path.join(output, debug ? "Launch-Debug.command" : "Launch-Fork.command");
   if (debug) {

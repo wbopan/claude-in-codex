@@ -5,7 +5,7 @@ import { classifyCreateRequestRoute, packageMetadata } from "../src/index.js";
 
 describe("host-runtime package", () => {
   it("declares the composition-root dependencies", () => {
-    expect(packageMetadata.dependencies).toHaveLength(7);
+    expect(packageMetadata.dependencies).toHaveLength(6);
     expect(
       packageMetadata.dependencies.some((name) => name.startsWith("@codexhost/adapter-")),
     ).toBe(false);
@@ -13,7 +13,6 @@ describe("host-runtime package", () => {
     expect(packageMetadata.dependencies).toContain("@codexhost/harness-adapter");
     expect(packageMetadata.dependencies).toContain("@codexhost/harness-broker");
     expect(packageMetadata.dependencies).toContain("@codexhost/shared-contracts");
-    expect(packageMetadata.dependencies).toContain("@codexhost/update-manager");
   });
 
   it("classifies create routes without exposing Model values or request IDs", () => {

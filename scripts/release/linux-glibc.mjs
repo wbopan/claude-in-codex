@@ -6,7 +6,6 @@ export const LINUX_GLIBC_BASELINE = "2.35";
 export const LINUX_NATIVE_EXECUTABLES = Object.freeze([
   "bin/codexhost",
   "libexec/codexhost-shim",
-  "libexec/codexhost-updater",
 ]);
 
 function compareVersion(left, right) {

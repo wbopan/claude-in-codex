@@ -75,10 +75,6 @@ import {
   threadOwnershipListParamsSchema,
   threadOwnershipListResultSchema,
   permissionModeFixedAtCreate,
-  updateCheckResultSchema,
-  updateEmptyParamsSchema,
-  updateStartResultSchema,
-  updateStatusResultSchema,
   type AccountCreditsSnapshot,
   harnessPermissionModeIdSchema,
   type HarnessModelRef,
@@ -161,7 +157,6 @@ import {
   OfficialRuntimeClient,
   OfficialRuntimeScope,
 } from "./codex-runtime/official-runtime-scope.js";
-import type { HostUpdateCoordinator } from "./update-coordinator.js";
 import {
   NativeSelectionStore,
   effortForThinkingOption,
@@ -263,7 +258,6 @@ export interface AppServerHostOptions {
   officialRuntimeScope?: OfficialRuntimeScope;
   onCreateRequestRoute?: (observation: CreateRequestRouteObservation) => void;
   onRequestRoute?: (observation: RequestRouteObservation) => void;
-  updateCoordinator?: HostUpdateCoordinator;
   onDelegationApi?: (api: DelegationControlRegistration) => (() => void) | undefined;
 }
 
@@ -350,10 +344,6 @@ export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEn
     "CODEXHOST_RUNTIME_DESCRIPTOR_PATH",
     "CODEXHOST_CONTROL_PORT",
     "CODEXHOST_CONTROL_NONCE",
-    "CODEXHOST_NPM_NODE_PATH",
-    "CODEXHOST_NPM_CLI_PATH",
-    "CODEXHOST_NPM_LAUNCHER_PATH",
-    "CODEXHOST_NPM_PACKAGE_ROOT",
   ]);
   return Object.fromEntries(
     Object.entries(source).filter(([key]) => !internal.has(key) || allowed.has(key)),
@@ -1013,12 +1003,12 @@ export class AppServerHost {
       }
       return;
     }
-    if (
-      request.method === "codexhost/update/check" ||
-      request.method === "codexhost/update/start" ||
-      request.method === "codexhost/update/status"
-    ) {
-      this.#dispatchDesktopRequest(() => this.#handleUpdateRequest(request));
+    if (request.method === "codexhost/update/status") {
+      // Protocol discriminator for the SSH remote Host probe: a managed Host answers
+      // -32090 here, stock Codex rejects the method as an unknown variant.
+      this.#dispatchDesktopRequest(async () => {
+        await this.#writer.json(rpcError(request, -32090, "Application updates are unavailable"));
+      });
       return;
     }
     if (
@@ -2787,37 +2777,6 @@ export class AppServerHost {
       method: archived ? "thread/archived" : "thread/unarchived",
       params: { threadId: record.hostThreadId },
     });
-  }
-
-  async #handleUpdateRequest(request: JsonRpcRequest): Promise<void> {
-    const params = updateEmptyParamsSchema.safeParse(
-      request.params === undefined ? {} : request.params,
-    );
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Update params must be empty"));
-      return;
-    }
-    const coordinator = this.#options.updateCoordinator;
-    if (!coordinator) {
-      await this.#writer.json(rpcError(request, -32090, "Application updates are unavailable"));
-      return;
-    }
-    try {
-      if (request.method === "codexhost/update/check") {
-        const result = updateCheckResultSchema.parse(await coordinator.check());
-        await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
-        return;
-      }
-      if (request.method === "codexhost/update/status") {
-        const result = updateStatusResultSchema.parse(await coordinator.status());
-        await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
-        return;
-      }
-      const result = updateStartResultSchema.parse(await coordinator.start());
-      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
-    } catch (error) {
-      await this.#writer.json(rpcError(request, -32091, errorMessage(error).slice(0, 500)));
-    }
   }
 
   async #inspectHarness(request: JsonRpcRequest): Promise<void> {

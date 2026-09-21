@@ -13,7 +13,6 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { writeDistributionMetadata } from "./distribution-metadata.mjs";
 import {
   buildPreinstalledHarnessPlugins,
   preinstalledHarnessPluginPaths,
@@ -146,7 +145,6 @@ export function npmReleaseBuildCommands(
         "--package",
         "codexhost-shim",
         "--package",
-        "codexhost-updater",
       ],
     },
   ];
@@ -222,8 +220,6 @@ export function expectedNpmPackagePaths(target) {
     `bin/codexhost${target.executableSuffix}`,
     `libexec/codexhost-shim${target.executableSuffix}`,
     ...(target.hostPlatform === "win32" ? ["libexec/codexhost-node-repl.exe"] : []),
-    `libexec/codexhost-updater${target.executableSuffix}`,
-    "app/codexhost-distribution.json",
     "app/desktop-controller.mjs",
     "app/host-runtime.mjs",
     "app/renderer-extension.js",
@@ -1015,13 +1011,6 @@ export async function prepareNpmPackage({
       true,
     );
   }
-  await copyReleaseFile(
-    path.join(rustOutput, `codexhost-updater${target.executableSuffix}`),
-    path.join(packageRoot, "libexec", `codexhost-updater${target.executableSuffix}`),
-    "npm Updater",
-    true,
-  );
-
   await runCommand(
     {
       label: "production Host Bundle build",
@@ -1055,12 +1044,6 @@ export async function prepareNpmPackage({
     path.join(packageRoot, "app", "renderer-extension.js"),
     "production Renderer Bundle",
   );
-  await writeDistributionMetadata(path.join(packageRoot, "app", "codexhost-distribution.json"), {
-    version: packageVersion,
-    distribution: "npm",
-    target: target.id,
-  });
-
   await writeFile(
     path.join(packageRoot, "package.json"),
     `${JSON.stringify(createNpmPackageManifest({ version: packageVersion, target }), null, 2)}\n`,

@@ -3,8 +3,6 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { UPDATE_RUNTIME_ENV } from "@codexhost/update-manager";
-
 import { AppServerHost, officialEnvironment } from "./app-server-host.js";
 import { prepareLocalCodex } from "./native-account-host.js";
 import { SingleNativeCodexAccount } from "./account/codex-account-control.js";
@@ -34,7 +32,6 @@ import {
   remoteUnixListenerUrl,
 } from "./remote-app-server.js";
 import { remoteOfficialAppServerSocketPath } from "./remote-official-app-server.js";
-import { createHostUpdateCoordinator, type HostUpdateCoordinator } from "./update-coordinator.js";
 
 const STOCK_CODEX_PATH_ENV = "CODEXHOST_STOCK_CODEX_PATH";
 const DEFAULT_AGENT_ENV = "CODEXHOST_DEFAULT_AGENT";
@@ -53,18 +50,6 @@ export function createRemoteOfficialAppServerPlan(
     socketPath,
     listenerArguments: officialListenerArgumentsForRemoteListener(arguments_, socketPath),
   };
-}
-
-export function hasLauncherManagedUpdateRuntime(
-  environment: NodeJS.ProcessEnv,
-  hostRuntimePath?: string,
-): boolean {
-  if (!environment[UPDATE_RUNTIME_ENV.launcherPid]) return false;
-  const npmPackageRoot = environment[UPDATE_RUNTIME_ENV.npmPackageRoot];
-  if (!npmPackageRoot || !hostRuntimePath) return true;
-  if (!path.isAbsolute(npmPackageRoot) || !path.isAbsolute(hostRuntimePath)) return false;
-  const runtimePackageRoot = path.dirname(path.dirname(path.normalize(hostRuntimePath)));
-  return path.relative(path.normalize(npmPackageRoot), runtimePackageRoot) === "";
 }
 
 function requiredRuntimeConfiguration(environment: NodeJS.ProcessEnv): {
@@ -130,18 +115,9 @@ export async function runHostRuntime(input: {
   arguments: string[];
   environment: NodeJS.ProcessEnv;
   hostRuntimeUrl?: string;
-  updateCoordinator?: HostUpdateCoordinator;
 }): Promise<number> {
   const { stockCodexPath, defaultAgent } = requiredRuntimeConfiguration(input.environment);
   const hostRuntimePath = input.hostRuntimeUrl ? fileURLToPath(input.hostRuntimeUrl) : undefined;
-  const updateCoordinator =
-    input.updateCoordinator ??
-    (hostRuntimePath && hasLauncherManagedUpdateRuntime(input.environment, hostRuntimePath)
-      ? createHostUpdateCoordinator({
-          hostRuntimePath,
-          environment: input.environment,
-        })
-      : undefined);
 
   if (!isRemoteUnixListenerInvocation(input.arguments)) {
     const remoteControlPlan = createRemoteControlAppServerPlan({
@@ -173,7 +149,6 @@ export async function runHostRuntime(input: {
               ...shared,
               ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
               onDelegationApi,
-              ...(updateCoordinator ? { updateCoordinator } : {}),
             }).run();
           } finally {
             await official.close();
@@ -191,7 +166,6 @@ export async function runHostRuntime(input: {
             ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
             mappingStore,
             closeMappingStoreOnExit: false,
-            ...(updateCoordinator ? { updateCoordinator } : {}),
           };
           const host = new AppServerHost({
             ...common,
@@ -281,7 +255,6 @@ export async function runHostRuntime(input: {
             officialRuntimeScope,
             accountControl,
             onDelegationApi: (api) => registry.register(api),
-            ...(updateCoordinator ? { updateCoordinator } : {}),
           });
         },
       });

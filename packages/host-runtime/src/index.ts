@@ -4,7 +4,6 @@ import { packageMetadata as harnessBroker } from "@codexhost/harness-broker";
 import { packageMetadata as mappingStore } from "@codexhost/mapping-store";
 import { packageMetadata as protocolCore } from "@codexhost/protocol-core";
 import { packageMetadata as sharedContracts } from "@codexhost/shared-contracts";
-import { packageMetadata as updateManager } from "@codexhost/update-manager";
 
 export { loadHarnessPlugins } from "./harness-plugin-loader.js";
 export type {
@@ -55,7 +54,7 @@ export type {
   ThreadReadInput,
   ThreadWaitInput,
 } from "./delegation-types.js";
-export { hasLauncherManagedUpdateRuntime, runHostRuntime } from "./run-host-runtime.js";
+export { runHostRuntime } from "./run-host-runtime.js";
 export { runClaudeAquaHarnessBroker } from "./aqua-harness-broker.js";
 export {
   REMOTE_CONTROL_BRIDGE_DESCRIPTOR_FILE,
@@ -91,11 +90,6 @@ export type {
   RemoteHostRuntimeStatus,
   RemoteHostStatus,
 } from "./remote-host-lifecycle.js";
-export { createHostUpdateCoordinator } from "./update-coordinator.js";
-export type {
-  CreateHostUpdateCoordinatorOptions,
-  HostUpdateCoordinator,
-} from "./update-coordinator.js";
 export { classifyThreadPurpose, RequestRouteObservationTracker } from "./route-observation.js";
 export type {
   CreateRequestRouteObservation,
@@ -113,6 +107,5 @@ export const packageMetadata = {
     harnessBroker.name,
     mappingStore.name,
     sharedContracts.name,
-    updateManager.name,
   ],
 } as const;

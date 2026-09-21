@@ -13,8 +13,7 @@
     { "path": "../harness-broker/tsconfig.json" },
     { "path": "../mapping-store/tsconfig.json" },
     { "path": "../protocol-core/tsconfig.json" },
-    { "path": "../shared-contracts/tsconfig.json" },
-    { "path": "../update-manager/tsconfig.json" }
+    { "path": "../shared-contracts/tsconfig.json" }
   ],
   "include": ["src/**/*.ts"]
 }

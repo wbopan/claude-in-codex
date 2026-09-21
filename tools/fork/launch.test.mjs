@@ -54,14 +54,6 @@ describe("fork snapshot launch", () => {
     await expect(verifySnapshot(root)).rejects.toThrow("symbolic link");
   });
 
-  it("rejects installer update metadata even if recorded in the manifest", async () => {
-    const { root, manifest } = await fixture();
-    await writeFile(path.join(root, "app/codexhost-distribution.json"), "{}");
-    manifest.files = await inventory(root);
-    await writeFile(path.join(root, "fork-manifest.json"), JSON.stringify(manifest));
-    await expect(verifySnapshot(root)).rejects.toThrow("upstream installer updater");
-  });
-
   it("requires Desktop and Host to exit without terminating them", () => {
     for (const command of [
       "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",

@@ -3,7 +3,6 @@ import { chmod, copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from 
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { writeDistributionMetadata } from "./distribution-metadata.mjs";
 import {
   buildPreinstalledHarnessPlugins,
   preinstalledHarnessPluginPaths,
@@ -74,8 +73,6 @@ export function releaseBuildCommands(
         "codexhost-launcher",
         "--package",
         "codexhost-shim",
-        "--package",
-        "codexhost-updater",
       ],
     },
   ];
@@ -211,9 +208,7 @@ export function expectedPayloadPaths(target) {
     `bin/codexhost${target.executableSuffix}`,
     `libexec/codexhost-shim${target.executableSuffix}`,
     ...(target.hostPlatform === "win32" ? ["libexec/codexhost-node-repl.exe"] : []),
-    `libexec/codexhost-updater${target.executableSuffix}`,
     `runtime/node${target.executableSuffix}`,
-    "app/codexhost-distribution.json",
     "app/desktop-controller.mjs",
     "app/host-runtime.mjs",
     "app/renderer-extension.js",
@@ -321,13 +316,6 @@ export async function prepareReleasePayload({ target, root = repositoryRoot }) {
       true,
     );
   }
-  await copyReleaseFile(
-    path.join(rustOutput, `codexhost-updater${target.executableSuffix}`),
-    path.join(payloadRoot, "libexec", `codexhost-updater${target.executableSuffix}`),
-    "release Updater",
-    true,
-  );
-
   await runCommand(
     {
       label: "production Host Bundle build",
@@ -362,12 +350,6 @@ export async function prepareReleasePayload({ target, root = repositoryRoot }) {
     "// claude-in-codex:no-renderer-extension\n",
     "utf8",
   );
-  await writeDistributionMetadata(path.join(payloadRoot, "app", "codexhost-distribution.json"), {
-    version,
-    distribution: "installer",
-    target: target.id,
-  });
-
   const archivePath = await ensureNodeArchive({
     target,
     cacheDirectory: path.join(root, ".codexhost", "release-cache", "node"),

@@ -54,7 +54,6 @@ import type {
   OfficialAppServerConnection,
   OfficialAppServerExit,
 } from "../src/official-app-server-connection.js";
-import type { HostUpdateCoordinator } from "../src/update-coordinator.js";
 
 class FakeOfficialProcess extends EventEmitter {
   readonly stdin = new PassThrough();
@@ -304,7 +303,6 @@ function createFixture(
     officialExitsOnInputEnd?: boolean;
     createOfficialConnection?: () =>
       OfficialAppServerConnection | Promise<OfficialAppServerConnection>;
-    updateCoordinator?: HostUpdateCoordinator;
     accountControl?: CodexAccountControl;
     officialRuntimeScope?: OfficialRuntimeScope;
     onDelegationApi?: (api: DelegationControlRegistration) => (() => void) | undefined;
@@ -357,7 +355,6 @@ function createFixture(
           },
         }
       : {}),
-    ...(options.updateCoordinator ? { updateCoordinator: options.updateCoordinator } : {}),
     ...(options.accountControl ? { accountControl: options.accountControl } : {}),
     ...(options.officialRuntimeScope ? { officialRuntimeScope: options.officialRuntimeScope } : {}),
     ...(options.onDelegationApi ? { onDelegationApi: options.onDelegationApi } : {}),
@@ -2696,80 +2693,15 @@ describe("AppServerHost HarnessAdapter projection", () => {
     }
   });
 
-  it("routes fixed update controls locally without requesting Desktop quit", async () => {
-    const updateCoordinator: HostUpdateCoordinator = {
-      check: vi.fn(async () => ({
-        currentVersion: "1.2.2",
-        installation: "npm" as const,
-        latestVersion: "1.2.3",
-        updateAvailable: true,
-        installationAvailable: true,
-        releaseNotes: "Safer updates",
-        releaseNotesUrl: "https://github.com/BytePioneer-AI/codex-host/releases/tag/v1.2.3",
-        status: null,
-        error: null,
-      })),
-      start: vi.fn(async () => ({
-        status: {
-          version: "1.2.3",
-          installation: "npm" as const,
-          phase: "prepared" as const,
-          updatedAt: 10,
-          error: null,
-        },
-      })),
-      status: vi.fn(async () => ({ status: null })),
-    };
-    const fixture = createFixture({ updateCoordinator });
-
-    writeRequest(fixture.desktopInput, {
-      id: 20,
-      method: "codexhost/update/check",
-      params: {},
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 20)),
-    ).resolves.toMatchObject({ result: { latestVersion: "1.2.3", updateAvailable: true } });
-
-    writeRequest(fixture.desktopInput, {
-      id: 21,
-      method: "codexhost/update/start",
-      params: {},
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 21)),
-    ).resolves.toMatchObject({ result: { status: { phase: "prepared" } } });
-    expect(updateCoordinator.start).toHaveBeenCalledOnce();
-    await stopFixture(fixture);
-  });
-
-  it("rejects privileged update params and unavailable composition", async () => {
+  it("answers the remote Host update-status discriminator locally", async () => {
     const fixture = createFixture();
-    writeRequest(fixture.desktopInput, {
-      id: 22,
-      method: "codexhost/update/start",
-      params: { url: "https://example.com/update.exe" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 22)),
-    ).resolves.toMatchObject({ error: { code: -32602 } });
-
     writeRequest(fixture.desktopInput, {
       id: 24,
       method: "codexhost/update/status",
-      params: null,
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 24)),
-    ).resolves.toMatchObject({ error: { code: -32602 } });
-
-    writeRequest(fixture.desktopInput, {
-      id: 23,
-      method: "codexhost/update/check",
       params: {},
     });
     await expect(
-      fixture.collector.waitFor((message) => requestId(message, 23)),
+      fixture.collector.waitFor((message) => requestId(message, 24)),
     ).resolves.toMatchObject({ error: { code: -32090 } });
     await stopFixture(fixture);
   });
