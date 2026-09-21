@@ -9,6 +9,7 @@ import {
   NativeSelectionStore,
   effortForThinkingOption,
   injectedItemsText,
+  modelFamilyVersion,
   nativePermissionLevel,
   nativePermissionResponse,
   nativePlanMode,
@@ -60,6 +61,59 @@ describe("native Model picker projection", () => {
     ]);
     // A Model without a displayable effort still advertises one so the picker stays valid.
     expect(haiku).toMatchObject({ displayName: "Claude Haiku", defaultReasoningEffort: "medium" });
+  });
+
+  it("reads family and version from resolved Model ids without a Model table", () => {
+    expect(modelFamilyVersion("claude-fable-5-1", "Fable")).toEqual({
+      family: "Fable",
+      version: "5.1",
+    });
+    expect(modelFamilyVersion("claude-haiku-4-5-20251001", "Haiku")?.version).toBe("4.5");
+    expect(modelFamilyVersion("claude-opus-5[1m]", "Opus")?.version).toBe("5");
+    expect(modelFamilyVersion("claude-3-5-sonnet-20241022", "Sonnet")?.version).toBe("3.5");
+    expect(modelFamilyVersion("gpt-5.5", "gpt")?.version).toBe("5.5");
+    // A future release needs no code change.
+    expect(modelFamilyVersion("claude-opus-7-2-20290101", "Opus")?.version).toBe("7.2");
+    // An alias is resolved to the family its id names.
+    expect(modelFamilyVersion("claude-opus-5[1m]", "Default")).toBeUndefined();
+    expect(modelFamilyVersion("claude-opus-5[1m]")).toEqual({ family: "Opus", version: "5" });
+    expect(modelFamilyVersion("claude-3-5-sonnet-20241022")).toEqual({
+      family: "Sonnet",
+      version: "3.5",
+    });
+    expect(modelFamilyVersion("claude-sonnet-20250101", "Sonnet")).toBeUndefined();
+    expect(modelFamilyVersion("custom-model")).toBeUndefined();
+  });
+
+  it("adds the resolved version to picker names", () => {
+    const entries = projectNativeModels({
+      harnessName: "Claude Code",
+      catalog: harnessModelCatalogSchema.parse({
+        models: [
+          {
+            ref: { id: "d" },
+            label: "Default (recommended)",
+            resolvedModelLabel: "claude-opus-5[1m]",
+          },
+          { ref: { id: "f" }, label: "Fable", resolvedModelLabel: "claude-fable-5-1" },
+          { ref: { id: "h" }, label: "Haiku", resolvedModelLabel: "claude-haiku-4-5-20251001" },
+          { ref: { id: "o" }, label: "Opus (1M context)", resolvedModelLabel: "claude-opus-5[1m]" },
+          { ref: { id: "s" }, label: "Sonnet", resolvedModelLabel: "claude-sonnet-5" },
+          { ref: { id: "x" }, label: "Custom" },
+        ],
+        thinkingOptions: [{ id: "auto", label: "Auto" }],
+        defaultThinkingOptionId: "auto",
+      }),
+      routeId: (model) => `codexhost/claude-code-native@${model.ref.id}`,
+    });
+    expect(entries.map((entry) => entry.displayName)).toEqual([
+      "Default (Opus 5)",
+      "Fable 5.1",
+      "Haiku 4.5",
+      "Opus 5",
+      "Sonnet 5",
+      "Custom",
+    ]);
   });
 
   it("names Models by their bare name unless that would be ambiguous", () => {

@@ -41,22 +41,83 @@ function modelEfforts(model: HarnessModel, catalog: HarnessModelCatalog): string
   return NATIVE_EFFORTS.filter((effort) => supported.has(effort));
 }
 
+const VERSION_TOKEN = /^\d{1,2}(?:\.\d{1,2})?$/u;
+const FAMILY_TOKEN = /^[a-z][a-z0-9]*$/u;
+
 /**
- * Picker names are the bare Model name ("Opus", "Sonnet"): trailing qualifiers such as
- * "(recommended)" or "(1M context)" are dropped. A Model keeps its full label when the short
- * name would be empty or shared with another Model.
+ * Read a Model family and version out of a resolved Model id, without a table of known Models:
+ * `claude-fable-5-1` -> Fable 5.1, `claude-haiku-4-5-20251001` -> Haiku 4.5 (dates and
+ * bracketed suffixes such as `[1m]` are not versions), `claude-3-5-sonnet-...` -> Sonnet 3.5.
+ * With `family`, only that family's version is read.
+ */
+export function modelFamilyVersion(
+  resolvedModelId: string,
+  family?: string,
+): { family: string; version: string } | undefined {
+  const tokens = resolvedModelId
+    .toLowerCase()
+    .replace(/\[[^\]]*\]/gu, "")
+    .split(/[-_\s]+/u)
+    .filter(Boolean);
+  const run = (from: number, step: 1 | -1): string[] => {
+    const found: string[] = [];
+    for (
+      let i = from;
+      i >= 0 && i < tokens.length && VERSION_TOKEN.test(tokens[i] ?? "");
+      i += step
+    )
+      found.push(tokens[i] as string);
+    return step === 1 ? found : found.reverse();
+  };
+  const versionAround = (index: number): string => {
+    const after = run(index + 1, 1);
+    return (after.length > 0 ? after : run(index - 1, -1)).join(".");
+  };
+  if (family !== undefined) {
+    const index = tokens.indexOf(family.toLowerCase());
+    const version = index >= 0 ? versionAround(index) : "";
+    return version ? { family, version } : undefined;
+  }
+  // Without a known family: the name next to the first version run, skipping the vendor token.
+  const start = tokens.findIndex((token) => VERSION_TOKEN.test(token));
+  if (start < 0) return undefined;
+  const length = run(start, 1).length;
+  const index = start - 1 > 0 ? start - 1 : start + length;
+  const name = tokens[index];
+  if (!name || !FAMILY_TOKEN.test(name)) return undefined;
+  const version = versionAround(index);
+  return version
+    ? { family: `${name.charAt(0).toUpperCase()}${name.slice(1)}`, version }
+    : undefined;
+}
+
+/**
+ * Picker names are the bare Model name with the version its resolved id carries: "Opus 5",
+ * "Fable 5.1". Trailing qualifiers such as "(recommended)" or "(1M context)" are dropped. An
+ * alias whose name is not a family ("Default") shows what it resolves to: "Default (Opus 5)".
+ * A Model keeps its full label when the result would be empty or shared with another Model.
  */
 function shortModelNames(models: readonly HarnessModel[]): Map<HarnessModel, string> {
-  const short = (label: string) => label.replace(/(?:\s*\([^()]*\))+\s*$/u, "").trim();
+  const name = (model: HarnessModel): string => {
+    const short = model.label.replace(/(?:\s*\([^()]*\))+\s*$/u, "").trim();
+    if (!short || !model.resolvedModelLabel) return short;
+    const own = modelFamilyVersion(model.resolvedModelLabel, short);
+    if (own) return `${short} ${own.version}`;
+    const target = modelFamilyVersion(model.resolvedModelLabel);
+    return target ? `${short} (${target.family} ${target.version})` : short;
+  };
   const counts = new Map<string, number>();
   for (const model of models) {
-    const name = short(model.label).toLowerCase();
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const key = name(model).toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return new Map(
     models.map((model) => {
-      const name = short(model.label);
-      return [model, name && counts.get(name.toLowerCase()) === 1 ? name : model.label];
+      const candidate = name(model);
+      return [
+        model,
+        candidate && counts.get(candidate.toLowerCase()) === 1 ? candidate : model.label,
+      ];
     }),
   );
 }
