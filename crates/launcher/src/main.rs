@@ -931,10 +931,11 @@ fn desktop_environment(
     if env::var_os(STARTUP_TRACE_ENV).as_deref() == Some(std::ffi::OsStr::new("1")) {
         environment.push((OsString::from(STARTUP_TRACE_ENV), OsString::from("1")));
     }
+    // Native app tools are on by default; only the explicit opt-out has to reach the Shim.
     if cfg!(target_os = "macos")
-        && env::var_os("CODEXHOST_NATIVE_APP_TOOLS").as_deref() == Some(std::ffi::OsStr::new("1"))
+        && env::var_os("CODEXHOST_NATIVE_APP_TOOLS").as_deref() == Some(std::ffi::OsStr::new("0"))
     {
-        environment.push(("CODEXHOST_NATIVE_APP_TOOLS".into(), "1".into()));
+        environment.push(("CODEXHOST_NATIVE_APP_TOOLS".into(), "0".into()));
     }
     environment.extend(npm_update_runtime_environment(env::vars_os()));
     environment.extend(desktop_path_overrides::forwarded(env::vars_os()));

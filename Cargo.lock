@@ -83,14 +83,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codexhost-gate-a-native"
-version = "0.9.1"
-dependencies = [
- "codexhost-platform",
- "codexhost-shim",
-]
-
-[[package]]
 name = "codexhost-launcher"
 version = "0.9.1"
 dependencies = [

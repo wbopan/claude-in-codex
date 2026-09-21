@@ -26,7 +26,8 @@ fn shim(root: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_codexhost-shim"));
     command
         .arg("app-server")
-        .env("CODEXHOST_NATIVE_APP_TOOLS", "1")
+        // Unset on purpose: the native parent topology is the macOS default.
+        .env_remove("CODEXHOST_NATIVE_APP_TOOLS")
         .env("CODEXHOST_STOCK_CODEX_PATH", root.join("stock"))
         .env("CODEXHOST_HOST_NODE_PATH", root.join("host"))
         .env("CODEXHOST_HOST_RUNTIME_PATH", root.join("runtime"))

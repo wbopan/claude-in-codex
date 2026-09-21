@@ -44,7 +44,8 @@ export function debugEnvironment(environment, instance) {
     // entry. An explicit ~/.claude path selects a different, hashed Keychain entry.
     CLAUDE_SECURESTORAGE_CONFIG_DIR: environment.CLAUDE_SECURESTORAGE_CONFIG_DIR ?? "",
     CODEXHOST_STARTUP_TRACE: "1",
-    ...(environment.CODEXHOST_NATIVE_APP_TOOLS === "1" ? { CODEXHOST_NATIVE_APP_TOOLS: "1" } : {}),
+    // On by default in the Shim; only the explicit opt-out is forwarded.
+    ...(environment.CODEXHOST_NATIVE_APP_TOOLS === "0" ? { CODEXHOST_NATIVE_APP_TOOLS: "0" } : {}),
   };
 }
 

@@ -860,8 +860,10 @@ pub fn run_proxy_with_observer(
         && !is_managed_remote_listener(arguments)
         && env::var_os(DATA_DIRECTORY_ENV).is_some();
     #[cfg(target_os = "macos")]
+    // Default on macOS: the signed official CLI must own its native MCP children, otherwise the
+    // peer code-signing check rejects codex_app and cua_repl. `=0` restores the proxy topology.
     if local_host_runtime
-        && env::var_os("CODEXHOST_NATIVE_APP_TOOLS").as_deref() == Some(OsStr::new("1"))
+        && env::var_os("CODEXHOST_NATIVE_APP_TOOLS").as_deref() != Some(OsStr::new("0"))
     {
         let command = child_command(arguments, &current_executable, &stock_codex_path, false)?;
         return desktop_native_parent::run(command, &stock_codex_path);

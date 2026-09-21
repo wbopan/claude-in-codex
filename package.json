@@ -27,6 +27,7 @@
     "test:rust": "cargo test --workspace --locked --features codexhost-shim/test-utils",
     "test": "npm run test:typescript && npm run test:rust",
     "format": "prettier --write . && cargo fmt --all",
+    "test:rust": "bash tools/fork/with-toolchain.sh cargo test --workspace --features codexhost-shim/test-utils",
     "debug:build": "bash tools/fork/with-toolchain.sh node tools/fork/build.mjs --debug",
     "debug:start": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs start",
     "debug:restart": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs restart",

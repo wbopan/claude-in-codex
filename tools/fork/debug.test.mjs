@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import { debugEnvironment } from "./debug.mjs";
 
 describe("independent debug environment", () => {
-  it("enables the native App Tools launch topology only on explicit opt-in", () => {
+  it("leaves native App Tools on by default and forwards only the explicit opt-out", () => {
     expect(debugEnvironment({}, "/private/debug").CODEXHOST_NATIVE_APP_TOOLS).toBeUndefined();
     expect(
       debugEnvironment({ CODEXHOST_NATIVE_APP_TOOLS: "1" }, "/private/debug")
         .CODEXHOST_NATIVE_APP_TOOLS,
-    ).toBe("1");
+    ).toBeUndefined();
+    expect(
+      debugEnvironment({ CODEXHOST_NATIVE_APP_TOOLS: "0" }, "/private/debug")
+        .CODEXHOST_NATIVE_APP_TOOLS,
+    ).toBe("0");
   });
   it("removes inherited task identity and state while retaining the real user home", () => {
     const env = debugEnvironment(

@@ -118,6 +118,8 @@ fn run_orphan_shim_launcher() -> bool {
     let mut command = Command::new(shim_path);
     command
         .args(["app-server", "--stdio"])
+        // This fixture plays a Desktop for the proxy topology (the `=0` fallback on macOS).
+        .env("CODEXHOST_NATIVE_APP_TOOLS", "0")
         .env_remove("FAKE_CODEX_ORPHAN_SHIM")
         .env_remove("FAKE_CODEX_ORPHAN_RUNTIME")
         .env_remove("FAKE_CODEX_ORPHAN_DATA_DIR")
@@ -224,6 +226,8 @@ fn main() {
                 .unwrap_or_else(|| env::current_exe().expect("fake helper executable"))
         });
         command.args(&arguments);
+        // This fixture plays a Desktop for the proxy topology (the `=0` fallback on macOS).
+        command.env("CODEXHOST_NATIVE_APP_TOOLS", "0");
         command.env_remove("FAKE_CODEX_WAIT_FOR_REPARENT");
         if depth == 0 {
             command.env_remove("FAKE_CODEX_HELPER_SHIM");

@@ -102,7 +102,7 @@ pub(super) fn wait_for_host_chain(
     while started.elapsed() < timeout {
         let native_parent = cfg!(target_os = "macos")
             && std::env::var_os("CODEXHOST_NATIVE_APP_TOOLS").as_deref()
-                == Some(std::ffi::OsStr::new("1"));
+                != Some(std::ffi::OsStr::new("0"));
         let entry = if native_parent {
             stock_codex
         } else {
