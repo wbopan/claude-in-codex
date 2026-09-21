@@ -18,7 +18,6 @@ import { MappingStore } from "@codexhost/mapping-store";
 import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
   encodeClaudeTransportModel,
-  encodePiTransportModel,
   type ExternalHarnessId,
   type JsonObject,
 } from "@codexhost/protocol-core";
@@ -27,14 +26,12 @@ import {
   harnessPluginRouteSchema,
   harnessCommandDescriptorSchema,
   harnessIdSchema,
-  harnessModelRefSchema,
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
   hostItemIdSchema,
   hostThreadIdSchema,
   hostTurnIdSchema,
-  type CodexAccountListResult,
 } from "@codexhost/shared-contracts";
 
 import { AppServerHost } from "../src/app-server-host.js";
@@ -48,6 +45,13 @@ import type {
   OfficialAppServerConnection,
   OfficialAppServerExit,
 } from "../src/official-app-server-connection.js";
+
+import {
+  transportModelIdForHarness,
+  encodeExternalTransportSelection,
+} from "@codexhost/protocol-core";
+
+const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
 
 class FakeOfficialProcess extends EventEmitter {
   readonly stdin = new PassThrough();
@@ -219,26 +223,6 @@ class ResumeStateRollbackAdapter extends FakeHarnessAdapter {
   }
 }
 
-class WebUiHarnessAdapter extends FakeHarnessAdapter {
-  openCalls = 0;
-  failureMessage: string | undefined;
-  readonly webUi = {
-    open: async (): Promise<HarnessResult<void>> => {
-      this.openCalls += 1;
-      return this.failureMessage
-        ? {
-            ok: false,
-            error: {
-              code: "unavailable",
-              message: this.failureMessage,
-              retryable: true,
-            },
-          }
-        : { ok: true, value: undefined };
-    },
-  };
-}
-
 function createFixture(
   options: {
     environment?: NodeJS.ProcessEnv;
@@ -350,7 +334,7 @@ async function startExternalThread(
 
 async function startPiThread(
   fixture: ReturnType<typeof createFixture>,
-  model = "codexhost/pi-native",
+  model = PI_NATIVE_TRANSPORT_MODEL_ID,
 ): Promise<string> {
   return startExternalThread(fixture, model);
 }
@@ -1011,7 +995,7 @@ describe("AppServerHost installed Harness plugins", () => {
             harnessId: harnessIdSchema.parse("pi"),
             cwd: "/synthetic",
             title: "Persisted",
-            transportModelId: "codexhost/pi-native",
+            transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
             ephemeral: false,
             historyMode: "legacy",
           });
@@ -1032,7 +1016,7 @@ describe("AppServerHost installed Harness plugins", () => {
           method: requestMethod,
           params:
             requestMethod === "thread/start"
-              ? { model: "codexhost/pi-native", cwd: "/synthetic" }
+              ? { model: PI_NATIVE_TRANSPORT_MODEL_ID, cwd: "/synthetic" }
               : { threadId: "persisted-thread" },
         });
         await opened.promise;
@@ -3107,7 +3091,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       createRequestId: "unregistered-create",
       harnessId: harnessIdSchema.parse("pi"),
       cwd: "/synthetic",
-      transportModelId: "codexhost/pi-native",
+      transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
       ephemeral: false,
       historyMode: "legacy",
     });
@@ -3217,7 +3201,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       id: 1,
       method: "thread/start",
       params: {
-        model: "codexhost/pi-native",
+        model: PI_NATIVE_TRANSPORT_MODEL_ID,
         cwd: "/synthetic",
         ephemeral: false,
         historyMode: "legacy",
@@ -3242,7 +3226,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       id: 2,
       method: "thread/start",
       params: {
-        model: "codexhost/pi-native",
+        model: PI_NATIVE_TRANSPORT_MODEL_ID,
         cwd: "/synthetic",
         ephemeral: true,
         historyMode: "paginated",
@@ -3266,7 +3250,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       id: 10,
       method: "thread/start",
       params: {
-        model: "codexhost/pi-native",
+        model: PI_NATIVE_TRANSPORT_MODEL_ID,
         cwd: "/synthetic",
         historyMode: "paginated",
       },
@@ -3381,7 +3365,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     if (!model) throw new Error("Fake catalog has no secondary Model");
     const low = fixture.adapter.catalog.thinkingOptions.find(({ id }) => id === "low")?.id;
     if (!low) throw new Error("Fake catalog has no Low Thinking option");
-    const carrier = encodePiTransportModel(model, low);
+    const carrier = encodeExternalTransportSelection("pi", { model: model, thinkingOptionId: low });
     const threadId = await startPiThread(fixture, carrier);
 
     expect(fixture.adapter.sessions[0]?.initialState).toMatchObject({
@@ -3391,7 +3375,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
     // The response names the picker entry; Thinking travels as the official reasoning effort.
     expect(
       fixture.collector.messages.find((message) => requestId(message, 1))?.result,
-    ).toMatchObject({ model: encodePiTransportModel(model), reasoningEffort: "low" });
+    ).toMatchObject({
+      model: encodeExternalTransportSelection("pi", { model: model }),
+      reasoningEffort: "low",
+    });
     writeRequest(fixture.desktopInput, {
       id: 33,
       method: "turn/start",
@@ -3408,7 +3395,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("rejects malformed selected Pi carriers without forwarding or stopping Host", async () => {
+  it("rejects malformed selected plugin carriers without forwarding or stopping Host", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
@@ -3416,12 +3403,12 @@ describe("AppServerHost HarnessAdapter projection", () => {
     writeRequest(fixture.desktopInput, {
       id: 34,
       method: "thread/start",
-      params: { model: "codexhost/pi-native@provider/model", cwd: "/synthetic" },
+      params: { model: `${PI_NATIVE_TRANSPORT_MODEL_ID}ff`, cwd: "/synthetic" },
     });
     await expect(
       fixture.collector.waitFor((message) => requestId(message, 34)),
     ).resolves.toMatchObject({
-      error: { code: -32602, message: expect.stringContaining("Model Ref") },
+      error: { code: -32602, message: expect.stringContaining("Harness plugin route") },
     });
     expect(fixture.adapter.sessions).toHaveLength(0);
     expect(officialWrite).not.toHaveBeenCalled();
@@ -3839,7 +3826,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         ["claude-code", claudeAdapter],
       ]),
     });
-    const piThreadId = await startExternalThread(fixture, "codexhost/pi-native", 10);
+    const piThreadId = await startExternalThread(fixture, PI_NATIVE_TRANSPORT_MODEL_ID, 10);
     const claudeThreadId = await startExternalThread(
       fixture,
       CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
@@ -3887,7 +3874,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         ["claude-code", claudeAdapter],
       ]),
     });
-    const piThreadId = await startExternalThread(fixture, "codexhost/pi-native", 60);
+    const piThreadId = await startExternalThread(fixture, PI_NATIVE_TRANSPORT_MODEL_ID, 60);
     const claudeThreadId = await startExternalThread(
       fixture,
       CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
@@ -4282,7 +4269,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
-    const threadId = await startExternalThread(fixture, "codexhost/pi-native", 1, {
+    const threadId = await startExternalThread(fixture, PI_NATIVE_TRANSPORT_MODEL_ID, 1, {
       historyMode: "paginated",
     });
     const firstTurnId = await completePiTurn(fixture, threadId, 2);
@@ -4313,7 +4300,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   it("rejects a stale paginated Revert boundary without changing history", async () => {
     const adapter = rollbackCapableAdapter();
     const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
-    const threadId = await startExternalThread(fixture, "codexhost/pi-native", 1, {
+    const threadId = await startExternalThread(fixture, PI_NATIVE_TRANSPORT_MODEL_ID, 1, {
       historyMode: "paginated",
     });
     await completePiTurn(fixture, threadId, 2);
@@ -4602,7 +4589,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       harnessId: adapter.harnessId,
       cwd: "/persisted",
       title: "Before",
-      transportModelId: "codexhost/pi-native",
+      transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
       ephemeral: false,
       historyMode: "paginated",
     });
@@ -4687,7 +4674,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       harnessId: adapter.harnessId,
       cwd: "/persisted",
       title: "Persisted Pi",
-      transportModelId: "codexhost/pi-native",
+      transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
       ephemeral: false,
       historyMode: "legacy",
     });
@@ -4777,7 +4764,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     ).resolves.toMatchObject({
       result: {
         thread: { id: threadId, turns: [{ id: persistedTurnId }] },
-        model: "codexhost/pi-native@fake-model-v1.secondary",
+        model: encodeExternalTransportSelection("pi", { model: { id: "fake-model-v1.secondary" } }),
         initialTurnsPage: null,
       },
     });
@@ -5991,7 +5978,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
       10,
     );
-    const piThreadId = await startExternalThread(fixture, "codexhost/pi-native", 11);
+    const piThreadId = await startExternalThread(fixture, PI_NATIVE_TRANSPORT_MODEL_ID, 11);
     expect(claudeThreadId).not.toBe(piThreadId);
     expect(claudeAdapter.sessions).toHaveLength(1);
     expect(piAdapter.sessions).toHaveLength(1);
@@ -6059,7 +6046,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       method: "turn/start",
       params: {
         threadId: secondThreadId,
-        model: encodePiTransportModel(piAdapter.catalog.defaultModel),
+        model: encodeExternalTransportSelection("pi", { model: piAdapter.catalog.defaultModel }),
         input: [{ type: "text", text: "foreign" }],
       },
     });

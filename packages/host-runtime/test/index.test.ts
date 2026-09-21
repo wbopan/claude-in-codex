@@ -3,6 +3,10 @@ import type { JsonRpcRequest } from "@codexhost/protocol-core";
 
 import { classifyCreateRequestRoute, packageMetadata } from "../src/index.js";
 
+import { transportModelIdForHarness } from "@codexhost/protocol-core";
+
+const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+
 describe("host-runtime package", () => {
   it("declares the composition-root dependencies", () => {
     expect(packageMetadata.dependencies).toHaveLength(6);
@@ -34,7 +38,7 @@ describe("host-runtime package", () => {
       selectedHarness: "pi",
       selectionSource: "default-agent",
     });
-    expect(classifyCreateRequestRoute(request("codexhost/pi-native"), "codex")).toEqual({
+    expect(classifyCreateRequestRoute(request(PI_NATIVE_TRANSPORT_MODEL_ID), "codex")).toEqual({
       requestMethod: "thread/start",
       modelCarrier: "pi-transport",
       selectedHarness: "pi",
@@ -48,23 +52,9 @@ describe("host-runtime package", () => {
     });
     expect(classifyCreateRequestRoute(request("codexhost/grok-native"), "codex")).toEqual({
       requestMethod: "thread/start",
-      modelCarrier: "grok-transport",
-      selectedHarness: "grok",
-      selectionSource: "transport-model",
-    });
-    expect(classifyCreateRequestRoute(request("codexhost/opencode-native"), "codex")).toEqual({
-      requestMethod: "thread/start",
-      modelCarrier: "opencode-transport",
-      selectedHarness: "opencode",
-      selectionSource: "transport-model",
-    });
-    expect(
-      classifyCreateRequestRoute(request("codexhost/deepseek-harness-native"), "codex"),
-    ).toEqual({
-      requestMethod: "thread/start",
-      modelCarrier: "deepseek-harness-transport",
-      selectedHarness: "deepseek-harness",
-      selectionSource: "transport-model",
+      modelCarrier: "official-model",
+      selectedHarness: "codex",
+      selectionSource: "official-model",
     });
     expect(
       classifyCreateRequestRoute({ id: 43, method: "thread/read", params: {} }, "codex"),

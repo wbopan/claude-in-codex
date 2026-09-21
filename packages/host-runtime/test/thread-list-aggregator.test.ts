@@ -17,6 +17,10 @@ import {
   officialThreadListPageFromResponse,
 } from "../src/thread-list-aggregator.js";
 
+import { transportModelIdForHarness } from "@codexhost/protocol-core";
+
+const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+
 const harnessId = harnessIdSchema.parse("pi");
 
 function external(id: string, timestamp: number): StoredThreadRecordV1 {
@@ -37,7 +41,7 @@ function external(id: string, timestamp: number): StoredThreadRecordV1 {
     cwd: "/workspace",
     title: id,
     archived: false,
-    transportModelId: "codexhost/pi-native",
+    transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
     ephemeral: false,
     historyMode: "legacy",
     turnMappings: [],

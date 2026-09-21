@@ -20,6 +20,10 @@ import { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { executeExternalThreadRollback } from "../src/external-thread-rollback.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
 
+import { transportModelIdForHarness } from "@codexhost/protocol-core";
+
+const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+
 const harnessId = harnessIdSchema.parse("pi");
 
 function snapshot(sessionId: string, count: number): HostThreadSnapshot {
@@ -85,7 +89,7 @@ describe.each(["last-Turn", "Fork-derived"] as const)("%s rollback preparation",
           createRequestId: `create-${id}`,
           harnessId,
           cwd: "/synthetic",
-          transportModelId: "codexhost/pi-native",
+          transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
           ephemeral: false,
           historyMode: "paginated",
           ...(id === "target"

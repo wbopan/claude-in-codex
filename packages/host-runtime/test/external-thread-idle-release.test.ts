@@ -6,6 +6,10 @@ import { DesktopRequestQueue } from "../src/desktop-request-queue.js";
 import type { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
 
+import { transportModelIdForHarness } from "@codexhost/protocol-core";
+
+const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+
 const MINUTE = 60_000;
 function deferred() {
   let resolve!: () => void;
@@ -34,7 +38,7 @@ async function fixture() {
     cwd: "/synthetic",
     title: "Idle",
     archived: false,
-    transportModelId: "codexhost/pi-native",
+    transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
     ephemeral: false,
     historyMode: "legacy",
     turnMappings: [],

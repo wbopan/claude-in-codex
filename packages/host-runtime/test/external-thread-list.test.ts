@@ -14,6 +14,10 @@ import {
   resolveExternalSessionTreeIds,
 } from "../src/external-thread-list.js";
 
+import { transportModelIdForHarness } from "@codexhost/protocol-core";
+
+const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+
 const harnessId = harnessIdSchema.parse("pi");
 
 function record(id: string, input: Partial<StoredThreadRecordV1> = {}): StoredThreadRecordV1 {
@@ -33,7 +37,7 @@ function record(id: string, input: Partial<StoredThreadRecordV1> = {}): StoredTh
     cwd: "/workspace",
     title: `Title ${id}`,
     archived: false,
-    transportModelId: "codexhost/pi-native",
+    transportModelId: PI_NATIVE_TRANSPORT_MODEL_ID,
     ephemeral: false,
     historyMode: "legacy",
     turnMappings: [],
