@@ -576,6 +576,48 @@ describe("Codex UI projector", () => {
     ]);
   });
 
+  it("keeps a background Agent running when its delegation Item completes", () => {
+    const value = projector();
+    const delegationId = itemId("delegation-background");
+    // The Agent tool returns `async_launched` immediately, so the Item completes
+    // while the Agent itself keeps running until its later task notification.
+    const launched: HostSubagentDelegationItem = {
+      type: "subagentDelegation",
+      itemId: delegationId,
+      operation: "spawn",
+      subagents: [
+        {
+          subagentId: "claude-background-1",
+          description: "Run long tick script",
+          background: true,
+          status: "running",
+        },
+      ],
+    };
+    value.project({ type: "turn.started", turnId });
+    value.project({ type: "item.started", turnId, item: launched });
+    expect(
+      value.project({
+        type: "item.completed",
+        turnId,
+        snapshot: { item: launched, outcome: { status: "succeeded" } },
+      }).messages,
+    ).toMatchObject([
+      {
+        method: "item/completed",
+        params: {
+          item: {
+            type: "collabAgentToolCall",
+            status: "completed",
+            agentsStates: {
+              "claude-background-1": { status: "running", message: null },
+            },
+          },
+        },
+      },
+    ]);
+  });
+
   it.each([
     { configurations: [{}], expected: { model: null, reasoningEffort: null } },
     { configurations: [], expected: { model: null, reasoningEffort: null } },
