@@ -56,10 +56,42 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
 - [ ] J. Usage chip (bonus). Not started; there is no native seam, the renderer reads only
       `rateLimitsByLimitId.codex`, so this needs a one-way CDP overlay.
 
+## Carve phase (branch `carve`, 2026-09-21)
+
+Eleven commits on top of `main`; 158 files changed, 586 insertions, 27,693 deletions. After each
+step `tsc -b` was clean and both suites were green; nothing was committed that was not green.
+
+Removed: the self-update surface (`packages/update-manager`, `crates/updater`), the pairing-code
+Remote Control bridge, cross-harness delegation, session and credential import, renderer injection
+in the Desktop Controller, the injected-renderer `codexhost/*` Thread/Harness/Account JSON-RPC
+surface, the legacy per-harness transport codecs (Pi, DeepSeek, OpenCode, Grok, OMP, Antigravity),
+the Pi harness launch surface, and Windows support (Rust `windows_*` modules, the `codexhost-start`
+and `codexhost-node-repl` binaries, `winresource`/`windows` crate dependencies, the Inno Setup
+installer and `package.ps1`, the `windows-x64`/`windows-arm64` release targets). macOS and Linux
+remain.
+
+Kept deliberately, although the carve looked like it could take them:
+
+- The SSH remote Host in full: `remote-app-server.ts`, `remote-host-cli.ts`, `remote-host-install.ts`,
+  `remote-host-lifecycle.ts`, `remote-official-app-server.ts`, `remote-official-connection.ts`,
+  `remote-socket-lock.ts`, the remote branch of `run-host-runtime.ts`, the shim/launcher paths that
+  recognise `app-server --listen unix://` and `app-server proxy`, and the macOS LaunchAgent harness
+  broker (`packages/harness-broker`, `aqua-harness-broker.ts`). Protocol-verified on 2026-09-21
+  (see below); not yet verified from a real Desktop SSH workspace.
+- `codexhost/settings/idle-release/set`, `codexhost/sessions/loaded/list` and
+  `codexhost/harness/launch-settings/get|set`: they look like injected-renderer RPCs but are the
+  only way to enable idle release and to record the Claude CLI install path.
+- `codexhost/update/status`: the SSH remote probe uses it as its discriminator.
+- `packages/desktop-control/src/cdp-client.ts` (used by `tools/acceptance/cdp.mjs`),
+  `controller-attachment-server.ts` and `release-main.ts`: the launcher hard-requires a controller
+  process, which is now passive and installs nothing.
+- `process.platform === "win32"` guards inside kept TypeScript (claude-code adapter, harness
+  broker, harness discovery, remote host, mapping store, `file-change-summary`). These are one-line
+  defensive branches threaded through keep-list code, so removing them is refactoring rather than
+  deletion; two of the files are owned by a parallel branch.
+
 ## Not done
 
-- Carve phase: multi-harness remnants, remote*, delegation*, update-manager/updater, session
-  import, accounts/settings and Windows code are still in the tree.
 - `turn_ended` after a cua_repl Turn is unit-tested; its live call is not in the trace yet.
 - The answer to the forwarded elicitation is not recorded in the trace.
 - The native parent topology holds no `LocalRuntimeLease`: there is no owner handoff when the
@@ -91,3 +123,15 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
   feature) and a shell without inherited `CODEXHOST_*` variables.
 - 2026-09-21: agent-started Turns read `toolOutput`; the Host refreshes Usage on Turn start,
   Turn completion and Thread open so the native context ring works; vitest 1435 passed.
+- 2026-09-21: carve phase on branch `carve`; vitest 1114 passed / 5 skipped, Rust 158 passed.
+  Re-verified live after the carve: picker lists official plus Claude Models, a text Turn and a
+  Bash Turn with the native approval card ("Claude Code" / "Bash") and command rendering, the
+  permission selector (`ask -> default`, `auto-review -> auto`), effort (`thinking.select high`
+  then `xhigh`), `cross-harness-rejected` with the native toast when a Claude Thread is pointed at
+  GPT-5.5, the context ring (`thread/tokenUsage/updated`), Thread resume across `debug:restart`,
+  a clean instance `config.toml`, and a catalogue of 44 codex_app tools plus cua_repl js/js_reset.
+- 2026-09-21: SSH remote Host verified at the protocol level with no installation: broker started
+  from the release bundle under `env -i` with temporary `CODEX_HOME`/`CODEXHOST_DATA_DIR`/
+  `CODEXHOST_HARNESS_BROKER_DIR`, `app-server --listen unix://` listener, WebSocket over the unix
+  socket, `initialize` + `initialized`, and `model/list` returning 10 entries of which 5 are
+  `codexhost/claude-code-native@claude-model-v1.*`.
