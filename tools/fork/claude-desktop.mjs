@@ -1,8 +1,5 @@
 import { copyFile, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { isDeepStrictEqual } from "node:util";
-
-const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 
 async function jsonFile(file) {
   try {
@@ -16,89 +13,60 @@ async function jsonFile(file) {
   }
 }
 
-// Reuse only the explicitly installed Desktop bridge. Credentials, other MCPs,
-// permission grants, production settings and task metadata are not imported.
-export async function configureClaudeDesktop(instance, home) {
-  const source = await jsonFile(path.join(home, ".claude.json"));
-  const registration = source.mcpServers?.codex_desktop;
-  if (!registration) return { configured: false };
-  const script = registration.args?.[0];
-  if (
-    registration.type !== "stdio" ||
-    registration.command !== "/usr/bin/python3" ||
-    !Array.isArray(registration.args) ||
-    registration.args.length !== 1 ||
-    typeof script !== "string" ||
-    !path.isAbsolute(script) ||
-    path.basename(script) !== "codex_desktop_mcp.py"
-  ) {
-    throw new Error("Unrecognized user codex_desktop bridge; debug configuration was not changed");
-  }
-  const directory = path.dirname(script);
-  for (const name of [
-    "codex_desktop_mcp.py",
-    "app_server_mcp.py",
-    "app_approval_policy.py",
-    "bridge_common.py",
-    "memory_hook.py",
-    "lifecycle_hook.py",
-  ]) {
-    if (!(await lstat(path.join(directory, name))).isFile())
-      throw new Error(`Missing Desktop bridge script: ${name}`);
-  }
+const BRIDGE_HOOK = /(?:^|[/'" ])lifecycle_hook\.py(?:['" ]|$)/u;
+
+/**
+ * The Host now owns `cua_repl` and `codex_app` (see official-desktop-tools.ts), so the external
+ * Python bridge is retired from the private debug Claude profile: its MCP registration, the
+ * owner override and its turn lifecycle hooks. Anything else in the profile is left untouched,
+ * and the user's standard Claude profile is never read or written.
+ */
+export async function retireClaudeDesktopBridge(instance) {
   const configPath = path.join(instance, "claude/.claude.json");
   const settingsPath = path.join(instance, "claude/settings.json");
   const config = await jsonFile(configPath);
   const settings = await jsonFile(settingsPath);
-  const desired = {
-    ...registration,
-    env: {
-      ...registration.env,
-      CODEX_HOME: path.join(instance, "codex"),
-      CODEX_DESKTOP_APP: path.join(instance, "app/ChatGPT.app"),
-    },
-  };
-  const existing = config.mcpServers?.codex_desktop;
-  if (existing && !isDeepStrictEqual(existing, desired))
-    throw new Error(
-      "Debug codex_desktop registration differs; existing configuration was retained",
-    );
   const originalConfig = JSON.stringify(config);
   const originalSettings = JSON.stringify(settings);
-  config.mcpServers ??= {};
-  config.mcpServers.codex_desktop = desired;
-  // The official app-server owns cua_repl so IAB receives a supported native peer.
-  // Keep an explicit debug override, including the direct owner for diagnostics.
-  settings.env ??= {};
-  settings.env.CODEXHOST_CUA_OWNER ??= "app-server";
-  settings.hooks ??= {};
-  for (const event of ["SessionStart", "Stop", "StopFailure", "SessionEnd"]) {
-    const memory = event === "SessionStart";
-    // The memory source is intentionally shared; the MCP runtime keeps debug CODEX_HOME.
-    const command =
-      (memory ? `/usr/bin/env ${quote(`CODEX_HOME=${path.join(home, ".codex")}`)} ` : "") +
-      `/usr/bin/python3 ${quote(path.join(directory, memory ? "memory_hook.py" : "lifecycle_hook.py"))}`;
-    const groups = (settings.hooks[event] ??= []);
-    if (!groups.some((group) => group.hooks?.some((hook) => hook.command === command)))
-      groups.push({ hooks: [{ type: "command", command, timeout: 5 }] });
+
+  if (config.mcpServers) {
+    delete config.mcpServers.codex_desktop;
+    if (Object.keys(config.mcpServers).length === 0) delete config.mcpServers;
   }
+  if (settings.env) {
+    delete settings.env.CODEXHOST_CUA_OWNER;
+    if (Object.keys(settings.env).length === 0) delete settings.env;
+  }
+  for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
+    if (!Array.isArray(groups)) continue;
+    const kept = groups
+      .map((group) =>
+        Array.isArray(group?.hooks)
+          ? {
+              ...group,
+              hooks: group.hooks.filter((hook) => !BRIDGE_HOOK.test(hook?.command ?? "")),
+            }
+          : group,
+      )
+      .filter((group) => !Array.isArray(group?.hooks) || group.hooks.length > 0);
+    if (kept.length > 0) settings.hooks[event] = kept;
+    else delete settings.hooks[event];
+  }
+  if (settings.hooks && Object.keys(settings.hooks).length === 0) delete settings.hooks;
+
   const changes = [
     [configPath, config, originalConfig],
     [settingsPath, settings, originalSettings],
   ].filter(([, data, original]) => JSON.stringify(data) !== original);
   if (changes.length) {
-    const backup = path.join(instance, "claude/backups", `desktop-bridge-${Date.now()}`);
+    const backup = path.join(instance, "claude/backups", `retire-desktop-bridge-${Date.now()}`);
     await mkdir(backup, { recursive: true, mode: 0o700 });
-    for (const [file] of changes) {
-      await copyFile(file, path.join(backup, path.basename(file))).catch((error) => {
-        if (error.code !== "ENOENT") throw error;
-      });
-    }
+    for (const [file] of changes) await copyFile(file, path.join(backup, path.basename(file)));
     for (const [file, data] of changes) {
-      const temporary = `${file}.desktop-bridge-${process.pid}`;
+      const temporary = `${file}.retire-bridge-${process.pid}`;
       await writeFile(temporary, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600, flag: "wx" });
       await rename(temporary, file);
     }
   }
-  return { configured: true, changed: changes.length > 0 };
+  return { changed: changes.length > 0 };
 }

@@ -7,12 +7,34 @@ import { OfficialRequestBroker } from "./official-request-broker.js";
 const object = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Reuse the native app-server's official codex_app MCP, including its native peer checks. */
+/**
+ * Official MCP servers exposed to an external Harness. `null` exposes every tool; a set names
+ * the tools the Harness may call. `cua_repl` keeps `turn_ended` for the Host's own lifecycle.
+ */
+const EXPOSED_SERVERS: ReadonlyMap<string, ReadonlySet<string> | null> = new Map([
+  ["codex_app", null],
+  ["cua_repl", new Set(["js", "js_reset"])],
+]);
+const CUA_SERVER = "cua_repl";
+const CUA_CLEANUP_TIMEOUT_MS = 5_000;
+
+export type DesktopTurnEnd = "Stop" | "Interrupt";
+
+/**
+ * Reuse the native app-server's official MCP servers (codex_app, cua_repl), including their
+ * native peer checks. Calls run in an ephemeral official context owned by this Host.
+ */
 interface DesktopToolOptions {
   scope: OfficialRuntimeScope;
   cwd: string;
   activeTurn(threadId: string): string | null;
   diagnose(error: unknown): void;
+  /** Standing consent configured by the user for a native app-access confirmation. */
+  appConsent?(params: JsonObject, contextThreadId: string): boolean;
+  /** Show a native MCP elicitation on the owning task and resolve with the Desktop's answer. */
+  elicit?(threadId: string, turnId: string, params: JsonObject): Promise<JsonObject>;
+  /** Sanitized acceptance trace: names and outcomes only, never arguments or results. */
+  trace?(event: JsonObject): void;
 }
 
 export class OfficialDesktopTools {
@@ -22,7 +44,7 @@ export class OfficialDesktopTools {
     let session: OfficialDesktopToolSession | undefined;
     const tools = () => {
       if (!session) {
-        const created = new OfficialDesktopToolSession({ ...this.options, cwd }, () =>
+        const created = new OfficialDesktopToolSession({ ...this.options, cwd }, threadId, () =>
           this.#sessions.delete(created),
         );
         session = created;
@@ -36,6 +58,11 @@ export class OfficialDesktopTools {
       close: () => session?.close(),
     };
   }
+  /** Release Desktop resources (Computer Use, browser) a finished Turn may still hold. */
+  turnEnded(threadId: string, turnId: string, event: DesktopTurnEnd): void {
+    for (const session of this.#sessions)
+      if (session.threadId === threadId) void session.turnEnded(turnId, event);
+  }
   close(): void {
     for (const session of this.#sessions) session.close();
   }
@@ -46,6 +73,8 @@ class OfficialDesktopToolSession {
   #context: string | undefined;
   #catalog: Promise<readonly HarnessClientTool[]> | undefined;
   #closed = false;
+  /** Turn that last used cua_repl and has not been reported as ended. */
+  #cuaTurn: string | undefined;
   #calls = new OfficialRequestBroker({
     timeoutMs: 3_600_000,
     send: (value) => {
@@ -56,6 +85,7 @@ class OfficialDesktopToolSession {
 
   constructor(
     private readonly options: DesktopToolOptions,
+    readonly threadId: string,
     private readonly onClosed: () => void,
   ) {}
 
@@ -80,9 +110,8 @@ class OfficialDesktopToolSession {
     const client = this.options.scope.attach(async ({ value }) => {
       if (this.#calls.handle(value)) return;
       if (!object(value) || value.id === undefined || typeof value.method !== "string") return;
-      // Unsupported native interaction is a cancellation, never an implicit user denial.
       if (value.method === "mcpServer/elicitation/request")
-        await client.send({ id: value.id, result: { action: "cancel" } });
+        await client.send({ id: value.id, result: await this.#elicit(value.params) });
       else
         await client.send({
           id: value.id,
@@ -103,6 +132,8 @@ class OfficialDesktopToolSession {
     if (!object(started.thread) || typeof started.thread.id !== "string")
       throw new Error("Official MCP context was not created");
     this.#context = started.thread.id;
+    const tools: HarnessClientTool[] = [];
+    const seen: string[] = [];
     let cursor: string | undefined;
     do {
       const status = await this.#request("mcpServerStatus/list", {
@@ -111,17 +142,93 @@ class OfficialDesktopToolSession {
         ...(cursor ? { cursor } : {}),
       });
       if (!Array.isArray(status.data)) throw new Error("Invalid official MCP catalogue");
-      const server = status.data.find((entry) => object(entry) && entry.name === "codex_app");
-      if (object(server)) {
-        if (typeof server.toolsError === "string") throw new Error(server.toolsError);
-        if (!object(server.tools)) throw new Error("Official app tools are unavailable");
-        return Object.values(server.tools)
-          .filter(object)
-          .map((definition) => ({ namespace: "codex_app", definition }));
+      for (const server of status.data) {
+        if (!object(server) || typeof server.name !== "string") continue;
+        seen.push(server.name);
+        const exposed = EXPOSED_SERVERS.get(server.name);
+        if (exposed === undefined) continue;
+        // One unavailable server must not hide the other.
+        if (typeof server.toolsError === "string" || !object(server.tools)) {
+          this.options.diagnose(
+            `Desktop MCP '${server.name}' is unavailable` +
+              (typeof server.toolsError === "string" ? `: ${server.toolsError}` : ""),
+          );
+          continue;
+        }
+        const namespace = server.name;
+        for (const definition of Object.values(server.tools))
+          if (
+            object(definition) &&
+            typeof definition.name === "string" &&
+            (exposed === null || exposed.has(definition.name))
+          )
+            tools.push({ namespace, definition });
       }
       cursor = typeof status.nextCursor === "string" ? status.nextCursor : undefined;
     } while (cursor);
-    throw new Error("Official codex_app MCP is not enabled");
+    this.options.trace?.({
+      event: "desktop-tools/catalogue",
+      officialServers: seen,
+      exposed: tools.map((tool) => `${tool.namespace}.${String(tool.definition.name)}`),
+    });
+    if (tools.length === 0) throw new Error("Official Desktop MCP servers are not enabled");
+    return tools;
+  }
+
+  /**
+   * Answer a native elicitation. Standing consent is checked first; otherwise the owning task
+   * shows the request. Without a UI the answer is a cancellation, never an implied denial.
+   */
+  async #elicit(params: unknown): Promise<JsonObject> {
+    const cancel = { action: "cancel" };
+    if (!object(params) || !this.#context) return cancel;
+    try {
+      if (this.options.appConsent?.(params, this.#context))
+        return { action: "accept", content: {}, _meta: { persist: "always" } };
+      const turnId = this.options.activeTurn(this.threadId);
+      if (!turnId || !this.options.elicit) return cancel;
+      return await this.options.elicit(this.threadId, turnId, params);
+    } catch (error) {
+      this.options.diagnose(error);
+      return cancel;
+    }
+  }
+
+  #cuaCall(tool: string, turnId: string, args: JsonObject): Promise<JsonObject> {
+    if (!this.#context) return Promise.reject(new Error("Desktop MCP connection is closed"));
+    return this.#request("mcpServer/tool/call", {
+      threadId: this.#context,
+      server: CUA_SERVER,
+      tool,
+      arguments: args,
+      // cua_repl routes Computer Use and the in-app browser by the owning task's identity.
+      _meta: {
+        "x-codex-turn-metadata": {
+          thread_id: this.threadId,
+          session_id: this.threadId,
+          turn_id: turnId,
+          thread_source: "user",
+        },
+      },
+    });
+  }
+
+  /** Report the end of a Turn that used cua_repl. An interrupted Turn also resets the kernel. */
+  async turnEnded(turnId: string, event: DesktopTurnEnd): Promise<void> {
+    if (this.#cuaTurn !== turnId || !this.#context || this.#closed) return;
+    this.#cuaTurn = undefined;
+    const cleanup = (async () => {
+      await this.#cuaCall("turn_ended", turnId, {
+        hook_event_name: event,
+        session_id: this.threadId,
+        turn_id: turnId,
+      });
+      if (event === "Interrupt") await this.#cuaCall("js_reset", turnId, {});
+    })();
+    await Promise.race([
+      cleanup.catch((error: unknown) => this.options.diagnose(error)),
+      new Promise((resolve) => setTimeout(resolve, CUA_CLEANUP_TIMEOUT_MS).unref()),
+    ]);
   }
 
   forThread(threadId: string): HarnessClientTools {
@@ -148,18 +255,43 @@ class OfficialDesktopToolSession {
           throw new Error("Unknown official Desktop tool");
         if (input.signal.aborted || this.options.activeTurn(threadId) !== turnId || !this.#context)
           throw new Error("Owning task changed before Desktop tool call");
-        const abort = () => this.#reset();
+        const cua = input.namespace === CUA_SERVER;
+        if (cua) {
+          if (this.#cuaTurn && this.#cuaTurn !== turnId)
+            await this.turnEnded(this.#cuaTurn, "Stop");
+          this.#cuaTurn = turnId;
+        }
+        // An interrupted cua_repl call releases Desktop control before the connection closes.
+        const abort = () =>
+          void (cua ? this.turnEnded(turnId, "Interrupt") : Promise.resolve()).finally(() =>
+            this.#reset(),
+          );
         input.signal.addEventListener("abort", abort, { once: true });
-        try {
-          return await this.#request("mcpServer/tool/call", {
-            threadId: this.#context,
-            server: input.namespace,
-            tool: input.name,
-            arguments: input.arguments,
-            // Native app-server binds the caller to this real MCP context.
-            // Do not claim it can impersonate the external task's Thread ID.
+        const traceCall = (outcome: string) =>
+          this.options.trace?.({
+            event: "desktop-tools/call",
+            tool: `${input.namespace}.${input.name}`,
+            outcome,
           });
+        try {
+          const result = cua
+            ? await this.#cuaCall(
+                input.name,
+                turnId,
+                object(input.arguments) ? input.arguments : {},
+              )
+            : await this.#request("mcpServer/tool/call", {
+                threadId: this.#context,
+                server: input.namespace,
+                tool: input.name,
+                arguments: input.arguments,
+                // Native app-server binds the caller to this real MCP context.
+                // Do not claim it can impersonate the external task's Thread ID.
+              });
+          traceCall(result.isError === true ? "tool-error" : "ok");
+          return result;
         } catch (error) {
+          traceCall("failed");
           this.#reset();
           throw error;
         } finally {
@@ -184,5 +316,6 @@ class OfficialDesktopToolSession {
     this.#client = undefined;
     this.#context = undefined;
     this.#catalog = undefined;
+    this.#cuaTurn = undefined;
   }
 }

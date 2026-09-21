@@ -1,3 +1,4 @@
+import { appConsentEnabled, consentedApp } from "./desktop-app-consent.js";
 import { OfficialDesktopTools } from "./official-desktop-tools.js";
 import {
   IDLE_RELEASE_SETTINGS_METHOD,
@@ -554,6 +555,10 @@ export class AppServerHost {
   readonly #pluginLoadAbort = new AbortController();
   #pluginLoading: Promise<void> | undefined;
   readonly #desktopRequests = new DesktopRequestQueue();
+  readonly #pendingDesktopElicitations = new Map<
+    HostApprovalRequestId,
+    (result: JsonObject) => void
+  >();
   #drainActiveWorkOnInputEnd = false;
   #desktopInputEnded = false;
 
@@ -653,6 +658,15 @@ export class AppServerHost {
       cwd: this.#officialRuntimeScope.permanentHome,
       activeTurn: (threadId) => this.#externalRuntime.get(threadId)?.activeTurnId ?? null,
       diagnose: (error) => this.#diagnose(error),
+      appConsent: (params, contextThreadId) => {
+        if (!appConsentEnabled(this.#options.environment ?? process.env)) return false;
+        const app = consentedApp(params, contextThreadId);
+        if (app) this.#traceNativePicker({ event: "desktop-tools/app-consent", app });
+        return app !== null;
+      },
+      elicit: (threadId, turnId, params) =>
+        this.#forwardDesktopElicitation(threadId, turnId, params),
+      trace: (event) => this.#traceNativePicker(event),
     });
     this.#externalRuntime = new ExternalThreadRuntime({
       clientTools: (threadId, cwd) => this.#desktopTools.forThread(threadId, cwd),
@@ -922,6 +936,7 @@ export class AppServerHost {
       if (isRecord(parsed) && parsed.method === "initialized" && !("id" in parsed)) {
         continue;
       }
+      if (this.#handleDesktopElicitationResponse(parsed)) continue;
       if (await this.#handleDesktopApprovalResponse(parsed)) continue;
       if (await this.#handleDesktopQuestionResponse(parsed)) continue;
       const requestResult = jsonRpcRequestSchema.safeParse(parsed);
@@ -4352,6 +4367,11 @@ export class AppServerHost {
       thread.historyHydrated = false;
       thread.running = false;
       thread.activeTurnId = null;
+      this.#desktopTools.turnEnded(
+        thread.id,
+        event.turnId,
+        result.completedTurn.status === "completed" ? "Stop" : "Interrupt",
+      );
       thread.projectedTurns.delete(event.turnId);
       thread.responseGates.delete(event.turnId);
       this.#signalActiveWorkChanged();
@@ -4577,6 +4597,46 @@ export class AppServerHost {
       await this.#denyApproval(thread, interaction);
       throw error;
     }
+  }
+
+  /**
+   * Show an official MCP elicitation (for example Computer Use app access) on the external
+   * Thread that owns the tool call. The official context's ids are replaced by the Host's.
+   */
+  async #forwardDesktopElicitation(
+    threadId: string,
+    turnId: string,
+    params: JsonObject,
+  ): Promise<JsonObject> {
+    const requestId = this.#allocateApprovalRequestId();
+    const answer = new Promise<JsonObject>((resolve) =>
+      this.#pendingDesktopElicitations.set(requestId, resolve),
+    );
+    this.#traceNativePicker({
+      event: "desktop-tools/elicitation-forwarded",
+      mode: typeof params.mode === "string" ? params.mode : null,
+    });
+    try {
+      await this.#writer.json({
+        id: requestId,
+        method: "mcpServer/elicitation/request",
+        params: { ...params, threadId, turnId },
+      });
+    } catch (error) {
+      this.#pendingDesktopElicitations.delete(requestId);
+      throw error;
+    }
+    return answer;
+  }
+
+  #handleDesktopElicitationResponse(value: JsonValue): boolean {
+    if (!isRecord(value) || !isHostApprovalRequestId(value.id)) return false;
+    const resolve = this.#pendingDesktopElicitations.get(value.id);
+    if (!resolve) return false;
+    this.#pendingDesktopElicitations.delete(value.id);
+    // A transport error is a cancellation; only an explicit answer may decline.
+    resolve(isRecord(value.result) ? value.result : { action: "cancel" });
+    return true;
   }
 
   async #handleDesktopApprovalResponse(value: JsonValue): Promise<boolean> {
