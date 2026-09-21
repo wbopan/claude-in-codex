@@ -9,7 +9,7 @@ import {
 export interface DesktopControllerOptions {
   rendererCdpEndpoint: string;
   rendererPath: string;
-  defaultAgent: "codex" | "pi";
+  defaultAgent: "codex";
   attachmentPort: number;
   attachmentNonce: string;
 }
@@ -89,7 +89,7 @@ export function parseDesktopControllerArguments(
 ): DesktopControllerOptions {
   let endpoint: string | undefined;
   let rendererPath: string | undefined;
-  let defaultAgent: "codex" | "pi" | undefined;
+  let defaultAgent: "codex" | undefined;
   let attachmentPort: number | undefined;
   let attachmentNonce: string | undefined;
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -114,8 +114,8 @@ export function parseDesktopControllerArguments(
     }
     if (argument === "--default-agent") {
       if (defaultAgent !== undefined) throw new Error("--default-agent may only be provided once");
-      if (value !== "codex" && value !== "pi") {
-        throw new Error("--default-agent must be 'codex' or 'pi'");
+      if (value !== "codex") {
+        throw new Error("--default-agent must be 'codex'");
       }
       defaultAgent = value;
       index += 1;

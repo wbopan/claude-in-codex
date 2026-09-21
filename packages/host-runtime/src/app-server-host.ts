@@ -178,7 +178,7 @@ import {
 export interface AppServerHostOptions {
   stockCodexPath: string;
   arguments: string[];
-  defaultAgent: "codex" | "pi";
+  defaultAgent: "codex";
   environment?: NodeJS.ProcessEnv;
   desktopInput?: Readable;
   desktopOutput?: Writable;
@@ -267,7 +267,6 @@ export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEn
     "CODEXHOST_DESKTOP_PARENT_SOCKET",
     "CODEXHOST_DESKTOP_PARENT_PID",
     "CODEXHOST_DESKTOP_PARENT_LAUNCH",
-    "CODEXHOST_PI_COMMAND",
     "CODEXHOST_ENABLE_CLAUDE_CODE",
     "CODEXHOST_CLAUDE_COMMAND",
     "CODEXHOST_OPENCODE_COMMAND",
@@ -298,26 +297,7 @@ function unixSeconds(): number {
 }
 
 function approvalServerName(harnessId: ExternalHarnessId): string {
-  switch (harnessId) {
-    case "pi":
-      return "Pi";
-    case "claude-code":
-      return "Claude Code";
-    case "deepseek-harness":
-      return "DeepSeek Harness";
-    case "grok":
-      return "Grok";
-    case "opencode":
-      return "OpenCode";
-    case "omp":
-      return "Oh My Pi";
-    case "antigravity":
-      return "Antigravity CLI";
-    case "kiro-cli":
-      return "Kiro CLI";
-    default:
-      return harnessId;
-  }
+  return harnessId === "claude-code" ? "Claude Code" : harnessId;
 }
 
 const HOST_APPROVAL_REQUEST_ID_MIN = -2_000_000;
@@ -362,7 +342,6 @@ function isHostQuestionRequestId(value: unknown): value is HostQuestionRequestId
 
 export function classifyCreateRequestRoute(
   request: JsonRpcRequest,
-  defaultAgent: "codex" | "pi",
 ): CreateRequestRouteObservation | null {
   const route = decodeCreateRoute(request);
   if (!route) return null;
@@ -377,8 +356,8 @@ export function classifyCreateRequestRoute(
   return {
     requestMethod: "thread/start",
     modelCarrier: "official-model",
-    selectedHarness: defaultAgent,
-    selectionSource: defaultAgent === "pi" ? "default-agent" : "official-model",
+    selectedHarness: "codex",
+    selectionSource: "official-model",
   };
 }
 
@@ -1087,7 +1066,7 @@ export class AppServerHost {
     }
     let createRoute: CreateRequestRouteObservation | null;
     try {
-      createRoute = classifyCreateRequestRoute(request, this.#options.defaultAgent);
+      createRoute = classifyCreateRequestRoute(request);
     } catch (error) {
       await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
       return;

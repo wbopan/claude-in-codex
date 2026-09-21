@@ -64,7 +64,6 @@ const HOST_NODE_PATH_ENV: &str = "CODEXHOST_HOST_NODE_PATH";
 const HOST_RUNTIME_PATH_ENV: &str = "CODEXHOST_HOST_RUNTIME_PATH";
 const DATA_DIRECTORY_ENV: &str = "CODEXHOST_DATA_DIR";
 const REMOTE_SSH_MANAGED_ENV: &str = "CODEXHOST_REMOTE_SSH_MANAGED";
-const PI_COMMAND_ENV: &str = "CODEXHOST_PI_COMMAND";
 const DEFAULT_AGENT_ENV: &str = "CODEXHOST_DEFAULT_AGENT";
 const LAUNCHER_PID_ENV: &str = "CODEXHOST_LAUNCHER_PID";
 const LAUNCHER_EXECUTABLE_ENV: &str = "CODEXHOST_LAUNCHER_EXECUTABLE";
@@ -112,7 +111,7 @@ impl Error for UnmanagedDesktopConflict {}
 
 fn usage() {
     eprintln!(
-        "usage:\n  codexhost\n  codexhost inspect [--custom-install <absolute-directory>]\n  codexhost launch [--shim <absolute-file>] [--node <absolute-file>] [--host-runtime <absolute-file>] [--desktop-controller <absolute-file>] [--renderer <absolute-file>] [--pi <absolute-file>] [--custom-install <absolute-directory>]\n  codexhost broker install|status|stop|uninstall"
+        "usage:\n  codexhost\n  codexhost inspect [--custom-install <absolute-directory>]\n  codexhost launch [--shim <absolute-file>] [--node <absolute-file>] [--host-runtime <absolute-file>] [--desktop-controller <absolute-file>] [--renderer <absolute-file>] [--custom-install <absolute-directory>]\n  codexhost broker install|status|stop|uninstall"
     );
 }
 
@@ -273,7 +272,6 @@ struct LaunchOptions {
     host_runtime: Option<PathBuf>,
     desktop_controller: Option<PathBuf>,
     renderer_extension: Option<PathBuf>,
-    pi: Option<PathBuf>,
     custom_install_root: Option<PathBuf>,
 }
 
@@ -284,7 +282,6 @@ struct ResolvedLaunchOptions {
     host_runtime: PathBuf,
     desktop_controller: PathBuf,
     renderer_extension: PathBuf,
-    pi: Option<PathBuf>,
     custom_install_root: Option<PathBuf>,
 }
 
@@ -302,7 +299,6 @@ fn parse_launch_options(arguments: &[String]) -> Result<LaunchOptions, String> {
     let mut host_runtime = None;
     let mut desktop_controller = None;
     let mut renderer_extension = None;
-    let mut pi = None;
     let mut custom_install_root = None;
     let mut index = 0;
     while index < arguments.len() {
@@ -322,7 +318,6 @@ fn parse_launch_options(arguments: &[String]) -> Result<LaunchOptions, String> {
             "--renderer" => {
                 renderer_extension = Some(required_path(arguments, &mut index, "--renderer")?)
             }
-            "--pi" => pi = Some(required_path(arguments, &mut index, "--pi")?),
             "--custom-install" => {
                 custom_install_root =
                     Some(required_path(arguments, &mut index, "--custom-install")?)
@@ -337,7 +332,6 @@ fn parse_launch_options(arguments: &[String]) -> Result<LaunchOptions, String> {
         host_runtime,
         desktop_controller,
         renderer_extension,
-        pi,
         custom_install_root,
     })
 }
@@ -418,10 +412,6 @@ impl LaunchOptions {
                 "--renderer",
                 "bundled Renderer Extension",
             )?,
-            pi: self
-                .pi
-                .map(|path| absolute_file(&path, "--pi"))
-                .transpose()?,
             custom_install_root: self
                 .custom_install_root
                 .map(|path| absolute_directory(&path, "--custom-install"))
@@ -823,12 +813,6 @@ fn desktop_environment(
             OsString::from(&control.nonce),
         ),
     ];
-    if let Some(pi) = &options.pi {
-        environment.push((
-            OsString::from(PI_COMMAND_ENV),
-            node_entrypoint_path(pi).into_os_string(),
-        ));
-    }
     if let Some(data_directory) = data_directory {
         environment.push((OsString::from(DATA_DIRECTORY_ENV), data_directory));
     }
@@ -1107,7 +1091,6 @@ fn default_launch_options() -> LaunchOptions {
         host_runtime: None,
         desktop_controller: None,
         renderer_extension: None,
-        pi: None,
         custom_install_root: None,
     }
 }
@@ -1191,8 +1174,6 @@ mod tests {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     use codexhost_platform::spawn_supervised;
 
-    #[cfg(target_os = "windows")]
-    use super::PI_COMMAND_ENV;
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     use super::stop_desktop_controller;
     #[cfg(target_os = "macos")]
@@ -1416,7 +1397,6 @@ mod tests {
             host_runtime: PathBuf::from("/opt/host-runtime.mjs"),
             desktop_controller: PathBuf::from("/opt/desktop-controller.mjs"),
             renderer_extension: PathBuf::from("/opt/renderer-extension.js"),
-            pi: None,
             custom_install_root: None,
         }
     }
@@ -1704,29 +1684,6 @@ mod tests {
         assert_eq!(
             command.get_args().next(),
             Some(OsStr::new(r"C:\Program Files\codexhost\controller.mjs")),
-        );
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn pi_environment_normalizes_a_verbatim_command_script() {
-        let options = ResolvedLaunchOptions {
-            pi: Some(PathBuf::from(r"\\?\C:\nvm4w\nodejs\pi.cmd")),
-            ..resolved_options()
-        };
-
-        assert_eq!(
-            desktop_environment(
-                &options,
-                &runtime_control(),
-                Path::new(r"C:\codexhost.exe"),
-                Path::new(r"C:\Users\Codex\AppData\Local\codexhost\desktop-runtime-v1.json"),
-                None,
-            )
-            .into_iter()
-            .find(|(name, _)| name == PI_COMMAND_ENV)
-            .map(|(_, value)| value),
-            Some(OsString::from(r"C:\nvm4w\nodejs\pi.cmd")),
         );
     }
 

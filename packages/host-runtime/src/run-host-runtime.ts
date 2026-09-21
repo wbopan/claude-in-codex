@@ -40,13 +40,13 @@ export function createRemoteOfficialAppServerPlan(
 
 function requiredRuntimeConfiguration(environment: NodeJS.ProcessEnv): {
   stockCodexPath: string;
-  defaultAgent: "codex" | "pi";
+  defaultAgent: "codex";
 } {
   const stockCodexPath = environment[STOCK_CODEX_PATH_ENV];
   if (!stockCodexPath) throw new Error(`${STOCK_CODEX_PATH_ENV} is required`);
   const defaultAgent = environment[DEFAULT_AGENT_ENV];
-  if (defaultAgent !== "codex" && defaultAgent !== "pi") {
-    throw new Error(`${DEFAULT_AGENT_ENV} must be 'codex' or 'pi'`);
+  if (defaultAgent !== "codex") {
+    throw new Error(`${DEFAULT_AGENT_ENV} must be 'codex'`);
   }
   return { stockCodexPath, defaultAgent };
 }

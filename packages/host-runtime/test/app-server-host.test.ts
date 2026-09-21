@@ -5350,7 +5350,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       id: -1_000_001,
       method: "mcpServer/elicitation/request",
       params: {
-        serverName: "Pi",
+        serverName: "pi",
         threadId,
         turnId,
         mode: "form",
@@ -6090,7 +6090,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
         CODEXHOST_DATA_DIR: "/synthetic/codexhost-data",
         CODEXHOST_ENABLE_CLAUDE_CODE: "1",
         CODEXHOST_CLAUDE_COMMAND: "/synthetic/claude",
-        CODEXHOST_PI_COMMAND: "/synthetic/pi",
       },
     });
 

@@ -260,7 +260,7 @@ export function createNpmPackageManifest({ version, target }) {
     },
     os: npmPackageOs(target),
     cpu: npmPackageCpu(target),
-    keywords: ["codex", "codexhost", "pi", "claude-code", "agent", "harness"],
+    keywords: ["codex", "codexhost", "claude-code", "agent", "harness"],
     repository: {
       type: "git",
       url: "git+https://github.com/BytePioneer-AI/codex-host.git",
