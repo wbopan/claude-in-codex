@@ -18,7 +18,6 @@ import { MappingStore } from "@codexhost/mapping-store";
 import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
   encodeClaudeTransportModel,
-  encodeGrokTransportModel,
   encodePiTransportModel,
   type ExternalHarnessId,
   type JsonObject,
@@ -70,12 +69,6 @@ class FakeOfficialProcess extends EventEmitter {
   }
 }
 
-class FailingOwnershipMappingStore extends MappingStore {
-  override getThread(): Promise<never> {
-    return Promise.reject(new Error("Synthetic ownership read failure"));
-  }
-}
-
 class FailingArchiveMappingStore extends MappingStore {
   override setArchived(): Promise<never> {
     return Promise.reject(new Error("Synthetic archive write failure"));
@@ -85,12 +78,6 @@ class FailingArchiveMappingStore extends MappingStore {
 class FailingListMappingStore extends MappingStore {
   override listThreads(): Promise<never> {
     return Promise.reject(new Error("Synthetic list read failure"));
-  }
-}
-
-class FailingDelegationMappingStore extends MappingStore {
-  override createDelegation(): Promise<never> {
-    return Promise.reject(new Error("Synthetic Delegation write failure"));
   }
 }
 
@@ -1024,7 +1011,7 @@ describe("AppServerHost installed Harness plugins", () => {
     3_000,
   );
 
-  it.each(["thread/start", "thread/resume", "codexhost/thread/command/execute"])(
+  it.each(["thread/start", "thread/resume"])(
     "drains an admitted Session open before EOF cleanup: %s",
     async (requestMethod) => {
       const fixture = createFixture();
@@ -1067,7 +1054,7 @@ describe("AppServerHost installed Harness plugins", () => {
           params:
             requestMethod === "thread/start"
               ? { model: "codexhost/pi-native", cwd: "/synthetic" }
-              : { threadId: "persisted-thread", commandId: "compact" },
+              : { threadId: "persisted-thread" },
         });
         await opened.promise;
         writeRequest(fixture.desktopInput, { id: 931, method: "model/list", params: {} });
@@ -1079,11 +1066,7 @@ describe("AppServerHost installed Harness plugins", () => {
         await expect(fixture.running).resolves.toBe(0);
         expect(closeAdapter).toHaveBeenCalledOnce();
         const response = await fixture.collector.waitFor((message) => requestId(message, 930));
-        if (requestMethod === "codexhost/thread/command/execute") {
-          expect(response).toMatchObject({ error: { code: -32078 } });
-        } else {
-          expect(response).toHaveProperty("result");
-        }
+        expect(response).toHaveProperty("result");
         expect(fixture.diagnosticOutput.read()?.toString() ?? "").not.toContain("closed");
       } finally {
         release.resolve(undefined);
@@ -2801,110 +2784,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("inspects authoritative external and Codex Thread ownership locally", async () => {
-    const fixture = createFixture({
-      accountControl: {
-        currentAccountId: () => null,
-        snapshot: () => ({
-          version: 2,
-          currentAccountId: null,
-          phase: "unavailable",
-          revision: 0,
-          accounts: [],
-        }),
-      },
-    });
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-    const threadId = await startPiThread(fixture);
-
-    writeRequest(fixture.desktopInput, {
-      id: 40,
-      method: "codexhost/thread/inspect",
-      params: { threadId },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 40)),
-    ).resolves.toMatchObject({
-      result: {
-        owner: "external",
-        harnessId: "pi",
-        transportModelId: "codexhost/pi-native",
-        effectiveModel: { id: "fake-model-v1.primary" },
-        history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: false },
-        locked: true,
-      },
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 41,
-      method: "codexhost/thread/inspect",
-      params: { threadId: "official-thread" },
-    });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 41))).resolves.toEqual({
-      id: 41,
-      result: { owner: "codex", locked: true },
-    });
-    writeRequest(fixture.desktopInput, {
-      id: 42,
-      method: "codexhost/thread/usage/inspect",
-      params: { threadId: "official-thread" },
-    });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 42))).resolves.toEqual({
-      id: 42,
-      result: { threadId: "official-thread", usage: null },
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 43,
-      method: "codexhost/thread/usage/inspect",
-      params: { threadId: 42 },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 43)),
-    ).resolves.toMatchObject({ error: { code: -32602 } });
-
-    // An unavailable current Account must never query native quota.
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
-  it("keeps the Host alive when inspecting a Thread without a local Account binding", async () => {
-    const fixture = createFixture();
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-    try {
-      await bindOfficialThread(fixture, "bound-local-thread");
-      writeRequest(fixture.desktopInput, {
-        id: 40,
-        method: "codexhost/thread/inspect",
-        params: { threadId: "remote-thread-without-local-account" },
-      });
-      await expect(fixture.collector.waitFor((message) => requestId(message, 40))).resolves.toEqual(
-        {
-          id: 40,
-          result: { owner: "codex", locked: true },
-        },
-      );
-      writeRequest(fixture.desktopInput, {
-        id: 41,
-        method: "codexhost/thread/inspect",
-        params: { threadId: "bound-local-thread" },
-      });
-      await expect(fixture.collector.waitFor((message) => requestId(message, 41))).resolves.toEqual(
-        {
-          id: 41,
-          result: { owner: "codex", locked: true },
-        },
-      );
-      expect(officialWrite).not.toHaveBeenCalled();
-    } finally {
-      fixture.desktopInput.end();
-      await fixture.running;
-      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
-    }
-  });
-
   it("projects official Codex token Usage and account rate limits for inspection", async () => {
     const fixture = createFixture();
     fixture.official.stdin.on("data", (chunk: Buffer) => {
@@ -3131,88 +3010,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     ).resolves.toMatchObject({ result: { turn: { status: "inProgress" } } });
     expect(session.state.effectiveModel).toEqual(effectiveModel);
     session.succeedTurn();
-    await stopFixture(fixture);
-  });
-
-  it("lists persisted ownership without restoring external Sessions", async () => {
-    const pi = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const claude = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    const first = createFixture({
-      externalAdapters: new Map([
-        ["pi", pi],
-        ["claude-code", claude],
-      ]),
-    });
-    const piThreadId = await startExternalThread(first, "codexhost/pi-native", 1);
-    const claudeThreadId = await startExternalThread(
-      first,
-      CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
-      2,
-    );
-    const directory = first.mappingStoreDirectory;
-    await closeFixture(first);
-
-    const restartedPi = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const restartedClaude = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    const restarted = createFixture({
-      externalAdapters: new Map([
-        ["pi", restartedPi],
-        ["claude-code", restartedClaude],
-      ]),
-      mappingStoreDirectory: directory,
-    });
-    const officialWrite = vi.fn();
-    restarted.official.stdin.on("data", officialWrite);
-
-    writeRequest(restarted.desktopInput, {
-      id: 42,
-      method: "codexhost/thread/ownership/list",
-      params: { threadIds: ["official-thread", piThreadId, claudeThreadId] },
-    });
-    await expect(restarted.collector.waitFor((message) => requestId(message, 42))).resolves.toEqual(
-      {
-        id: 42,
-        result: {
-          threads: [
-            { threadId: "official-thread", owner: "codex" },
-            { threadId: piThreadId, owner: "external", harnessId: "pi" },
-            { threadId: claudeThreadId, owner: "external", harnessId: "claude-code" },
-          ],
-        },
-      },
-    );
-    expect(restartedPi.sessions).toHaveLength(0);
-    expect(restartedClaude.sessions).toHaveLength(0);
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(restarted);
-  });
-
-  it("rejects invalid or unreadable ownership-list metadata locally", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-test-"));
-    const mappingStore = new FailingOwnershipMappingStore({ directory });
-    const fixture = createFixture({ mappingStore, mappingStoreDirectory: directory });
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-
-    writeRequest(fixture.desktopInput, {
-      id: 43,
-      method: "codexhost/thread/ownership/list",
-      params: { threadIds: ["duplicate", "duplicate"] },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 43)),
-    ).resolves.toMatchObject({ error: { code: -32602 } });
-
-    writeRequest(fixture.desktopInput, {
-      id: 44,
-      method: "codexhost/thread/ownership/list",
-      params: { threadIds: ["unreadable-thread"] },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 44)),
-    ).resolves.toMatchObject({ error: { code: -32081 } });
-    expect(fixture.adapter.sessions).toHaveLength(0);
-    expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);
   });
 
@@ -3804,279 +3601,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("selects an existing Pi Thread Model from ordered Session state", async () => {
-    const fixture = createFixture();
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-    const threadId = await startPiThread(fixture);
-    const model = fixture.adapter.catalog.models[1]?.ref;
-    if (!model) throw new Error("Fake catalog has no secondary Model");
-
-    writeRequest(fixture.desktopInput, {
-      id: 31,
-      method: "codexhost/thread/model/select",
-      params: { threadId, model },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 31)),
-    ).resolves.toMatchObject({
-      id: 31,
-      result: {
-        effectiveModel: model,
-        effectiveThinkingOptionId: "off",
-        availableThinkingOptions: [
-          { id: "off", label: "Off" },
-          { id: "low", label: "Low" },
-        ],
-      },
-    });
-    expect(fixture.adapter.sessions[0]?.state.effectiveModel).toEqual(model);
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
-  it("selects a registered non-Pi Thread Model through its owning Session", async () => {
-    const pi = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const claude = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["pi", pi],
-        ["claude-code", claude],
-      ]),
-    });
-    const threadId = await startExternalThread(fixture, CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID);
-    const model = claude.catalog.models[1]?.ref;
-    if (!model) throw new Error("Fake Claude catalog has no secondary Model");
-
-    writeRequest(fixture.desktopInput, {
-      id: 33,
-      method: "codexhost/thread/model/select",
-      params: { threadId, model },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 33)),
-    ).resolves.toMatchObject({
-      id: 33,
-      result: { effectiveModel: model, effectiveThinkingOptionId: "off" },
-    });
-    expect(claude.sessions[0]?.state.effectiveModel).toEqual(model);
-    expect(pi.sessions).toHaveLength(0);
-    await stopFixture(fixture);
-  });
-
-  it("routes Permission Mode through the owning capable Session and preserves rejection", async () => {
-    const pi = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const claudeSeed = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    const permissionModes = harnessPermissionModeCatalogSchema.parse({
-      modes: [
-        { id: "default", label: "Default" },
-        { id: "auto", label: "Auto" },
-        { id: "bypassPermissions", label: "Bypass", dangerous: true },
-      ],
-      defaultModeId: "default",
-    });
-    const claude = new FakeHarnessAdapter(
-      harnessIdSchema.parse("claude-code"),
-      claudeSeed.catalog,
-      false,
-      false,
-      null,
-      permissionModes,
-    );
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["pi", pi],
-        ["claude-code", claude],
-      ]),
-    });
-    const model = claude.catalog.defaultModel;
-    if (!model) throw new Error("Fake Claude catalog has no default Model");
-    const defaultMode = harnessPermissionModeIdSchema.parse("default");
-    const threadId = await startExternalThread(
-      fixture,
-      encodeClaudeTransportModel(model, defaultMode),
-      36,
-    );
-    const auto = harnessPermissionModeIdSchema.parse("auto");
-
-    writeRequest(fixture.desktopInput, {
-      id: 37,
-      method: "codexhost/thread/permission-mode/select",
-      params: { threadId, permissionModeId: auto },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 37)),
-    ).resolves.toMatchObject({
-      result: { effectiveModel: model, effectivePermissionModeId: auto },
-    });
-    expect(claude.sessions[0]?.state.effectivePermissionModeId).toBe(auto);
-    await expect(
-      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
-    ).resolves.toMatchObject({
-      transportModelId: encodeClaudeTransportModel(model, auto),
-    });
-    expect(pi.sessions).toHaveLength(0);
-
-    claude.sessions[0]?.rejectNextPermissionModeSelection({
-      code: "nativeFailure",
-      message: "Policy rejected bypass",
-      retryable: false,
-    });
-    writeRequest(fixture.desktopInput, {
-      id: 38,
-      method: "codexhost/thread/permission-mode/select",
-      params: {
-        threadId,
-        permissionModeId: harnessPermissionModeIdSchema.parse("bypassPermissions"),
-      },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 38)),
-    ).resolves.toMatchObject({
-      error: { code: -32078, message: "Policy rejected bypass" },
-    });
-    expect(claude.sessions[0]?.state.effectivePermissionModeId).toBe(auto);
-    await stopFixture(fixture);
-  });
-
-  it("rejects live Grok Permission Mode changes without rewriting mapping", async () => {
-    const permissionModes = harnessPermissionModeCatalogSchema.parse({
-      modes: [
-        { id: "default", label: "Default" },
-        { id: "always-approve", label: "Always approve", dangerous: true },
-      ],
-      defaultModeId: "default",
-    });
-    const grok = new FakeHarnessAdapter(
-      harnessIdSchema.parse("grok"),
-      undefined,
-      true,
-      true,
-      null,
-      permissionModes,
-      false,
-      "atCreate",
-    );
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([["grok", grok]]),
-    });
-    const model = grok.catalog.defaultModel;
-    if (!model) throw new Error("Fake Grok catalog has no default Model");
-    const defaultMode = harnessPermissionModeIdSchema.parse("default");
-    const alwaysApprove = harnessPermissionModeIdSchema.parse("always-approve");
-    const transportModelId = encodeGrokTransportModel(model, defaultMode);
-    const threadId = await startExternalThread(fixture, transportModelId, 50);
-    const session = grok.sessions[0];
-    if (!session) throw new Error("Fake Grok Session was not opened");
-    const execute = vi.spyOn(session, "execute");
-
-    writeRequest(fixture.desktopInput, {
-      id: 51,
-      method: "codexhost/thread/permission-mode/select",
-      params: { threadId, permissionModeId: alwaysApprove },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 51)),
-    ).resolves.toMatchObject({
-      error: { code: -32078, message: "Permission Mode is fixed at Session creation" },
-    });
-    expect(execute).not.toHaveBeenCalled();
-    expect(session.state.effectivePermissionModeId).toBe(defaultMode);
-    await expect(
-      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
-    ).resolves.toMatchObject({ transportModelId });
-
-    await stopFixture(fixture);
-  });
-
-  it("selects existing Thread Thinking from ordered complete Session state", async () => {
-    const fixture = createFixture();
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-    const threadId = await startPiThread(fixture);
-    const off = fixture.adapter.catalog.thinkingOptions.find(({ id }) => id === "off")?.id;
-    if (!off) throw new Error("Fake catalog has no Off Thinking option");
-
-    writeRequest(fixture.desktopInput, {
-      id: 34,
-      method: "codexhost/thread/thinking/select",
-      params: { threadId, thinkingOptionId: off },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 34)),
-    ).resolves.toMatchObject({
-      id: 34,
-      result: {
-        effectiveModel: fixture.adapter.catalog.defaultModel,
-        effectiveThinkingOptionId: "off",
-        availableThinkingOptions: [
-          { id: "off", label: "Off" },
-          { id: "high", label: "High" },
-        ],
-      },
-    });
-    expect(fixture.adapter.sessions[0]?.state.effectiveThinkingOptionId).toBe("off");
-    await expect(
-      fixture.mappingStore.getThread(hostThreadIdSchema.parse(threadId)),
-    ).resolves.toMatchObject({
-      transportModelId: encodePiTransportModel(fixture.adapter.catalog.defaultModel, off),
-    });
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
-  it("rejects fixed Model control for an unknown or Codex-owned Thread locally", async () => {
-    const fixture = createFixture();
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-    const model = fixture.adapter.catalog.models[0]?.ref;
-    if (!model) throw new Error("Fake catalog is empty");
-
-    writeRequest(fixture.desktopInput, {
-      id: 35,
-      method: "codexhost/thread/model/select",
-      params: { threadId: "official-thread", model },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 35)),
-    ).resolves.toMatchObject({ error: { code: -32078 } });
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
-  it("rejects a Pi Model selection while its Turn is active", async () => {
-    const fixture = createFixture();
-    const threadId = await startPiThread(fixture);
-    await startPiTurn(fixture, threadId);
-    const model = fixture.adapter.catalog.models[1]?.ref;
-    if (!model) throw new Error("Fake catalog has no secondary Model");
-
-    writeRequest(fixture.desktopInput, {
-      id: 32,
-      method: "codexhost/thread/model/select",
-      params: { threadId, model },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 32)),
-    ).resolves.toMatchObject({
-      error: { code: -32078, message: expect.stringContaining("active") },
-    });
-    const off = fixture.adapter.catalog.thinkingOptions.find(({ id }) => id === "off")?.id;
-    if (!off) throw new Error("Fake catalog has no Off Thinking option");
-    writeRequest(fixture.desktopInput, {
-      id: 36,
-      method: "codexhost/thread/thinking/select",
-      params: { threadId, thinkingOptionId: off },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 36)),
-    ).resolves.toMatchObject({
-      error: { code: -32078, message: expect.stringContaining("active") },
-    });
-    fixture.adapter.sessions[0]?.succeedTurn();
-    await stopFixture(fixture);
-  });
-
   it("binds a selected Pi Model and Thinking carrier to create and later Turn routing", async () => {
     const fixture = createFixture();
     const model = fixture.adapter.catalog.models[1]?.ref;
@@ -4250,130 +3774,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
       fixture.collector.waitFor((message) => requestId(message, 4)),
     ).resolves.toMatchObject({ error: { code: -32078 } });
     expect(open).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
-  it("acknowledges an accepted Harness command through the public command contract", async () => {
-    const fixture = createFixture();
-    const threadId = await startPiThread(fixture);
-    const session = fixture.adapter.sessions[0];
-    if (!session) throw new Error("Fake Pi Session was not opened");
-    session.commands = {
-      list: async () => ({
-        ok: true,
-        value: {
-          commands: [
-            harnessCommandDescriptorSchema.parse({
-              id: "fake.compact",
-              invocation: "/compact",
-              label: "Compact",
-              argumentMode: "none" as const,
-            }),
-          ],
-        },
-      }),
-      execute: async ({ turnId }) => {
-        session.publishEphemeralCommand(turnId, {
-          type: "contextCompaction",
-          itemId: hostItemIdSchema.parse("fake-command-compaction-item"),
-        });
-        return {
-          ok: true,
-          value: { turnId },
-        };
-      },
-    };
-    const turnId = hostTurnIdSchema.parse("manual-compact");
-
-    writeRequest(fixture.desktopInput, {
-      id: 2,
-      method: "codexhost/thread/command/execute",
-      params: { threadId, commandId: "fake.compact", turnId },
-    });
-
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 2)),
-    ).resolves.toMatchObject({ result: { accepted: true, turnId } });
-    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
-
-    const nextTurnId = await startPiTurn(fixture, threadId, 3);
-    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", nextTurnId));
-    session.succeedTurn();
-    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", nextTurnId));
-    await stopFixture(fixture);
-  });
-
-  it("serializes command catalog admission and releases it after discovery failure", async () => {
-    const fixture = createFixture();
-    const threadId = await startPiThread(fixture);
-    const session = fixture.adapter.sessions[0];
-    if (!session) throw new Error("Fake Pi Session was not opened");
-    let resolveCatalog:
-      | ((value: {
-          ok: false;
-          error: {
-            code: "unavailable";
-            message: string;
-            retryable: true;
-          };
-        }) => void)
-      | undefined;
-    const descriptor = harnessCommandDescriptorSchema.parse({
-      id: "fake.compact",
-      invocation: "/compact",
-      label: "Compact",
-      argumentMode: "none",
-    });
-    const list = vi
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveCatalog = resolve;
-          }),
-      )
-      .mockResolvedValue({ ok: true, value: { commands: [descriptor] } });
-    const execute = vi.fn(async ({ turnId }) => {
-      session.publishEphemeralCommand(turnId, {
-        type: "contextCompaction",
-        itemId: hostItemIdSchema.parse(`retried-command-${turnId}`),
-      });
-      return { ok: true as const, value: { turnId } };
-    });
-    session.commands = { list, execute };
-
-    writeRequest(fixture.desktopInput, {
-      id: 2,
-      method: "codexhost/thread/command/execute",
-      params: { threadId, commandId: "fake.compact" },
-    });
-    await vi.waitFor(() => expect(list).toHaveBeenCalledOnce());
-    writeRequest(fixture.desktopInput, {
-      id: 3,
-      method: "codexhost/thread/command/execute",
-      params: { threadId, commandId: "fake.compact" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 3)),
-    ).resolves.toMatchObject({ error: { code: -32072 } });
-
-    resolveCatalog?.({
-      ok: false,
-      error: { code: "unavailable", message: "catalog offline", retryable: true },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 2)),
-    ).resolves.toMatchObject({ error: { code: -32078, message: "catalog offline" } });
-
-    writeRequest(fixture.desktopInput, {
-      id: 4,
-      method: "codexhost/thread/command/execute",
-      params: { threadId, commandId: "fake.compact" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 4)),
-    ).resolves.toMatchObject({ result: { accepted: true } });
-    expect(execute).toHaveBeenCalledOnce();
     await stopFixture(fixture);
   });
 
@@ -4612,41 +4012,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
         },
       },
     });
-    await stopFixture(fixture);
-  });
-
-  it("notifies Renderer when reliable Usage arrives before Context Usage", async () => {
-    const fixture = createFixture();
-    const threadId = await startPiThread(fixture);
-    const session = fixture.adapter.sessions[0];
-    if (!session) throw new Error("Fake Pi Session was not opened");
-
-    const turnId = await startPiTurn(fixture, threadId, 2);
-    session.publishUsage(
-      { cacheHitRatePercent: 0, totalCostUsd: 0.01, inputTokens: 9, outputTokens: 122 },
-      hostTurnIdSchema.parse(turnId),
-    );
-
-    await expect(
-      fixture.collector.waitFor(
-        (message) =>
-          method(message, "codexhost/thread/usage/updated") &&
-          messageParams(message).threadId === threadId,
-      ),
-    ).resolves.toEqual({
-      method: "codexhost/thread/usage/updated",
-      params: { threadId },
-    });
-    expect(
-      fixture.collector.messages.some(
-        (message) =>
-          method(message, "thread/tokenUsage/updated") &&
-          messageParams(message).threadId === threadId,
-      ),
-    ).toBe(false);
-
-    session.succeedTurn();
-    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
     await stopFixture(fixture);
   });
 
@@ -5064,41 +4429,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("routes a fixed Renderer Fork intent through the existing external Fork implementation", async () => {
-    const fixture = createFixture();
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-    const sourceThreadId = await startPiThread(fixture);
-    const firstTurnId = await completePiTurn(fixture, sourceThreadId, 2);
-    await completePiTurn(fixture, sourceThreadId, 3);
-
-    writeRequest(fixture.desktopInput, {
-      id: 10,
-      method: "codexhost/thread/fork",
-      params: { threadId: sourceThreadId, lastTurnId: firstTurnId },
-    });
-    const response = await fixture.collector.waitFor((message) => requestId(message, 10));
-    expect(response).toMatchObject({ result: { threadId: expect.any(String) } });
-    const derivedId = (response.result as JsonObject).threadId;
-    if (typeof derivedId !== "string") throw new Error("Renderer Fork has no derived Thread ID");
-    expect(derivedId).not.toBe(sourceThreadId);
-    await expect(
-      fixture.mappingStore.getThread(hostThreadIdSchema.parse(derivedId)),
-    ).resolves.toMatchObject({
-      forkSource: { hostThreadId: sourceThreadId, hostTurnId: firstTurnId },
-      turnMappings: [{}],
-    });
-    const responseIndex = fixture.collector.messages.findIndex((message) => requestId(message, 10));
-    const notificationIndex = fixture.collector.messages.findIndex(
-      (message) =>
-        method(message, "thread/started") &&
-        (messageParams(message).thread as JsonObject | undefined)?.id === derivedId,
-    );
-    expect(notificationIndex).toBeGreaterThan(responseIndex);
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
   it("acknowledges Desktop unsubscribe without inventing an external subscription", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
@@ -5195,27 +4525,13 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const threadId = await startPiThread(fixture);
     const model = adapter.catalog.models[1]?.ref;
     if (!model) throw new Error("Fake catalog has no secondary Model");
-    const thinkingOptionId = "low";
+    const thinkingOptionId = harnessThinkingOptionIdSchema.parse("low");
     const permissionModeId = harnessPermissionModeIdSchema.parse("auto");
-
-    writeRequest(fixture.desktopInput, {
-      id: 40,
-      method: "codexhost/thread/model/select",
-      params: { threadId, model },
-    });
-    await fixture.collector.waitFor((message) => requestId(message, 40));
-    writeRequest(fixture.desktopInput, {
-      id: 41,
-      method: "codexhost/thread/thinking/select",
-      params: { threadId, thinkingOptionId },
-    });
-    await fixture.collector.waitFor((message) => requestId(message, 41));
-    writeRequest(fixture.desktopInput, {
-      id: 42,
-      method: "codexhost/thread/permission-mode/select",
-      params: { threadId, permissionModeId },
-    });
-    await fixture.collector.waitFor((message) => requestId(message, 42));
+    const configured = adapter.sessions[0];
+    if (!configured) throw new Error("Fake Pi Session was not opened");
+    await configured.execute({ type: "model.select", model });
+    await configured.execute({ type: "thinking.select", thinkingOptionId });
+    await configured.execute({ type: "permissionMode.select", permissionModeId });
 
     const firstTurnId = await completePiTurn(fixture, threadId, 43);
     await completePiTurn(fixture, threadId, 44);
@@ -5727,21 +5043,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
           contextUsedTokens: 33,
           contextWindowTokens: 200,
         },
-      },
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 63,
-      method: "codexhost/thread/inspect",
-      params: { threadId },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 63)),
-    ).resolves.toMatchObject({
-      result: {
-        owner: "external",
-        effectiveModel: restoredModel,
-        resolvedModelLabel: "Fake Secondary",
       },
     });
 
@@ -7023,11 +6324,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const secondModel = claudeAdapter.catalog.models[1]?.ref;
     if (!firstModel || !secondModel) throw new Error("Fake Claude catalog is incomplete");
 
-    const firstThreadId = await startExternalThread(
-      fixture,
-      encodeClaudeTransportModel(secondModel),
-      20,
-    );
+    await startExternalThread(fixture, encodeClaudeTransportModel(secondModel), 20);
     const secondThreadId = await startExternalThread(
       fixture,
       encodeClaudeTransportModel(firstModel),
@@ -7035,36 +6332,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     );
     expect(claudeAdapter.sessions[0]?.initialState.effectiveModel).toEqual(secondModel);
     expect(claudeAdapter.sessions[1]?.initialState.effectiveModel).toEqual(firstModel);
-
-    writeRequest(fixture.desktopInput, {
-      id: 22,
-      method: "codexhost/thread/model/select",
-      params: { threadId: firstThreadId, model: firstModel },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 22)),
-    ).resolves.toMatchObject({
-      result: {
-        effectiveModel: firstModel,
-        resolvedModelLabel: "fake-runtime-primary",
-      },
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 23,
-      method: "codexhost/thread/inspect",
-      params: { threadId: firstThreadId },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 23)),
-    ).resolves.toMatchObject({
-      result: {
-        harnessId: "claude-code",
-        transportModelId: encodeClaudeTransportModel(secondModel),
-        effectiveModel: firstModel,
-        resolvedModelLabel: "fake-runtime-primary",
-      },
-    });
 
     writeRequest(fixture.desktopInput, {
       id: 24,
@@ -7084,57 +6351,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
       },
     });
     expect(claudeAdapter.sessions[1]?.state.effectiveModel).toEqual(firstModel);
-    await stopFixture(fixture);
-  });
-
-  it("rejects Model selection when the owning Claude Session does not support it", async () => {
-    const piAdapter = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const claudeAdapter = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["pi", piAdapter],
-        ["claude-code", claudeAdapter],
-      ]),
-    });
-    const threadId = await startExternalThread(fixture, CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID, 20);
-    const model = piAdapter.catalog.defaultModel;
-    if (!model) throw new Error("Fake Pi catalog has no default Model");
-    const claudeSession = claudeAdapter.sessions[0];
-    if (!claudeSession) throw new Error("Fake Claude Session was not opened");
-    claudeSession.capabilities.configuration.selectModel = false;
-
-    writeRequest(fixture.desktopInput, {
-      id: 21,
-      method: "codexhost/thread/model/select",
-      params: { threadId, model },
-    });
-
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 21)),
-    ).resolves.toMatchObject({
-      error: {
-        code: -32078,
-        message: "External Harness does not support Model selection",
-      },
-    });
-    expect(claudeSession.state.effectiveModel).toEqual(claudeAdapter.catalog.defaultModel);
-
-    const off = claudeAdapter.catalog.thinkingOptions.find(({ id }) => id === "off")?.id;
-    if (!off) throw new Error("Fake Claude catalog has no Thinking option");
-    claudeSession.capabilities.configuration.selectThinkingOption = false;
-    writeRequest(fixture.desktopInput, {
-      id: 22,
-      method: "codexhost/thread/thinking/select",
-      params: { threadId, thinkingOptionId: off },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 22)),
-    ).resolves.toMatchObject({
-      error: {
-        code: -32078,
-        message: "External Harness does not support Thinking selection",
-      },
-    });
     await stopFixture(fixture);
   });
 

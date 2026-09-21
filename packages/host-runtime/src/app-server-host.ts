@@ -10,7 +10,7 @@ import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
 import type { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { appendFileSync } from "node:fs";
 import path from "node:path";
@@ -41,36 +41,19 @@ import {
   harnessPluginListParamsSchema,
   harnessPluginListResultSchema,
   type HarnessPluginDescriptor,
-  externalThreadForkParamsSchema,
   harnessCommandCatalogSchema,
   harnessCommandsInspectParamsSchema,
   type HarnessId,
-  harnessIdSchema,
-  threadCommandExecuteParamsSchema,
   threadCommandExecuteResultSchema,
-  threadCommandsInspectParamsSchema,
-  externalThreadForkResultSchema,
   harnessInspectParamsSchema,
-  harnessConfigurationStateSchema,
   harnessInspectionSchema,
   harnessWebUiOpenParamsSchema,
   harnessWebUiOpenResultSchema,
-  harnessModelSelectionStateSchema,
-  harnessThinkingOptionIdSchema,
   hostItemIdSchema,
-  hostThreadIdSchema,
   hostTurnIdSchema,
   jsonValueSchema,
-  threadInspectionParamsSchema,
-  threadInspectionSchema,
-  threadModelSelectParamsSchema,
   threadUsageInspectionParamsSchema,
   threadUsageInspectionSchema,
-  threadPermissionModeSelectParamsSchema,
-  threadThinkingSelectParamsSchema,
-  threadOwnershipListParamsSchema,
-  threadOwnershipListResultSchema,
-  permissionModeFixedAtCreate,
   type AccountCreditsSnapshot,
   harnessPermissionModeIdSchema,
   type HarnessModelRef,
@@ -109,11 +92,7 @@ import {
   harnessLaunchSettingsSetSchema,
 } from "@codexhost/shared-contracts";
 import { DesktopRequestQueue } from "./desktop-request-queue.js";
-import {
-  canonicalizeOfficialCodexModelRef,
-  decodeOfficialCodexModelRef,
-  encodeOfficialCodexModelRef,
-} from "./official-codex-model-ref.js";
+import {} from "./official-codex-model-ref.js";
 import {
   spawnOfficialAppServerConnection,
   type OfficialAppServerConnection,
@@ -147,7 +126,6 @@ import {
 } from "./native-picker.js";
 
 const SUBAGENT_TERMINAL_REFRESH_DELAYS_MS = [0, 50, 100, 150] as const;
-const THREAD_USAGE_UPDATED_METHOD = "codexhost/thread/usage/updated";
 // Native Codex account quota is still pulled through its official API; keep
 // that reading briefly cached so concurrent Composer inspections coalesce.
 
@@ -1067,32 +1045,8 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/thread/fork") {
-      await this.#forkExternalThreadFromRenderer(request);
-      return;
-    }
-    if (request.method === "codexhost/thread/inspect") {
-      await this.#inspectThread(request);
-      return;
-    }
     if (request.method === "codexhost/thread/usage/inspect") {
       await this.#inspectThreadUsage(request);
-      return;
-    }
-    if (request.method === "codexhost/thread/ownership/list") {
-      await this.#listThreadOwnership(request);
-      return;
-    }
-    if (request.method === "codexhost/thread/model/select") {
-      await this.#selectThreadModel(request);
-      return;
-    }
-    if (request.method === "codexhost/thread/thinking/select") {
-      await this.#selectThreadThinking(request);
-      return;
-    }
-    if (request.method === "codexhost/thread/permission-mode/select") {
-      await this.#selectThreadPermissionMode(request);
       return;
     }
     if (request.method === "codexhost/harness/commands/inspect") {
@@ -1104,14 +1058,6 @@ export class AppServerHost {
       } else {
         await this.#writeHarnessCommandCatalog(request, params.data.harnessId);
       }
-      return;
-    }
-    if (request.method === "codexhost/thread/commands/inspect") {
-      await this.#inspectThreadCommands(request);
-      return;
-    }
-    if (request.method === "codexhost/thread/command/execute") {
-      await this.#executeThreadCommand(request);
       return;
     }
     // Reads wait for the official runtime without holding Desktop request draining open.
@@ -2249,59 +2195,6 @@ export class AppServerHost {
     }
   }
 
-  async #inspectThread(request: JsonRpcRequest): Promise<void> {
-    const params = threadInspectionParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Invalid Thread inspection params"));
-      return;
-    }
-    const resolution = await this.#resolveExternalThread(params.data.threadId);
-    if (resolution.kind === "error") {
-      await this.#writer.json(rpcError(request, resolution.error.code, resolution.error.message));
-      return;
-    }
-    const inspection = threadInspectionSchema.parse(
-      resolution.kind === "official"
-        ? {
-            owner: "codex",
-            locked: true,
-          }
-        : {
-            owner: "external",
-            harnessId: resolution.thread.harnessId,
-            transportModelId: resolution.thread.transportModelId,
-            ...(resolution.thread.stateObserver.state.effectiveModel
-              ? { effectiveModel: resolution.thread.stateObserver.state.effectiveModel }
-              : {}),
-            ...(resolution.thread.stateObserver.state.resolvedModelLabel
-              ? { resolvedModelLabel: resolution.thread.stateObserver.state.resolvedModelLabel }
-              : {}),
-            ...(resolution.thread.stateObserver.state.effectiveThinkingOptionId
-              ? {
-                  effectiveThinkingOptionId:
-                    resolution.thread.stateObserver.state.effectiveThinkingOptionId,
-                }
-              : {}),
-            ...(resolution.thread.stateObserver.state.availableThinkingOptions
-              ? {
-                  availableThinkingOptions:
-                    resolution.thread.stateObserver.state.availableThinkingOptions,
-                }
-              : {}),
-            ...(resolution.thread.stateObserver.state.effectivePermissionModeId
-              ? {
-                  effectivePermissionModeId:
-                    resolution.thread.stateObserver.state.effectivePermissionModeId,
-                }
-              : {}),
-            history: resolution.thread.session.capabilities.history,
-            ...(resolution.thread.latestUsage ? { usage: resolution.thread.latestUsage } : {}),
-            locked: true,
-          },
-    );
-    await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(inspection) }));
-  }
-
   async #inspectThreadUsage(request: JsonRpcRequest): Promise<void> {
     const params = threadUsageInspectionParamsSchema.safeParse(request.params);
     if (!params.success) {
@@ -2360,47 +2253,6 @@ export class AppServerHost {
     );
   }
 
-  async #listThreadOwnership(request: JsonRpcRequest): Promise<void> {
-    const params = threadOwnershipListParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Invalid Thread ownership-list params"));
-      return;
-    }
-    try {
-      const threads = await Promise.all(
-        params.data.threadIds.map(async (threadId) => {
-          const record = await this.#repository.find(threadId);
-          return record
-            ? { threadId, owner: "external" as const, harnessId: record.harnessId }
-            : { threadId, owner: "codex" as const };
-        }),
-      );
-      const result = threadOwnershipListResultSchema.parse({ threads });
-      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
-    } catch {
-      await this.#writer.json(
-        rpcError(request, -32081, "Thread ownership metadata could not be read"),
-      );
-    }
-  }
-
-  async #inspectThreadCommands(request: JsonRpcRequest): Promise<void> {
-    const params = threadCommandsInspectParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(
-        rpcError(request, -32602, "Invalid Thread command inspection params"),
-      );
-      return;
-    }
-    const location = await this.#locateExternalThread(params.data.threadId);
-    if (await this.#writeResolutionError(request, location)) return;
-    if (location.kind !== "external") {
-      await this.#writer.json(rpcEnvelope(request, { result: { commands: [] } }));
-      return;
-    }
-    await this.#writeHarnessCommandCatalog(request, location.record.harnessId);
-  }
-
   async #writeHarnessCommandCatalog(request: JsonRpcRequest, harnessId: HarnessId): Promise<void> {
     await this.#waitForPlugins();
     const adapter = this.#externalAdapters.get(harnessId);
@@ -2413,84 +2265,6 @@ export class AppServerHost {
       await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(catalog) }));
     } catch {
       await this.#writer.json(rpcError(request, -32078, "Harness command catalog is invalid"));
-    }
-  }
-
-  async #executeThreadCommand(request: JsonRpcRequest): Promise<void> {
-    const params = threadCommandExecuteParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Invalid Thread command parameters"));
-      return;
-    }
-    const resolution = await this.#resolveExternalThread(params.data.threadId);
-    if (await this.#writeResolutionError(request, resolution)) return;
-    if (resolution.kind !== "external") {
-      await this.#writer.json(rpcError(request, -32078, "Thread is not externally owned"));
-      return;
-    }
-    this.#dispatchDesktopRequest(
-      () => this.#executeResolvedThreadCommand(request, resolution.thread, params.data),
-      resolution.thread.id,
-    );
-  }
-
-  async #executeResolvedThreadCommand(
-    request: JsonRpcRequest,
-    thread: ExternalThread,
-    params: ReturnType<typeof threadCommandExecuteParamsSchema.parse>,
-  ): Promise<void> {
-    if (
-      thread.running ||
-      this.#externalSteering.hasPending(thread.id) ||
-      this.#pendingExternalCommandRequests.has(thread.id)
-    ) {
-      await this.#writer.json(
-        rpcError(request, -32072, "External Thread already has an active operation"),
-      );
-      return;
-    }
-    this.#pendingExternalCommandRequests.add(thread.id);
-    try {
-      const commands = thread.session.commands;
-      if (!commands) {
-        await this.#writer.json(
-          rpcError(request, -32078, "External Harness does not expose commands"),
-        );
-        return;
-      }
-      const catalog = await commands.list();
-      if (!catalog.ok) {
-        await this.#writer.json(rpcError(request, -32078, catalog.error.message));
-        return;
-      }
-      const descriptor = catalog.value.commands.find(({ id }) => id === params.commandId);
-      if (!descriptor) {
-        await this.#writer.json(
-          rpcError(
-            request,
-            -32078,
-            `External Harness does not expose command '${params.commandId}'`,
-          ),
-        );
-        return;
-      }
-      try {
-        await this.#startExternalCommand(
-          request,
-          thread,
-          params.commandId,
-          params.arguments,
-          params.turnId,
-          "command",
-        );
-      } catch (error) {
-        this.#diagnose(error);
-        await this.#writer.json(
-          rpcError(request, -32073, `External Harness command failed: ${errorMessage(error)}`),
-        );
-      }
-    } finally {
-      this.#pendingExternalCommandRequests.delete(thread.id);
     }
   }
 
@@ -2572,261 +2346,6 @@ export class AppServerHost {
       await this.#writer.json(rpcEnvelope(request, { result: response as JsonObject }));
     } finally {
       gate.resolve();
-    }
-  }
-
-  async #selectThreadModel(request: JsonRpcRequest): Promise<void> {
-    const params = threadModelSelectParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Invalid Thread Model selection params"));
-      return;
-    }
-    const resolution = await this.#resolveExternalThread(params.data.threadId);
-    if (resolution.kind === "error") {
-      await this.#writer.json(rpcError(request, resolution.error.code, resolution.error.message));
-      return;
-    }
-    const thread = resolution.kind === "external" ? resolution.thread : undefined;
-    if (!thread) {
-      await this.#writer.json(
-        rpcError(request, -32078, "Model selection requires a current-process external Thread"),
-      );
-      return;
-    }
-    if (!thread.session.capabilities.configuration.selectModel) {
-      await this.#writer.json(
-        rpcError(request, -32078, "External Harness does not support Model selection"),
-      );
-      return;
-    }
-    const beforeRevision = thread.stateObserver.revision;
-    const result = await thread.session.execute({
-      type: "model.select",
-      model: params.data.model,
-    });
-    if (!result.ok) {
-      await this.#writer.json(rpcError(request, -32078, result.error.message));
-      return;
-    }
-    try {
-      const state = await thread.stateObserver.waitForChange(beforeRevision);
-      const projected = harnessModelSelectionStateSchema.parse({
-        ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
-        ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
-        ...(state.effectiveThinkingOptionId
-          ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
-          : {}),
-        ...(state.availableThinkingOptions
-          ? { availableThinkingOptions: state.availableThinkingOptions }
-          : {}),
-        ...(state.effectivePermissionModeId
-          ? { effectivePermissionModeId: state.effectivePermissionModeId }
-          : {}),
-      });
-      if (!projected.effectiveModel) {
-        throw new Error("Harness Session did not report an effective Model");
-      }
-      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(projected) }));
-    } catch (error) {
-      await this.#writer.json(
-        rpcError(request, -32078, `Model state was not confirmed: ${errorMessage(error)}`),
-      );
-    }
-  }
-
-  async #selectThreadThinking(request: JsonRpcRequest): Promise<void> {
-    const params = threadThinkingSelectParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(
-        rpcError(request, -32602, "Invalid Thread Thinking selection params"),
-      );
-      return;
-    }
-    const resolution = await this.#resolveExternalThread(params.data.threadId);
-    if (resolution.kind === "error") {
-      await this.#writer.json(rpcError(request, resolution.error.code, resolution.error.message));
-      return;
-    }
-    const thread = resolution.kind === "external" ? resolution.thread : undefined;
-    if (!thread) {
-      await this.#writer.json(
-        rpcError(request, -32078, "Thinking selection requires a current-process external Thread"),
-      );
-      return;
-    }
-    if (!thread.session.capabilities.configuration.selectThinkingOption) {
-      await this.#writer.json(
-        rpcError(request, -32078, "External Harness does not support Thinking selection"),
-      );
-      return;
-    }
-    const beforeRevision = thread.stateObserver.revision;
-    const result = await thread.session.execute({
-      type: "thinking.select",
-      thinkingOptionId: params.data.thinkingOptionId,
-    });
-    if (!result.ok) {
-      await this.#writer.json(rpcError(request, -32078, result.error.message));
-      return;
-    }
-    try {
-      const state = await thread.stateObserver.waitForChange(beforeRevision);
-      const projected = harnessModelSelectionStateSchema.parse({
-        ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
-        ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
-        ...(state.effectiveThinkingOptionId
-          ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
-          : {}),
-        ...(state.availableThinkingOptions
-          ? { availableThinkingOptions: state.availableThinkingOptions }
-          : {}),
-        ...(state.effectivePermissionModeId
-          ? { effectivePermissionModeId: state.effectivePermissionModeId }
-          : {}),
-      });
-      if (!projected.effectiveThinkingOptionId) {
-        throw new Error("Harness Session did not report effective Thinking");
-      }
-      thread.requestedThinkingOptionId = projected.effectiveThinkingOptionId;
-      const previousSelection = decodeExternalTransportSelection(
-        thread.harnessId,
-        thread.transportModelId,
-      );
-      const effectiveModel =
-        projected.effectiveModel ?? thread.requestedModel ?? previousSelection?.model;
-      if (effectiveModel) {
-        const transportModelId = encodeExternalTransportSelection(thread.harnessId, {
-          ...(previousSelection ?? {}),
-          model: effectiveModel,
-          thinkingOptionId: projected.effectiveThinkingOptionId,
-        });
-        thread.transportModelId = transportModelId;
-        thread.requestedModel = effectiveModel;
-        try {
-          thread.record = await this.#repository.setTransportModelId(
-            thread.record.hostThreadId,
-            transportModelId,
-          );
-        } catch (error) {
-          this.#diagnose(error);
-        }
-        thread.thread = externalThreadValue({
-          record: { ...thread.record, transportModelId },
-          turns: thread.turns,
-          sessionId: thread.sessionId,
-          running: thread.running,
-        });
-      }
-      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(projected) }));
-    } catch (error) {
-      await this.#writer.json(
-        rpcError(request, -32078, `Thinking state was not confirmed: ${errorMessage(error)}`),
-      );
-    }
-  }
-
-  async #selectThreadPermissionMode(request: JsonRpcRequest): Promise<void> {
-    const params = threadPermissionModeSelectParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(
-        rpcError(request, -32602, "Invalid Thread Permission Mode selection params"),
-      );
-      return;
-    }
-    const resolution = await this.#resolveExternalThread(params.data.threadId);
-    if (resolution.kind === "error") {
-      await this.#writer.json(rpcError(request, resolution.error.code, resolution.error.message));
-      return;
-    }
-    const thread = resolution.kind === "external" ? resolution.thread : undefined;
-    if (!thread) {
-      await this.#writer.json(
-        rpcError(
-          request,
-          -32078,
-          "Permission Mode selection requires a current-process external Thread",
-        ),
-      );
-      return;
-    }
-    if (!thread.session.capabilities.configuration.selectPermissionMode) {
-      await this.#writer.json(
-        rpcError(request, -32078, "External Harness does not support Permission Mode selection"),
-      );
-      return;
-    }
-    if (permissionModeFixedAtCreate(thread.session.capabilities.configuration)) {
-      await this.#writer.json(
-        rpcError(request, -32078, "Permission Mode is fixed at Session creation"),
-      );
-      return;
-    }
-    const beforeRevision = thread.stateObserver.revision;
-    const result = await thread.session.execute({
-      type: "permissionMode.select",
-      permissionModeId: params.data.permissionModeId,
-    });
-    if (!result.ok) {
-      await this.#writer.json(rpcError(request, -32078, result.error.message));
-      return;
-    }
-    try {
-      const state = await thread.stateObserver.waitForChange(beforeRevision);
-      const projected = harnessConfigurationStateSchema.parse({
-        ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
-        ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
-        ...(state.effectiveThinkingOptionId
-          ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
-          : {}),
-        ...(state.availableThinkingOptions
-          ? { availableThinkingOptions: state.availableThinkingOptions }
-          : {}),
-        ...(state.effectivePermissionModeId
-          ? { effectivePermissionModeId: state.effectivePermissionModeId }
-          : {}),
-      });
-      if (!projected.effectivePermissionModeId) {
-        throw new Error("Harness Session did not report its current Permission Mode");
-      }
-      thread.requestedPermissionModeId = projected.effectivePermissionModeId;
-      const previousSelection = decodeExternalTransportSelection(
-        thread.harnessId,
-        thread.transportModelId,
-      );
-      const effectiveModel =
-        projected.effectiveModel ?? thread.requestedModel ?? previousSelection?.model;
-      if (effectiveModel) {
-        const transportModelId = encodeExternalTransportSelection(thread.harnessId, {
-          ...(previousSelection ?? {}),
-          model: effectiveModel,
-          permissionModeId: projected.effectivePermissionModeId,
-        });
-        thread.transportModelId = transportModelId;
-        thread.requestedModel = effectiveModel;
-        try {
-          thread.record = await this.#repository.setTransportModelId(
-            thread.record.hostThreadId,
-            transportModelId,
-          );
-        } catch (error) {
-          this.#diagnose(error);
-        }
-        thread.thread = externalThreadValue({
-          record: { ...thread.record, transportModelId },
-          turns: thread.turns,
-          sessionId: thread.sessionId,
-          running: thread.running,
-        });
-      }
-      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(projected) }));
-    } catch (error) {
-      await this.#writer.json(
-        rpcError(
-          request,
-          -32078,
-          `Permission Mode state was not confirmed: ${errorMessage(error)}`,
-        ),
-      );
     }
   }
 
@@ -3041,42 +2560,6 @@ export class AppServerHost {
     event: Parameters<ExternalThreadRuntime["persistTerminalIdentity"]>[1],
   ): Promise<Error | null> {
     return this.#externalRuntime.persistTerminalIdentity(thread, event);
-  }
-
-  async #forkExternalThreadFromRenderer(request: JsonRpcRequest): Promise<void> {
-    const parsed = externalThreadForkParamsSchema.safeParse(request.params);
-    if (!parsed.success) {
-      await this.#writer.json(rpcError(request, -32602, "External Fork request is invalid"));
-      return;
-    }
-    const resolution = await this.#resolveExternalThread(parsed.data.threadId);
-    if (await this.#writeResolutionError(request, resolution)) return;
-    if (resolution.kind !== "external") {
-      await this.#writer.json(rpcError(request, -32078, "Thread is not externally owned"));
-      return;
-    }
-    const result = await executeExternalThreadFork({
-      source: resolution.thread,
-      fork: {
-        threadId: parsed.data.threadId,
-        lastTurnId: parsed.data.lastTurnId,
-        excludeTurns: true,
-      },
-      adapters: this.#externalAdapters,
-      repository: this.#repository,
-      runtime: this.#externalRuntime,
-      environment: this.#options.environment ?? process.env,
-    });
-    if (!result.ok) {
-      await this.#writer.json(rpcError(request, result.error.code, result.error.message));
-      return;
-    }
-    await this.#writer.json(
-      rpcEnvelope(request, {
-        result: externalThreadForkResultSchema.parse({ threadId: result.derived.id }),
-      }),
-    );
-    await this.#notifyExternalThreadStarted(result.thread);
   }
 
   async #forkExternalThread(
@@ -3772,10 +3255,6 @@ export class AppServerHost {
       thread.latestUsage = event.usage;
       if (event.usage === null) {
         thread.usageTurnId = null;
-        await this.#writer.json({
-          method: THREAD_USAGE_UPDATED_METHOD,
-          params: { threadId: thread.id },
-        });
         return;
       }
       const turnId = event.observedForTurnId
@@ -3788,10 +3267,6 @@ export class AppServerHost {
         await this.#waitForTurnResponse(thread, turnId);
         await this.#writeExternalUsage(thread, turnId);
       }
-      await this.#writer.json({
-        method: THREAD_USAGE_UPDATED_METHOD,
-        params: { threadId: thread.id },
-      });
       return;
     }
     if (event.type === "subagent.transcript.changed") {
