@@ -20,10 +20,6 @@ import {
 } from "./delegation-types.js";
 import { createProductionExternalThreadStore } from "./external-thread-repository.js";
 import {
-  createRemoteControlAppServerPlan,
-  publishRemoteControlAppServerDescriptor,
-} from "./remote-control-app-server.js";
-import {
   createRemoteAppServerWebSocketListener,
   isRemoteUnixListenerInvocation,
   officialListenerArgumentsForRemoteListener,
@@ -120,85 +116,28 @@ export async function runHostRuntime(input: {
   const hostRuntimePath = input.hostRuntimeUrl ? fileURLToPath(input.hostRuntimeUrl) : undefined;
 
   if (!isRemoteUnixListenerInvocation(input.arguments)) {
-    const remoteControlPlan = createRemoteControlAppServerPlan({
-      arguments: input.arguments,
-      environment: input.environment,
-      ...(hostRuntimePath ? { hostRuntimePath } : {}),
-    });
-    const environment = remoteControlPlan?.environment ?? input.environment;
     return prepareDelegationRuntime({
-      environment,
-      createHost: async (delegationEnvironment, onDelegationApi, registry) => {
+      environment: input.environment,
+      createHost: async (delegationEnvironment, onDelegationApi) => {
         const official = await prepareLocalCodex({
           stockCodexPath,
-          arguments: remoteControlPlan?.officialArguments ?? input.arguments,
+          arguments: input.arguments,
           environment: delegationEnvironment,
           diagnosticOutput: process.stderr,
         });
-        const shared = {
-          officialRuntimeScope: official.officialRuntimeScope,
-          accountControl: official.accountControl,
-        };
-        if (!remoteControlPlan) {
-          try {
-            return await new AppServerHost({
-              stockCodexPath,
-              arguments: input.arguments,
-              defaultAgent,
-              environment: delegationEnvironment,
-              ...shared,
-              ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
-              onDelegationApi,
-            }).run();
-          } finally {
-            await official.close();
-          }
-        }
-        const mappingStore = createProductionExternalThreadStore(delegationEnvironment);
-        let listener: ReturnType<typeof createRemoteAppServerWebSocketListener> | undefined;
         try {
-          await mappingStore.initialize();
-          const common = {
+          return await new AppServerHost({
             stockCodexPath,
+            arguments: input.arguments,
             defaultAgent,
             environment: delegationEnvironment,
-            ...shared,
+            officialRuntimeScope: official.officialRuntimeScope,
+            accountControl: official.accountControl,
             ...installedHarnessPluginOptions(delegationEnvironment, false, input.hostRuntimeUrl),
-            mappingStore,
-            closeMappingStoreOnExit: false,
-          };
-          const host = new AppServerHost({
-            ...common,
-            arguments: input.arguments,
             onDelegationApi,
-          });
-          listener = createRemoteAppServerWebSocketListener({
-            socketPath: remoteControlPlan.pipePath,
-            diagnosticOutput: process.stderr,
-            createSession: ({ input: desktopInput, output: desktopOutput, diagnosticOutput }) =>
-              new AppServerHost({
-                ...common,
-                arguments: [],
-                desktopInput,
-                desktopOutput,
-                diagnosticOutput,
-                onDelegationApi: (api) => registry.register(api),
-              }),
-          });
-          await listener.listen();
-          await publishRemoteControlAppServerDescriptor(remoteControlPlan);
-          // Official failure/replacement must never close this listener or external Harnesses.
-          return await host.run();
+          }).run();
         } finally {
-          try {
-            await listener?.close();
-          } finally {
-            try {
-              await official.close();
-            } finally {
-              await mappingStore.close();
-            }
-          }
+          await official.close();
         }
       },
     });

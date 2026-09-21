@@ -56,18 +56,6 @@ export type {
 } from "./delegation-types.js";
 export { runHostRuntime } from "./run-host-runtime.js";
 export { runClaudeAquaHarnessBroker } from "./aqua-harness-broker.js";
-export {
-  REMOTE_CONTROL_BRIDGE_DESCRIPTOR_FILE,
-  createRemoteControlAppServerPlan,
-  publishRemoteControlAppServerDescriptor,
-  remoteControlBridgeDescriptorPath,
-  remoteControlBridgePipePath,
-  runRemoteControlAppServerBridge,
-} from "./remote-control-app-server.js";
-export type {
-  RemoteControlAppServerDescriptorV1,
-  RemoteControlAppServerPlan,
-} from "./remote-control-app-server.js";
 export { runRemoteHostCli } from "./remote-host-cli.js";
 export {
   inspectRemoteHostInstallation,
