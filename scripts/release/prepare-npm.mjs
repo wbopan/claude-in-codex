@@ -485,7 +485,6 @@ if (updateEnvironment.CODEXHOST_REMOTE_SSH_MANAGED === "1") {
 let launchArguments;
 let remoteArguments = null;
 let brokerArguments = null;
-let delegationArguments = null;
 if (userArguments.length === 0) {
   launchArguments = ["launch"];
 } else if (userArguments[0] === "launch") {
@@ -498,13 +497,6 @@ if (userArguments.length === 0) {
 } else if (userArguments[0] === "broker") {
   launchArguments = null;
   brokerArguments = userArguments.slice(1);
-} else if (
-  userArguments[0] === "harness" ||
-  userArguments[0] === "delegate" ||
-  userArguments[0] === "thread"
-) {
-  launchArguments = null;
-  delegationArguments = userArguments;
 } else if (userArguments[0] === "--help" || userArguments[0] === "-h") {
   console.log(
     [
@@ -515,10 +507,6 @@ if (userArguments.length === 0) {
       "  codexhost launch [launcher options]",
       "  codexhost remote install|start|stop|status|uninstall",
       "  codexhost broker install|status|stop|uninstall",
-      "  codexhost delegate --help",
-      "  codexhost harness inspect ...",
-      "  codexhost delegate start ...",
-      "  codexhost thread send|cancel|read|wait|list ...",
       "",
       "This npm package uses the current Node.js runtime and the packaged",
       "Rust launcher/shim. Codex Desktop must already be installed.",
@@ -557,28 +545,7 @@ if (launchArguments?.[0] === "launch") {
   launchArguments = ["launch", ...extras, ...launchArguments.slice(1)];
 }
 
-if (delegationArguments !== null) {
-  const child = spawn(
-    process.execPath,
-    [hostRuntime, "--codexhost-delegation-cli", ...delegationArguments],
-    {
-      env: {
-        ...updateEnvironment,
-        CODEXHOST_CLI_PATH: fileURLToPath(import.meta.url),
-      },
-      stdio: "inherit",
-      windowsHide: true,
-    },
-  );
-  child.on("error", (error) => fail(error.message));
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 1);
-  });
-} else if (brokerArguments !== null) {
+if (brokerArguments !== null) {
   const child = spawn(
     launcher,
     [

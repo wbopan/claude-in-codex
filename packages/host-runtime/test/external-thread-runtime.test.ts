@@ -465,7 +465,6 @@ describe("ExternalThreadRuntime register", () => {
             CODEXHOST_CLI_PATH: "/opt/codexhost",
             CODEXHOST_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
             CODEXHOST_RUNTIME_TOKEN: "token",
-            CODEXHOST_THREAD_ID: hostThreadId,
           }),
         }),
       );

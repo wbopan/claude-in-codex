@@ -71,7 +71,6 @@ const LAUNCHER_EXECUTABLE_ENV: &str = "CODEXHOST_LAUNCHER_EXECUTABLE";
 const RUNTIME_DESCRIPTOR_PATH_ENV: &str = "CODEXHOST_RUNTIME_DESCRIPTOR_PATH";
 const CONTROL_PORT_ENV: &str = "CODEXHOST_CONTROL_PORT";
 const CONTROL_NONCE_ENV: &str = "CODEXHOST_CONTROL_NONCE";
-const CODEXHOST_CLI_PATH_ENV: &str = "CODEXHOST_CLI_PATH";
 const START_MENU_ARGUMENT: &str = "--start-menu";
 const READY_LINE: &str = "ready";
 const STARTUP_TRACE_ENV: &str = "CODEXHOST_STARTUP_TRACE";
@@ -113,7 +112,7 @@ impl Error for UnmanagedDesktopConflict {}
 
 fn usage() {
     eprintln!(
-        "usage:\n  codexhost\n  codexhost inspect [--custom-install <absolute-directory>]\n  codexhost launch [--shim <absolute-file>] [--node <absolute-file>] [--host-runtime <absolute-file>] [--desktop-controller <absolute-file>] [--renderer <absolute-file>] [--pi <absolute-file>] [--custom-install <absolute-directory>]\n  codexhost broker install|status|stop|uninstall\n  codexhost delegate --help\n  codexhost harness inspect ...\n  codexhost delegate start ...\n  codexhost thread send|cancel|read|wait|list ..."
+        "usage:\n  codexhost\n  codexhost inspect [--custom-install <absolute-directory>]\n  codexhost launch [--shim <absolute-file>] [--node <absolute-file>] [--host-runtime <absolute-file>] [--desktop-controller <absolute-file>] [--renderer <absolute-file>] [--pi <absolute-file>] [--custom-install <absolute-directory>]\n  codexhost broker install|status|stop|uninstall"
     );
 }
 
@@ -159,22 +158,6 @@ fn read_bounded_loopback_url(reader: impl Read) -> Result<String, Box<dyn Error>
         return Err("native URL must be one non-empty line".into());
     }
     Ok(value)
-}
-
-fn run_delegation_cli(arguments: &[String]) -> Result<(), Box<dyn Error>> {
-    let executable = env::current_exe()?.canonicalize()?;
-    let resources = InstalledResources::from_executable(&executable)?;
-    let status = Command::new(&resources.node)
-        .arg(node_entrypoint_path(&resources.host_runtime))
-        .arg("--codexhost-delegation-cli")
-        .args(arguments)
-        .env(CODEXHOST_CLI_PATH_ENV, &executable)
-        .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        std::process::exit(status.code().unwrap_or(1));
-    }
 }
 
 fn startup_trace(stage: &str) {
@@ -1153,7 +1136,6 @@ fn run(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         }
         Some("open-loopback-url") => Err("open-loopback-url accepts no arguments".into()),
         Some("broker") => run_native_harness_broker_cli(&arguments[1..]),
-        Some("harness") | Some("delegate") | Some("thread") => run_delegation_cli(arguments),
         _ => {
             usage();
             Err("invalid launcher arguments".into())

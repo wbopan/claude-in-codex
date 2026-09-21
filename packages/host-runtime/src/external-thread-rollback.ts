@@ -21,7 +21,6 @@ import {
   externalThreadValue,
   type ExternalThreadRepository,
 } from "./external-thread-repository.js";
-import { DELEGATION_THREAD_ID_ENV } from "./delegation-types.js";
 import type { ExternalThread, ExternalThreadRuntime } from "./external-thread-runtime.js";
 
 export type ExternalThreadRollbackResult =
@@ -137,7 +136,6 @@ async function executeCurrentLastTurnRollback(input: {
       cwd: current.cwd,
       environment: {
         ...(input.environment ?? process.env),
-        [DELEGATION_THREAD_ID_ENV]: current.id,
       },
       sourceRef: currentNativeRef as NativeSessionRef,
       ...(configuration.effectiveModel ? { model: configuration.effectiveModel } : {}),
@@ -336,7 +334,6 @@ export async function executeExternalThreadRollback(input: {
       cwd: derived.cwd,
       environment: {
         ...(input.environment ?? process.env),
-        [DELEGATION_THREAD_ID_ENV]: derived.id,
       },
       sourceRef: sourceNativeRef as NativeSessionRef,
       checkpoint: boundary.nativeCheckpointRef as NativeCheckpointRef,

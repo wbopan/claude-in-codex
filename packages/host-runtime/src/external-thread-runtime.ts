@@ -36,7 +36,6 @@ import {
   externalThreadValue,
   type ExternalThreadRepository,
 } from "./external-thread-repository.js";
-import { DELEGATION_THREAD_ID_ENV } from "./delegation-types.js";
 import { SessionStateObserver } from "./session-state-observer.js";
 import { DesktopRequestQueue } from "./desktop-request-queue.js";
 import { ExternalThreadIdleRelease } from "./external-thread-idle-release.js";
@@ -560,7 +559,7 @@ export class ExternalThreadRuntime {
       clientTools: this.clientTools(record.hostThreadId, record.cwd),
       kind: "resume",
       cwd: record.cwd,
-      environment: { ...this.#environment, [DELEGATION_THREAD_ID_ENV]: record.hostThreadId },
+      environment: { ...this.#environment },
       nativeRef: record.nativeSessionRef as NativeSessionRef,
       knownTurnRefs: record.turnMappings.map(({ nativeTurnRef }) => nativeTurnRef),
       ...(restoredSelection?.model ? { model: restoredSelection.model } : {}),
