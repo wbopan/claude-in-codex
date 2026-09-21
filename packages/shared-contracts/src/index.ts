@@ -1,5 +1,4 @@
 import { z } from "zod";
-export * from "./credential-imports.js";
 import { WORKSPACE_CONTRACT_VERSION } from "./version.js";
 export {
   IDLE_RELEASE_SETTINGS_METHOD,
@@ -83,50 +82,6 @@ export type {
 } from "./codex-accounts.js";
 export { REASONING_TRANSCRIPT_COMMAND } from "./reasoning-transcript.js";
 export type { CodexhostError } from "./errors.js";
-export {
-  HARNESS_SESSION_IMPORT_CWD_MAX_LENGTH,
-  HARNESS_SESSION_IMPORT_ID_MAX_LENGTH,
-  HARNESS_SESSION_IMPORT_LIST_MAX_LENGTH,
-  HARNESS_SESSION_IMPORT_TITLE_MAX_LENGTH,
-  HARNESS_SESSION_IMPORT_UPDATED_AT_MAX,
-  harnessSessionImportCandidateSchema,
-  HARNESS_SESSION_IMPORT_DEFAULT_PAGE_SIZE,
-  harnessSessionImportIdSchema,
-  harnessSessionImportSourcesParamsSchema,
-  harnessSessionImportSourcesResultSchema,
-  harnessSessionListParamsSchema,
-  harnessSessionListResultSchema,
-  harnessSessionImportParamsSchema,
-  harnessSessionImportResultSchema,
-} from "./harness-session-import.js";
-export type {
-  HarnessSessionImportCandidate,
-  HarnessSessionImportSourcesResult,
-  HarnessSessionListParams,
-  HarnessSessionListResult,
-  HarnessSessionImportParams,
-  HarnessSessionImportResult,
-} from "./harness-session-import.js";
-export {
-  DEEPSEEK_MODERN_HOST_THREAD_ID_MAX_LENGTH,
-  DEEPSEEK_MODERN_SESSION_CWD_MAX_LENGTH,
-  DEEPSEEK_MODERN_SESSION_ID_MAX_LENGTH,
-  DEEPSEEK_MODERN_SESSION_LIST_MAX_LENGTH,
-  DEEPSEEK_MODERN_SESSION_TITLE_MAX_LENGTH,
-  DEEPSEEK_MODERN_SESSION_UPDATED_AT_MAX,
-  deepSeekModernSessionCandidateSchema,
-  deepSeekModernSessionImportParamsSchema,
-  deepSeekModernSessionImportResultSchema,
-  deepSeekModernSessionListParamsSchema,
-  deepSeekModernSessionListResultSchema,
-} from "./deepseek-modern-sessions.js";
-export type {
-  DeepSeekModernSessionCandidate,
-  DeepSeekModernSessionImportParams,
-  DeepSeekModernSessionImportResult,
-  DeepSeekModernSessionListParams,
-  DeepSeekModernSessionListResult,
-} from "./deepseek-modern-sessions.js";
 export {
   externalThreadForkParamsSchema,
   externalThreadForkResultSchema,

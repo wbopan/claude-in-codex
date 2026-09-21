@@ -36,7 +36,6 @@ import {
   hostThreadIdSchema,
   hostTurnIdSchema,
   type CodexAccountListResult,
-  type DeepSeekModernSessionCandidate,
 } from "@codexhost/shared-contracts";
 
 import { AppServerHost } from "../src/app-server-host.js";
@@ -249,40 +248,6 @@ class WebUiHarnessAdapter extends FakeHarnessAdapter {
             },
           }
         : { ok: true, value: undefined };
-    },
-  };
-}
-
-class ModernSessionImportAdapter extends FakeHarnessAdapter {
-  candidates: DeepSeekModernSessionCandidate[] = [];
-  readonly listCandidates = vi.fn(
-    async (): Promise<HarnessResult<DeepSeekModernSessionCandidate[]>> => ({
-      ok: true,
-      value: structuredClone(this.candidates),
-    }),
-  );
-  readonly sessionImport = {
-    listCandidates: this.listCandidates,
-    resolveCandidate: async (nativeSessionId: string) => {
-      const listed = await this.listCandidates();
-      if (!listed.ok) return listed;
-      const candidate = listed.value.find((entry) => entry.nativeSessionId === nativeSessionId);
-      return candidate
-        ? {
-            ok: true as const,
-            value: {
-              candidate,
-              nativeRef: { harnessId: this.harnessId, nativeSessionId, formatVersion: 1 as const },
-            },
-          }
-        : {
-            ok: false as const,
-            error: {
-              code: "sessionNotFound" as const,
-              message: "Missing session",
-              retryable: false,
-            },
-          };
     },
   };
 }
@@ -1127,66 +1092,6 @@ describe("AppServerHost installed Harness plugins", () => {
       }
     },
   );
-
-  it("binds DeepSeek Session Import after its Adapter has been dynamically loaded", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-dynamic-import-"));
-    const location = path.join(directory, "deepseek-harness");
-    mkdirSync(location);
-    writeFileSync(
-      path.join(directory, "enabled.json"),
-      JSON.stringify({ version: 1, enabled: ["deepseek-harness"] }),
-    );
-    writeFileSync(
-      path.join(location, "manifest.json"),
-      JSON.stringify({
-        manifestVersion: 1,
-        id: "deepseek-harness",
-        name: "DeepSeek Harness",
-        version: "1",
-        adapterApiVersion: 1,
-        entry: "plugin.mjs",
-      }),
-    );
-    writeFileSync(
-      path.join(location, "plugin.mjs"),
-      `
-      import { FakeHarnessAdapter } from ${JSON.stringify(pathToFileURL(path.resolve("packages/harness-adapter/dist/testing.js")).href)};
-      export function createHarnessAdapter() {
-        const adapter = new FakeHarnessAdapter("deepseek-harness");
-        adapter.sessionImport = {
-          listCandidates: async () => ({ ok: true, value: [] }),
-          resolveCandidate: async () => ({ ok: false, error: { code: "sessionNotFound", message: "Missing", retryable: false } }),
-        };
-        return adapter;
-      }
-    `,
-    );
-    const fixture = createFixture({ pluginDirectory: directory, externalAdapters: new Map() });
-    try {
-      writeRequest(fixture.desktopInput, {
-        id: 910,
-        method: "codexhost/deepseek/modern-session/list",
-        params: {},
-      });
-      expect(await fixture.collector.waitFor((message) => requestId(message, 910))).toMatchObject({
-        result: { candidates: [] },
-      });
-      writeRequest(fixture.desktopInput, {
-        id: 911,
-        method: "codexhost/harness/session-import/sources",
-        params: {},
-      });
-      expect(await fixture.collector.waitFor((message) => requestId(message, 911))).toMatchObject({
-        result: { harnesses: [{ harnessId: "deepseek-harness", name: "DeepSeek Harness" }] },
-      });
-    } finally {
-      try {
-        await stopFixture(fixture);
-      } finally {
-        rmSync(directory, { recursive: true, force: true });
-      }
-    }
-  });
 
   it("persists launch settings through Host RPC and applies them only to the next plugin factory", async () => {
     const directory = mkdtempSync(path.join(tmpdir(), "codexhost-launch-rpc-"));
@@ -2803,99 +2708,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
       error: { code: -32092, message: "Harness Web UI could not be opened" },
     });
     expect(JSON.stringify(fixture.collector.messages)).not.toContain(canary);
-    await stopFixture(fixture);
-  });
-
-  it("lists and imports a Modern DeepSeek Session as notLoaded metadata", async () => {
-    const adapter = new ModernSessionImportAdapter(harnessIdSchema.parse("deepseek-harness"));
-    adapter.candidates = [
-      {
-        nativeSessionId: "native-import",
-        title: "Imported history",
-        updatedAt: 123,
-        cwd: path.resolve("import-workspace"),
-        running: false,
-      },
-    ];
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["deepseek-harness", adapter],
-      ]),
-    });
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-
-    writeRequest(fixture.desktopInput, {
-      id: 40,
-      method: "codexhost/deepseek/modern-session/list",
-      params: {},
-    });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 40))).resolves.toEqual({
-      id: 40,
-      result: { candidates: adapter.candidates },
-    });
-    writeRequest(fixture.desktopInput, {
-      id: 41,
-      method: "codexhost/deepseek/modern-session/import",
-      params: { nativeSessionId: "native-import" },
-    });
-    const response = await fixture.collector.waitFor((message) => requestId(message, 41));
-    expect(response).toMatchObject({ result: { threadId: expect.any(String) } });
-    const threadId = (response.result as JsonObject).threadId;
-    const started = await fixture.collector.waitFor(
-      (message) =>
-        method(message, "thread/started") &&
-        (messageParams(message).thread as JsonObject | undefined)?.id === threadId,
-    );
-    expect(messageParams(started).thread).toMatchObject({
-      id: threadId,
-      status: { type: "notLoaded" },
-      cwd: path.resolve("import-workspace"),
-      name: "Imported history",
-      turns: [],
-    });
-    expect(fixture.collector.messages.indexOf(response)).toBeLessThan(
-      fixture.collector.messages.indexOf(started),
-    );
-    expect(adapter.sessions).toHaveLength(0);
-    expect(officialWrite).not.toHaveBeenCalled();
-
-    writeRequest(fixture.desktopInput, {
-      id: 43,
-      method: "codexhost/deepseek/modern-session/import",
-      params: { nativeSessionId: "native-import" },
-    });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 43))).resolves.toEqual({
-      id: 43,
-      result: { threadId },
-    });
-    expect(
-      fixture.collector.messages.filter(
-        (message) =>
-          method(message, "thread/started") &&
-          (messageParams(message).thread as JsonObject | undefined)?.id === threadId,
-      ),
-    ).toHaveLength(1);
-    await stopFixture(fixture);
-  });
-
-  it("rejects invalid Modern DeepSeek import params before calling the Adapter", async () => {
-    const adapter = new ModernSessionImportAdapter(harnessIdSchema.parse("deepseek-harness"));
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["deepseek-harness", adapter],
-      ]),
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 42,
-      method: "codexhost/deepseek/modern-session/import",
-      params: { nativeSessionId: "", cwd: "/untrusted" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 42)),
-    ).resolves.toMatchObject({ error: { code: -32602 } });
-    expect(adapter.listCandidates).not.toHaveBeenCalled();
     await stopFixture(fixture);
   });
 

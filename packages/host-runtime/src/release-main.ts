@@ -9,7 +9,7 @@ process.exitCode =
     : arguments_[0] === "--codexhost-remote"
       ? await runRemoteHostCli({ arguments: arguments_.slice(1), environment: process.env })
       : await runHostRuntime({
-              arguments: arguments_,
-              environment: process.env,
-              hostRuntimeUrl: import.meta.url,
-            });
+          arguments: arguments_,
+          environment: process.env,
+          hostRuntimeUrl: import.meta.url,
+        });

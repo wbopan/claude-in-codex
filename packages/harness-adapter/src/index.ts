@@ -6,11 +6,6 @@ export type {
   HarnessClientTools,
 } from "./client-tools.js";
 
-export type {
-  HarnessCredentialTransfer,
-  HarnessCredentialExport,
-  HarnessCredentialImports,
-} from "./credential-imports.js";
 export { validateHostApprovalResponse } from "./approval.js";
 export { validateHostInteractionResponse } from "./interaction.js";
 export { HarnessOutputChannel } from "./output-channel.js";
@@ -40,9 +35,6 @@ export type {
   HarnessResult,
   HarnessSession,
   HarnessSessionCapabilities,
-  HarnessSessionImportCandidate,
-  HarnessSessionImportCapability,
-  HarnessSessionImportSource,
   HarnessSubagentCapability,
   HarnessWebUiAction,
   HarnessSessionState,

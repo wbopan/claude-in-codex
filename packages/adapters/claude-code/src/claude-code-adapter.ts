@@ -25,8 +25,6 @@ import {
   type HarnessResult,
   type HarnessSession,
   type HarnessSessionCapabilities,
-  type HarnessSessionImportCapability,
-  type HarnessSessionImportSource,
   type HarnessSessionState,
   type HostAgentMessageItem,
   type HostApprovalInteraction,
@@ -66,7 +64,6 @@ import {
   type AccountCreditsSnapshot,
   type HarnessAccountSnapshot,
   type HarnessId,
-  type HarnessSessionImportCandidate,
   type HarnessThinkingOptionId,
   type HostInteractionId,
   type NativeSessionRef,
@@ -74,7 +71,6 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
-import { ClaudeSessionImportIndex } from "./claude-session-import.js";
 import { ClaudeCodeExecutableError, resolveClaudeCodeExecutable } from "./command.js";
 import { ClaudePendingSessions, isPendingClaudeSession } from "./pending-session.js";
 import { forkClaudeSession } from "./claude-fork.js";
@@ -2445,32 +2441,6 @@ class ClaudeHarnessSession implements HarnessSession {
 export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly commandCatalog = claudeCommandCatalog;
   readonly harnessId: HarnessId = claudeCodeHarnessId;
-  readonly sessionImport = Object.freeze({
-    listCandidates: async (): Promise<HarnessResult<readonly HarnessSessionImportCandidate[]>> => {
-      const result = await this.#readImport((signal) => this.#importIndex.list(signal));
-      return result.ok
-        ? { ok: true, value: result.value.map(({ candidate }) => candidate) }
-        : result;
-    },
-    resolveCandidate: async (
-      nativeSessionId: string,
-    ): Promise<HarnessResult<HarnessSessionImportSource>> => {
-      const result = await this.#readImport((signal) =>
-        this.#importIndex.resolve(nativeSessionId, signal),
-      );
-      if (!result.ok) return result;
-      return result.value
-        ? { ok: true, value: result.value }
-        : {
-            ok: false,
-            error: {
-              code: "sessionNotFound",
-              message: "Claude Code Session is no longer importable",
-              retryable: false,
-            },
-          };
-    },
-  } satisfies HarnessSessionImportCapability);
   readonly subagents = {
     readSnapshot: async (input: {
       parent: NativeSessionRef;
@@ -2523,9 +2493,6 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly #cancelTimeoutMs: number;
   readonly #closeTimeoutMs: number;
   readonly #dependencies: ClaudeAdapterDependencies;
-  readonly #importAbort = new AbortController();
-  readonly #importIndex: ClaudeSessionImportIndex;
-  readonly #importRequests = new Set<Promise<unknown>>();
   readonly #pendingSessions: ClaudePendingSessions;
   readonly #toolOutputLimit: number;
   readonly #continuationQuiescenceMs: number;
@@ -2539,7 +2506,6 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
 
   constructor(options: ClaudeCodeAdapterOptions = {}, dependencies?: ClaudeAdapterDependencies) {
     const environment = options.environment ?? process.env;
-    this.#importIndex = new ClaudeSessionImportIndex(environment);
     this.#pendingSessions = new ClaudePendingSessions(environment);
     this.#closeTimeoutMs = options.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
     this.#cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
@@ -2600,29 +2566,6 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       readSubagentMessages: ({ cwd, sessionId, nativeSubagentId }) =>
         getSubagentMessages(sessionId, nativeSubagentId, { dir: cwd }),
     };
-  }
-
-  #readImport<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<HarnessResult<T>> {
-    if (this.#importAbort.signal.aborted) {
-      return Promise.resolve({
-        ok: false,
-        error: invalidState("Claude Code Adapter is closed"),
-      });
-    }
-    const request = operation(this.#importAbort.signal)
-      .then((value): HarnessResult<T> => ({ ok: true, value }))
-      .catch((): HarnessResult<T> => ({
-        ok: false,
-        error: {
-          code: "unavailable",
-          message:
-            "Claude Code Session discovery failed; check storage access and duplicate Session identities, then retry after closing native clients",
-          retryable: true,
-        },
-      }))
-      .finally(() => this.#importRequests.delete(request));
-    this.#importRequests.add(request);
-    return request;
   }
 
   async inspect(input: InspectHarnessInput = {}): Promise<HarnessInspection> {
@@ -2976,10 +2919,8 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
 
   close(): Promise<void> {
     if (!this.#closePromise) {
-      this.#importAbort.abort();
       this.#inspectionCache.clear();
       this.#closePromise = Promise.all([
-        ...this.#importRequests,
         ...[...this.#inspectors].map((inspector) => inspector.close()),
         ...[...this.#sessions].map((session) => session.close()),
         ...this.#inspectionInFlight.values(),
