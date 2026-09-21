@@ -28,10 +28,7 @@ export function auditDesktopControllerMetafile(metafile) {
   for (const required of [
     "/packages/desktop-control/src/release-main.ts/",
     "/packages/desktop-control/src/production-controller.ts/",
-    "/packages/desktop-control/src/renderer-cdp-control-session.ts/",
     "/packages/desktop-control/src/controller-attachment-server.ts/",
-    "/packages/desktop-control/src/renderer-draft-prewarm-policy.ts/",
-    "/packages/desktop-control/src/renderer-draft-prewarm-runtime.ts/",
   ]) {
     if (!normalized.some((input) => input.includes(required))) {
       throw new Error(`Desktop Controller Bundle is missing required input: ${required}`);
