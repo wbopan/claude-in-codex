@@ -5856,6 +5856,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
         messageParams(message).threadId === claudeThreadId,
     );
 
+    // The Host refreshes Usage when a Turn starts and completes; the native context ring needs it.
+    const turnRefreshes = claudeAdapter.sessions[0]?.usageRefreshes ?? 0;
+    expect(turnRefreshes).toBe(2);
+
     writeRequest(fixture.desktopInput, {
       id: 72,
       method: "codexhost/thread/usage/inspect",
@@ -5875,7 +5879,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         },
       },
     });
-    expect(claudeAdapter.sessions[0]?.usageRefreshes).toBe(1);
+    expect(claudeAdapter.sessions[0]?.usageRefreshes).toBe(turnRefreshes + 1);
 
     writeRequest(fixture.desktopInput, {
       id: 73,

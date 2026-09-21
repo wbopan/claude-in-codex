@@ -46,6 +46,10 @@ try {
   if (command === "click") {
     await click(await center(`document.querySelector(${JSON.stringify(args[0])})`));
     console.log("clicked");
+  } else if (command === "hover") {
+    const point = await center(`document.querySelector(${JSON.stringify(args[0])})`);
+    await client.command("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
+    console.log("hovered");
   } else if (command === "clickText") {
     await click(
       await center(

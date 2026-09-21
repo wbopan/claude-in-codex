@@ -288,6 +288,19 @@ export function injectedItemsText(params: JsonObject): string[] {
   );
 }
 
+/**
+ * Text of a Turn the Desktop starts on behalf of another Thread (`codex_app.create_thread`,
+ * `send_message_to_thread`). Such a Turn has an empty `input`; the message is the output of a
+ * `codex_app` tool call, already wrapped in `<codex_delegation>` by the Desktop.
+ */
+export function toolOutputText(params: JsonObject): string | undefined {
+  const toolOutput = params.toolOutput;
+  if (!isRecord(toolOutput) || toolOutput.namespace !== "codex_app") return undefined;
+  return typeof toolOutput.output === "string" && toolOutput.output.trim()
+    ? toolOutput.output
+    : undefined;
+}
+
 /** Whether the request turns the native Plan collaboration mode on (`true`) or off (`false`). */
 export function nativePlanMode(params: JsonObject): boolean | undefined {
   const mode = isRecord(params.collaborationMode) ? params.collaborationMode.mode : undefined;

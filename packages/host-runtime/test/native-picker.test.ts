@@ -9,6 +9,7 @@ import {
   NativeSelectionStore,
   effortForThinkingOption,
   injectedItemsText,
+  toolOutputText,
   modelFamilyVersion,
   nativePermissionLevel,
   nativePermissionResponse,
@@ -306,5 +307,24 @@ describe("native Model picker projection", () => {
       }),
     ).toEqual(["parent context", "second"]);
     expect(injectedItemsText({ threadId: "t" })).toEqual([]);
+  });
+
+  it("reads the message of a Turn started by another Thread from its tool output", () => {
+    const output =
+      "<codex_delegation>\n  <source_thread_id>a</source_thread_id>\n  <input>hi</input>\n</codex_delegation>";
+    expect(
+      toolOutputText({
+        threadId: "t",
+        input: [],
+        toolOutput: { name: "create_thread", namespace: "codex_app", output },
+      }),
+    ).toBe(output);
+    expect(toolOutputText({ threadId: "t", input: [], toolOutput: null })).toBeUndefined();
+    expect(
+      toolOutputText({ toolOutput: { name: "x", namespace: "other", output: "text" } }),
+    ).toBeUndefined();
+    expect(
+      toolOutputText({ toolOutput: { name: "x", namespace: "codex_app", output: "  " } }),
+    ).toBeUndefined();
   });
 });

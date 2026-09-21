@@ -47,6 +47,12 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       custom one, and the injected parent context reaches Claude (`S-side-chat-*`).
       This run also gave live evidence for full access -> `bypassPermissions`, selected by the
       user; only text-only Turns were sent under it.
+- [x] T. Threads started by another Thread (`codex_app.create_thread`, `send_message_to_thread`)
+      with a Claude Model: the Desktop sends `input: []` and the message in `toolOutput.output`;
+      the Host reads it. A `create_thread` child on Sonnet accepted its first Turn, no
+      `turn/start-rejected` in the trace (triggered by the user on build 15).
+- [x] U. Native context ring for Claude Threads: `thread/tokenUsage/updated` is written during
+      and after a Turn; tooltip showed 3% used, 34k of 1,000k (`U-context-*.png`).
 - [ ] J. Usage chip (bonus). Not started; there is no native seam, the renderer reads only
       `rateLimitsByLimitId.codex`, so this needs a one-way CDP overlay.
 
@@ -68,6 +74,8 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
   Model in the picker.
 - Host responses used to rewrite a granular `approvalPolicy` to `"never"`. Full access is
   therefore recognised only by `:danger-full-access` / `dangerFullAccess`.
+- The context window is known only after `refreshUsage()`. Its sole caller used to be the
+  injected renderer UI, so without injection the ring never appeared.
 - The launcher forwards only whitelisted env vars; the acceptance trace rides on
   `CODEXHOST_STARTUP_TRACE=1`.
 
@@ -81,3 +89,5 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
 - 2026-09-21: native parent topology is the macOS default; picker Models use bare names
   (Default, Fable, Haiku, Opus, Sonnet). Rust tests need `npm run test:rust` (test-utils
   feature) and a shell without inherited `CODEXHOST_*` variables.
+- 2026-09-21: agent-started Turns read `toolOutput`; the Host refreshes Usage on Turn start,
+  Turn completion and Thread open so the native context ring works; vitest 1435 passed.

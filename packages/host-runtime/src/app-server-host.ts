@@ -170,6 +170,7 @@ import {
   planConfigEdits,
   projectNativeModels,
   injectedItemsText,
+  toolOutputText,
   nativePermissionLevel,
   nativePermissionResponse,
   nativePlanMode,
@@ -472,8 +473,9 @@ function requestText(params: JsonObject): string {
     .map((item) => item.text)
     .filter((value): value is string => typeof value === "string")
     .join("\n");
-  if (!text) throw new Error("turn/start must contain text input");
-  return text;
+  const resolved = text || toolOutputText(params);
+  if (!resolved) throw new Error("turn/start must contain text input");
+  return resolved;
 }
 
 function sandboxResult(params: JsonObject): JsonObject {
@@ -4147,6 +4149,33 @@ export class AppServerHost {
     try {
       text = requestText(params);
     } catch (error) {
+      // Shape only (types, lengths, key names): enough to see why a Turn carried no text.
+      this.#traceNativePicker({
+        event: "turn/start-rejected",
+        reason: errorMessage(error),
+        keys: Object.keys(params).sort(),
+        input: Array.isArray(params.input)
+          ? params.input.map((item) =>
+              isRecord(item)
+                ? {
+                    type: typeof item.type === "string" ? item.type : null,
+                    keys: Object.keys(item).sort(),
+                    textLength: typeof item.text === "string" ? item.text.length : null,
+                  }
+                : typeof item,
+            )
+          : typeof params.input,
+        toolOutput: isRecord(params.toolOutput)
+          ? {
+              keys: Object.keys(params.toolOutput).sort(),
+              namespace:
+                typeof params.toolOutput.namespace === "string"
+                  ? params.toolOutput.namespace
+                  : null,
+              outputType: typeof params.toolOutput.output,
+            }
+          : typeof params.toolOutput,
+      });
       await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
       return;
     }
@@ -4557,6 +4586,7 @@ export class AppServerHost {
     const result = projection.projector.project(event as ProjectableHostEvent);
     if (event.type === "turn.started") {
       await this.#setThreadStatus(thread, { type: "active", activeFlags: [] });
+      this.#refreshExternalUsage(thread, "turn.started");
     }
     if (event.type === "turn.completed") {
       if (!result.completedTurn) throw new Error("Turn projector returned no completed Turn");
@@ -4578,6 +4608,7 @@ export class AppServerHost {
       );
       thread.projectedTurns.delete(event.turnId);
       thread.responseGates.delete(event.turnId);
+      this.#refreshExternalUsage(thread, "turn.completed");
       this.#signalActiveWorkChanged();
       const delegation = await this.#repository.getDelegationByChild(thread.record.hostThreadId);
       if (delegation) {
@@ -5105,7 +5136,30 @@ export class AppServerHost {
     return thread.projectedTurns.has(turnId) || thread.turns.some((turn) => turn.id === turnId);
   }
 
+  /**
+   * The Desktop's native context ring reads `thread/tokenUsage/updated`, which needs the context
+   * window. A Harness learns it only from an explicit refresh, so the Host asks at the points
+   * where the value changes. Best effort: a Session without `refreshUsage` shows no ring.
+   */
+  #refreshExternalUsage(thread: ExternalThread, reason: string): void {
+    const refresh = thread.session.refreshUsage;
+    if (!refresh) return;
+    void refresh.call(thread.session).then(
+      () =>
+        this.#traceNativePicker({
+          event: "usage/refresh",
+          reason,
+          harnessId: thread.harnessId,
+          contextKnown:
+            thread.latestUsage?.contextUsedTokens !== undefined &&
+            thread.latestUsage.contextWindowTokens !== undefined,
+        }),
+      (error: unknown) => this.#diagnose(error),
+    );
+  }
+
   async #replayExternalUsage(thread: ExternalThread): Promise<void> {
+    this.#refreshExternalUsage(thread, "thread.opened");
     const latestTurnId = this.#latestCompletedTurnId(thread);
     if (!latestTurnId || !thread.latestUsage) return;
     thread.usageTurnId = latestTurnId;
@@ -5126,6 +5180,12 @@ export class AppServerHost {
       return;
     }
     await this.#writer.json(projection);
+    this.#traceNativePicker({
+      event: "thread/tokenUsage/updated",
+      harnessId: thread.harnessId,
+      contextUsedTokens: usage.contextUsedTokens ?? null,
+      contextWindowTokens: usage.contextWindowTokens ?? null,
+    });
   }
 
   #dispatchDesktopRequest(run: () => Promise<void>, threadId?: string): void {
