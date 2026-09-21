@@ -1,0 +1,19 @@
+{
+  "plugins": ["packages/adapters/claude-code"],
+  "runtimePackages": [
+    "@anthropic-ai/claude-agent-sdk",
+    "@hono/node-server",
+    "@modelcontextprotocol/sdk",
+    "ajv",
+    "ajv-formats",
+    "content-type",
+    "diff",
+    "fast-deep-equal",
+    "fast-uri",
+    "hono",
+    "json-schema-traverse",
+    "ws",
+    "zod",
+    "zod-to-json-schema"
+  ]
+}

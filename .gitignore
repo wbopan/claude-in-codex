@@ -1,0 +1,16 @@
+/.codexhost/
+.env
+.env.*
+node_modules/
+.npm/
+.cache/
+.vitest/
+.eslintcache
+*.tsbuildinfo
+target/
+dist/
+/build/
+coverage/
+*.log
+*.pid
+.DS_Store
