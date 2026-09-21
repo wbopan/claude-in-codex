@@ -258,9 +258,7 @@ fn start(root: &Path) -> Result<(), Box<dyn Error>> {
     let descriptor = root.join("host/desktop-runtime-v1.json");
     let _guard = try_acquire_launcher_guard(&root.join("host/launcher-v1.lock"))?
         .ok_or("debug instance already has a launcher; use debug:restart")?;
-    let mut options = crate::default_launch_options();
-    options.custom_install_root = Some(root.join("app/ChatGPT.app"));
-    let options = options.resolve()?;
+    let options = crate::default_launch_options().resolve()?;
     let installation =
         codexhost_platform::discover_codex_desktop_from_root(&root.join("app/ChatGPT.app"))?;
     if !desktop_root_process_ids_for_installation(&installation)?.is_empty() {

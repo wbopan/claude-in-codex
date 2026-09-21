@@ -10,13 +10,6 @@ use std::time::{Duration, Instant};
 use super::PlatformError;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use super::process::{ObservedProcessTree, ProcessSnapshot, unix_process_snapshot};
-#[cfg(target_os = "windows")]
-use super::windows_process;
-
-#[cfg(target_os = "windows")]
-pub struct ChildProcessGuard {
-    job: windows_process::ChildJob,
-}
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub struct ChildProcessGuard {
@@ -98,7 +91,7 @@ impl Drop for ChildProcessGuard {
     }
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub struct ChildProcessGuard;
 
 pub struct SupervisedChild {
@@ -133,10 +126,6 @@ impl SupervisedChild {
     }
 
     pub fn terminate(&mut self) -> Result<(), PlatformError> {
-        #[cfg(target_os = "windows")]
-        if let Some(guard) = &self.guard {
-            return guard.job.terminate(1).map_err(PlatformError::Io);
-        }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if let Some(guard) = &self.guard {
             return guard.signal(nix::sys::signal::Signal::SIGTERM);
@@ -145,10 +134,6 @@ impl SupervisedChild {
     }
 
     pub fn force_terminate(&mut self) -> Result<(), PlatformError> {
-        #[cfg(target_os = "windows")]
-        if let Some(guard) = &self.guard {
-            return guard.job.terminate(1).map_err(PlatformError::Io);
-        }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if let Some(guard) = &self.guard {
             return guard.signal(nix::sys::signal::Signal::SIGKILL);
@@ -167,7 +152,7 @@ impl SupervisedChild {
     }
 
     /// A root process exit is insufficient while retained supervised members are alive.
-    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub fn wait_for_tree_exit(
         &mut self,
         timeout: std::time::Duration,
@@ -203,18 +188,6 @@ impl SupervisedChild {
             .map_or(Ok(false), ChildProcessGuard::has_live_members)
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn has_live_processes(&self) -> Result<bool, PlatformError> {
-        self.guard
-            .as_ref()
-            .ok_or_else(|| {
-                PlatformError::Invalid("process tree ownership was not established".into())
-            })?
-            .job
-            .has_live_processes()
-            .map_err(PlatformError::Io)
-    }
-
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[must_use]
     pub fn process_group_id(&self) -> u32 {
@@ -223,25 +196,6 @@ impl SupervisedChild {
             .and_then(|guard| guard.process_group_id().ok())
             .unwrap_or_else(|| self.id())
     }
-}
-
-#[cfg(target_os = "windows")]
-pub fn spawn_supervised(command: &mut Command) -> Result<SupervisedChild, PlatformError> {
-    let mut child = command.spawn()?;
-    let guard = match windows_process::guard_child(&child) {
-        Ok(job) => Some(ChildProcessGuard { job }),
-        Err(_) if child.try_wait()?.is_some() => None,
-        Err(error) => {
-            return Err(PlatformError::Io(io::Error::new(
-                error.kind(),
-                format!(
-                    "assign supervised child PID {} to its cleanup Job: {error}",
-                    child.id()
-                ),
-            )));
-        }
-    };
-    Ok(SupervisedChild { child, guard })
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -410,68 +364,9 @@ mod tests {
     }
 }
 
-#[cfg(all(test, target_os = "windows"))]
-mod windows_tests {
-    use super::spawn_supervised;
-    use std::io::{Read, Write};
-    use std::process::{Command, Stdio};
-    use std::time::Duration;
-
-    #[test]
-    fn tracks_descendants_after_root_exit() {
-        const MODE: &str = "CODEXHOST_TEST_JOB_ACCOUNTING";
-        const TEST: &str = "process_supervision::windows_tests::tracks_descendants_after_root_exit";
-        let executable = std::env::current_exe().expect("test executable");
-        if std::env::var(MODE).as_deref() == Ok("leaf") {
-            std::thread::sleep(Duration::from_secs(20));
-            return;
-        }
-        if std::env::var(MODE).as_deref() == Ok("root") {
-            // Wait until the root is assigned to its cleanup Job.
-            std::io::stdin()
-                .read_exact(&mut [0_u8; 1])
-                .expect("release root");
-            let child = Command::new(executable)
-                .args(["--exact", TEST])
-                .env(MODE, "leaf")
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("spawn test descendant");
-            // Windows has no Unix zombie reaping requirement; deliberately leave
-            // the descendant alive when this root's test process exits.
-            drop(child);
-            return;
-        }
-        let mut command = Command::new(&executable);
-        command
-            .args(["--exact", TEST])
-            .env(MODE, "root")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        let mut child = spawn_supervised(&mut command).expect("supervise test root");
-        child
-            .take_stdin()
-            .expect("root stdin")
-            .write_all(b"x")
-            .expect("release root");
-        assert!(child.wait().expect("root exit").success());
-        assert!(child.has_live_processes().expect("query retained Job"));
-        assert!(child.wait_for_tree_exit(Duration::from_millis(10)).is_err());
-        child
-            .force_terminate()
-            .expect("terminate remaining Job members");
-        child
-            .wait_for_tree_exit(Duration::from_secs(5))
-            .expect("confirmed tree exit");
-    }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn spawn_supervised(_command: &mut Command) -> Result<SupervisedChild, PlatformError> {
     Err(PlatformError::Unsupported(
-        "supervised child processes currently support Windows, macOS, and Linux only",
+        "supervised child processes currently support macOS and Linux only",
     ))
 }

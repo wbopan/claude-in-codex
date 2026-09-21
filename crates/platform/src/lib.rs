@@ -5,10 +5,6 @@ use std::fmt::{self, Display, Formatter};
 use std::io;
 use std::path::{Path, PathBuf};
 
-#[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
-mod background;
-#[cfg(not(target_os = "windows"))]
 mod background;
 mod desktop_launch;
 mod installation;
@@ -23,18 +19,6 @@ mod process_termination;
 mod proxy_environment;
 #[cfg(target_os = "macos")]
 mod system_proxy;
-#[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
-mod windows_desktop;
-#[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
-mod windows_process;
-#[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
-mod windows_proxy;
-#[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
-mod windows_ui;
 
 pub use background::detach_from_terminal;
 pub use desktop_launch::{
@@ -45,9 +29,9 @@ pub use desktop_launch::{
 pub use desktop_launch::{DesktopSession, launch_desktop_session};
 #[cfg(not(target_os = "linux"))]
 pub use installation::discover_codex_desktop;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 pub use installation::discover_codex_desktop_from_root;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 pub use installation::discover_desktop_managed_codex_cli;
 #[cfg(target_os = "linux")]
 pub use linux_installation::discover_codex_desktop;
@@ -70,44 +54,21 @@ pub use process::{
     desktop_root_process_ids_for_installation, parent_process_id, process_executable_path,
     process_exists, process_snapshot, terminate_process_by_id,
 };
-#[cfg(target_os = "windows")]
-pub use process::{desktop_process_ids, desktop_root_process_ids, process_started_at_micros};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub use process::{
     desktop_process_tree, desktop_root_snapshots_for_installation, process_snapshots,
 };
 pub use process_supervision::{ChildProcessGuard, SupervisedChild, spawn_supervised};
 pub use process_termination::{terminate_process_group_instance, terminate_process_instance};
-#[cfg(target_os = "windows")]
-pub use proxy_environment::desktop_helper_proxy_environment;
 pub use proxy_environment::proxy_environment;
 #[cfg(target_os = "macos")]
 pub use system_proxy::{SystemProxySettings, system_proxy_settings};
-#[cfg(target_os = "windows")]
-pub use windows_desktop::resume_packaged_application;
-#[cfg(target_os = "windows")]
-pub use windows_ui::{
-    RunningDesktopChoice, hide_console_window, prompt_running_desktop, show_error_dialog,
-};
 
 pub const CRATE_NAME: &str = "codexhost-platform";
-#[cfg(target_os = "windows")]
-pub const APPX_RESUME_ARGUMENT: &str = "--codexhost-resume-appx-thread";
 pub const CODEX_CLI_PATH_ENV: &str = "CODEX_CLI_PATH";
 pub const STOCK_CODEX_PATH_ENV: &str = "CODEXHOST_STOCK_CODEX_PATH";
-pub const PROBE_PACKAGE_NAME_ENV: &str = "CODEXHOST_PROBE_PACKAGE_NAME";
-pub const PROBE_PACKAGE_FAMILY_ENV: &str = "CODEXHOST_PROBE_PACKAGE_FAMILY";
-pub const PROBE_PACKAGE_FULL_NAME_ENV: &str = "CODEXHOST_PROBE_PACKAGE_FULL_NAME";
-pub const PROBE_APP_USER_MODEL_ID_ENV: &str = "CODEXHOST_PROBE_APP_USER_MODEL_ID";
-pub const PROBE_DESKTOP_VERSION_ENV: &str = "CODEXHOST_PROBE_DESKTOP_VERSION";
-pub const PROBE_INSTALL_ROOT_ENV: &str = "CODEXHOST_PROBE_INSTALL_ROOT";
-/// Points at a portable/unpacked Codex Desktop installation root.
-///
-/// Unlike the `CODEXHOST_PROBE_*` Gate A overrides, which must be supplied as a
-/// complete set, this one stands alone: it names either the package directory
-/// that holds `app/ChatGPT.exe` or the `app` directory that directly holds
-/// `ChatGPT.exe`, so installations with no registered AppX package can still
-/// be discovered.
+/// Points at an explicit Codex Desktop installation root: either the package
+/// directory that holds the `app` payload or the payload directory itself.
 pub const CUSTOM_INSTALL_ROOT_ENV: &str = "CODEXHOST_INSTALL_ROOT";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,18 +88,7 @@ impl DesktopLaunchMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WindowsAppxActivationIdentity {
-    pub package_full_name: String,
-    pub app_user_model_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DesktopIdentity {
-    WindowsPackage {
-        package_name: String,
-        package_family_name: String,
-        appx_activation: Option<WindowsAppxActivationIdentity>,
-    },
     MacOsBundle {
         bundle_identifier: String,
     },
@@ -213,26 +163,10 @@ impl From<io::Error> for PlatformError {
     }
 }
 
-#[cfg(target_os = "windows")]
-pub fn configure_background_command(command: &mut std::process::Command) {
-    use std::os::windows::process::CommandExt;
-
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NO_WINDOW);
-}
-
-#[cfg(not(target_os = "windows"))]
 pub fn configure_background_command(_command: &mut std::process::Command) {}
 
 pub fn atomic_replace_file(source: &Path, target: &Path) -> Result<(), PlatformError> {
-    #[cfg(target_os = "windows")]
-    {
-        windows_process::atomic_replace_file(source, target)?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::fs::rename(source, target)?;
-    }
+    std::fs::rename(source, target)?;
     Ok(())
 }
 
@@ -246,44 +180,13 @@ pub fn canonical_existing_file(path: &Path) -> Result<PathBuf, PlatformError> {
     path.canonicalize().map_err(PlatformError::Io)
 }
 
-#[cfg(target_os = "windows")]
-pub fn node_entrypoint_path(path: &Path) -> PathBuf {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-
-    const SEPARATOR: u16 = b'\\' as u16;
-    let value = path.as_os_str().encode_wide().collect::<Vec<_>>();
-    let verbatim = [SEPARATOR, SEPARATOR, b'?' as u16, SEPARATOR];
-    if !value.starts_with(&verbatim) {
-        return path.to_path_buf();
-    }
-    let unc = [b'U' as u16, b'N' as u16, b'C' as u16, SEPARATOR];
-    if value.get(4..8) == Some(unc.as_slice()) {
-        let normalized = [SEPARATOR, SEPARATOR]
-            .into_iter()
-            .chain(value[8..].iter().copied())
-            .collect::<Vec<_>>();
-        return PathBuf::from(OsString::from_wide(&normalized));
-    }
-    if value.get(5) == Some(&(b':' as u16)) {
-        return PathBuf::from(OsString::from_wide(&value[4..]));
-    }
-    path.to_path_buf()
-}
-
-#[cfg(not(target_os = "windows"))]
 pub fn node_entrypoint_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
 fn comparable_path(path: &Path) -> Result<String, PlatformError> {
     let canonical = canonical_existing_file(path)?;
-    let value = canonical.to_string_lossy().replace('/', "\\");
-    Ok(if cfg!(target_os = "windows") {
-        value.to_lowercase()
-    } else {
-        value
-    })
+    Ok(canonical.to_string_lossy().into_owned())
 }
 
 pub fn validate_proxy_target(shim: &Path, target: &Path) -> Result<PathBuf, PlatformError> {
@@ -360,26 +263,5 @@ mod tests {
             validate_proxy_target(&shim, &target),
             Err(PlatformError::NotFound(_))
         ));
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn normalizes_verbatim_node_entrypoint_paths() {
-        use std::path::Path;
-
-        use super::node_entrypoint_path;
-
-        assert_eq!(
-            node_entrypoint_path(Path::new(r"\\?\D:\workspace\host-runtime.js")),
-            Path::new(r"D:\workspace\host-runtime.js"),
-        );
-        assert_eq!(
-            node_entrypoint_path(Path::new(r"\\?\UNC\server\share\host-runtime.js")),
-            Path::new(r"\\server\share\host-runtime.js"),
-        );
-        assert_eq!(
-            node_entrypoint_path(Path::new(r"D:\workspace\host-runtime.js")),
-            Path::new(r"D:\workspace\host-runtime.js"),
-        );
     }
 }

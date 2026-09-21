@@ -207,7 +207,6 @@ export function expectedPayloadPaths(target) {
   const paths = [
     `bin/codexhost${target.executableSuffix}`,
     `libexec/codexhost-shim${target.executableSuffix}`,
-    ...(target.hostPlatform === "win32" ? ["libexec/codexhost-node-repl.exe"] : []),
     `runtime/node${target.executableSuffix}`,
     "app/desktop-controller.mjs",
     "app/host-runtime.mjs",
@@ -224,9 +223,6 @@ export function expectedPayloadPaths(target) {
     "licenses/zod-LICENSE.txt",
     "THIRD_PARTY_NOTICES.txt",
   ];
-  if (target.hostPlatform === "win32") {
-    paths.push(`bin/codexhost-start${target.executableSuffix}`);
-  }
   return paths.sort();
 }
 
@@ -294,28 +290,12 @@ export async function prepareReleasePayload({ target, root = repositoryRoot }) {
     "release Launcher",
     true,
   );
-  if (target.hostPlatform === "win32") {
-    await copyReleaseFile(
-      path.join(rustOutput, `codexhost-start${target.executableSuffix}`),
-      path.join(payloadRoot, "bin", `codexhost-start${target.executableSuffix}`),
-      "release Start Menu Launcher",
-      true,
-    );
-  }
   await copyReleaseFile(
     path.join(rustOutput, `codexhost-shim${target.executableSuffix}`),
     path.join(payloadRoot, "libexec", `codexhost-shim${target.executableSuffix}`),
     "release Shim",
     true,
   );
-  if (target.hostPlatform === "win32") {
-    await copyReleaseFile(
-      path.join(rustOutput, "codexhost-node-repl.exe"),
-      path.join(payloadRoot, "libexec", "codexhost-node-repl.exe"),
-      "release Desktop tool proxy",
-      true,
-    );
-  }
   await runCommand(
     {
       label: "production Host Bundle build",

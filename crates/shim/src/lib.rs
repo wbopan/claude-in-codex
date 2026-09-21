@@ -9,7 +9,7 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use codexhost_platform::discover_desktop_managed_codex_cli;
 use codexhost_platform::{
     CODEX_CLI_PATH_ENV, STOCK_CODEX_PATH_ENV, canonical_existing_file,
@@ -124,16 +124,6 @@ impl Drop for ShutdownSignals {
     }
 }
 
-#[cfg(target_os = "windows")]
-struct ShutdownSignals;
-
-#[cfg(target_os = "windows")]
-impl ShutdownSignals {
-    fn install() -> ShimResult<Self> {
-        Ok(Self)
-    }
-}
-
 struct ChildOutcome {
     status: ExitStatus,
     forwarded_signal: Option<i32>,
@@ -239,51 +229,11 @@ fn wait_for_child(
     }
 }
 
-#[cfg(target_os = "windows")]
-fn wait_for_child(
-    child: &mut codexhost_platform::SupervisedChild,
-    _signals: &ShutdownSignals,
-    desktop_input: Option<&std::sync::mpsc::Receiver<io::Result<u64>>>,
-) -> ShimResult<ChildOutcome> {
-    const POLL_INTERVAL: Duration = Duration::from_millis(20);
-    const TERMINATION_GRACE: Duration = Duration::from_secs(2);
-
-    let mut desktop_input_closed = false;
-    let mut deadline = None;
-    let mut forced = false;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(ChildOutcome {
-                status,
-                forwarded_signal: None,
-                forced,
-                terminated_descendants: false,
-                desktop_input_closed,
-            });
-        }
-        if !desktop_input_closed && desktop_input.is_some_and(|input| input.try_recv().is_ok()) {
-            child.terminate()?;
-            desktop_input_closed = true;
-            deadline = Some(Instant::now() + TERMINATION_GRACE);
-        }
-        if !forced && deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            child.force_terminate()?;
-            forced = true;
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-}
-
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn exit_signal(status: &ExitStatus) -> Option<i32> {
     use std::os::unix::process::ExitStatusExt;
 
     status.signal()
-}
-
-#[cfg(target_os = "windows")]
-fn exit_signal(_status: &ExitStatus) -> Option<i32> {
-    None
 }
 
 /// Returns the position of the Codex `app-server` subcommand after supported global options.
@@ -729,13 +679,6 @@ fn child_command(
         } else {
             Vec::new()
         };
-    #[cfg(target_os = "windows")]
-    let remote_proxy_environment = if desktop_helper || env::var_os(STOCK_CODEX_PATH_ENV).is_none()
-    {
-        codexhost_platform::desktop_helper_proxy_environment()
-    } else {
-        remote_proxy_environment
-    };
     if !desktop_helper && should_start_host_runtime(arguments) {
         match host_paths {
             (Some(node_path), Some(runtime_path)) => {
@@ -803,15 +746,15 @@ fn resolve_stock_codex_path(
     current_executable: &Path,
     arguments: &[OsString],
 ) -> ShimResult<PathBuf> {
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(not(target_os = "macos"))]
     let _ = arguments;
     let stock_codex_path = match env::var_os(STOCK_CODEX_PATH_ENV) {
         Some(configured) => PathBuf::from(configured),
         None => {
-            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+            #[cfg(not(target_os = "macos"))]
             return Err(format!("{STOCK_CODEX_PATH_ENV} is required").into());
 
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            #[cfg(target_os = "macos")]
             {
                 if let Some(cli_override) = env::var_os(CODEX_CLI_PATH_ENV) {
                     let cli_override = canonical_existing_file(&PathBuf::from(cli_override))?;

@@ -3,30 +3,11 @@ use super::process::{ProcessSnapshot, process_snapshot, same_process_instance};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use super::process::{ObservedProcessTree, process_snapshots};
-#[cfg(target_os = "windows")]
-use super::windows_process;
 
 pub fn terminate_process_instance(
     expected: &ProcessSnapshot,
     _force: bool,
 ) -> Result<(), PlatformError> {
-    #[cfg(target_os = "windows")]
-    {
-        let current = match process_snapshot(expected.id) {
-            Ok(current) => current,
-            Err(PlatformError::NotFound(_)) => return Ok(()),
-            Err(error) => return Err(error),
-        };
-        if !same_process_instance(expected, &current) {
-            return Ok(());
-        }
-        let _ = windows_process::terminate_process_instance(
-            expected.id,
-            expected.started_at_micros,
-            1,
-        )?;
-        Ok(())
-    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let signal = if _force {
@@ -37,11 +18,11 @@ pub fn terminate_process_instance(
         ObservedProcessTree::new(expected.clone())
             .signal_processes(std::slice::from_ref(expected), signal)
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (expected, _force);
         Err(PlatformError::Unsupported(
-            "exact process termination requires Windows, macOS, or Linux",
+            "exact process termination requires macOS or Linux",
         ))
     }
 }
@@ -50,10 +31,6 @@ pub fn terminate_process_group_instance(
     expected_root: &ProcessSnapshot,
     force: bool,
 ) -> Result<(), PlatformError> {
-    #[cfg(target_os = "windows")]
-    {
-        terminate_process_instance(expected_root, force)
-    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let current = match process_snapshot(expected_root.id) {
@@ -83,24 +60,12 @@ pub fn terminate_process_group_instance(
         )
         .signal_processes(&group_members, signal)
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = (expected_root, force);
         Err(PlatformError::Unsupported(
-            "exact process-group termination requires Windows, macOS, or Linux",
+            "exact process-group termination requires macOS or Linux",
         ))
     }
 }
 
-#[cfg(all(test, target_os = "windows"))]
-mod windows_tests {
-    use super::{process_snapshot, terminate_process_instance};
-
-    #[test]
-    fn refuses_to_terminate_a_reused_windows_process_id() {
-        let mut recycled = process_snapshot(std::process::id()).expect("current process snapshot");
-        recycled.started_at_micros = recycled.started_at_micros.saturating_add(1);
-        terminate_process_instance(&recycled, true).expect("reject recycled process instance");
-        assert!(process_snapshot(std::process::id()).is_ok());
-    }
-}

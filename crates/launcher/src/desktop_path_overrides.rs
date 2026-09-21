@@ -9,7 +9,7 @@ const PATH_OVERRIDES: [&str; 5] = [
     "CODEX_ELECTRON_USER_DATA_PATH",
 ];
 
-/// LaunchServices/AppX do not inherit the launcher's environment. Forward only
+/// LaunchServices does not inherit the launcher's environment. Forward only
 /// explicit directory overrides, never arbitrary variables or authentication
 /// material: macOS passes these entries through `open --env` arguments.
 pub(crate) fn forwarded(

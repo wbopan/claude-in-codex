@@ -8,9 +8,8 @@ use super::PlatformError;
 /// On Unix the process becomes a new session leader without a controlling
 /// terminal and redirects its standard streams to `/dev/null`, so terminal
 /// close (SIGHUP) and Ctrl+C (SIGINT to the foreground process group) can no
-/// longer reach it. On Windows the process ignores console control events
-/// (Ctrl+C, break, and console close). The Launcher must call this only after
-/// startup is complete, so Ctrl+C during startup still cancels the launch.
+/// longer reach it. The Launcher must call this only after startup is
+/// complete, so Ctrl+C during startup still cancels the launch.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn detach_from_terminal() -> Result<(), PlatformError> {
     use nix::errno::Errno;
@@ -74,29 +73,10 @@ pub(crate) fn start_in_new_session(command: &mut std::process::Command) {
     }
 }
 
-#[cfg(target_os = "windows")]
-pub fn detach_from_terminal() -> Result<(), PlatformError> {
-    use windows::Win32::System::Console::SetConsoleCtrlHandler;
-    use windows::core::BOOL;
-
-    unsafe extern "system" fn suppress_console_events(_event: u32) -> BOOL {
-        true.into()
-    }
-
-    unsafe {
-        SetConsoleCtrlHandler(Some(suppress_console_events), true).map_err(|error| {
-            PlatformError::Io(io::Error::other(format!(
-                "SetConsoleCtrlHandler failed: {error}"
-            )))
-        })?;
-    }
-    Ok(())
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn detach_from_terminal() -> Result<(), PlatformError> {
     Err(PlatformError::Unsupported(
-        "background detachment currently supports Windows, macOS, and Linux only",
+        "background detachment currently supports macOS and Linux only",
     ))
 }
 

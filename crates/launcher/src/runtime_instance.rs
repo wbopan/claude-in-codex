@@ -115,14 +115,6 @@ pub fn default_descriptor_path() -> io::Result<PathBuf> {
     Ok(runtime_directory()?.join(RUNTIME_DESCRIPTOR_FILE))
 }
 
-#[cfg(target_os = "windows")]
-pub fn default_descriptor_path() -> io::Result<PathBuf> {
-    let root = env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "LOCALAPPDATA is unavailable"))?;
-    Ok(root.join("codexhost").join(RUNTIME_DESCRIPTOR_FILE))
-}
-
 #[cfg(target_os = "macos")]
 pub fn default_descriptor_path() -> io::Result<PathBuf> {
     let root = env::var_os("HOME")
@@ -132,11 +124,11 @@ pub fn default_descriptor_path() -> io::Result<PathBuf> {
     Ok(root.join("codexhost").join(RUNTIME_DESCRIPTOR_FILE))
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn default_descriptor_path() -> io::Result<PathBuf> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "runtime descriptor paths support Windows, macOS, and Linux only",
+        "runtime descriptor paths support macOS and Linux only",
     ))
 }
 

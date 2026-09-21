@@ -1,8 +1,6 @@
 use std::fs;
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::fs::OpenOptions;
-#[cfg(target_os = "windows")]
-use std::io::{BufRead, BufReader};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
@@ -10,18 +8,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::time::Instant;
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 use codexhost_platform::CUSTOM_INSTALL_ROOT_ENV;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use codexhost_platform::parent_process_id;
 use codexhost_platform::{CODEX_CLI_PATH_ENV, STOCK_CODEX_PATH_ENV};
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use codexhost_platform::{process_exists, process_snapshot};
 use codexhost_shim::{HOST_NODE_PATH_ENV, HOST_RUNTIME_PATH_ENV, REMOTE_SSH_MANAGED_ENV};
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use fs2::FileExt;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::os::unix::fs::MetadataExt;
@@ -40,119 +38,6 @@ fn proxy_shim() -> Command {
 
 fn fake_codex_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_fake-codex-cli"))
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn node_repl_proxy_preserves_stdio_and_explicit_proxy_configuration() {
-    let directory = temporary_directory();
-    let node = directory.join("node.exe");
-    fs::copy(fake_codex_path(), &node).unwrap();
-    fs::copy(fake_codex_path(), directory.join("node_repl.exe")).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_codexhost-node-repl"))
-        .args(["--fixture-option", "two words"])
-        .env("NODE_REPL_NODE_PATH", &node)
-        .env("HTTP_PROXY", "http://explicit.invalid:3128")
-        .env("HTTPS_PROXY", "")
-        .env("ALL_PROXY", "")
-        .env("NODE_USE_ENV_PROXY", "0")
-        .env("FAKE_CODEX_PRINT_INVOCATION", "1")
-        .env("FAKE_CODEX_PRINT_PROXY_ENV", "1")
-        .env("FAKE_CODEX_EXIT_CODE", "7")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let input = b"{\"jsonrpc\":\"2.0\"}\r\n\0\xFF";
-    child.stdin.take().unwrap().write_all(input).unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(7));
-    assert_eq!(output.stdout, input);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("args=--fixture-option|two words"),
-        "{stderr}"
-    );
-    assert!(
-        stderr.contains("HTTP_PROXY=http://explicit.invalid:3128"),
-        "{stderr}"
-    );
-    assert!(stderr.contains("NODE_USE_ENV_PROXY=0"), "{stderr}");
-    fs::remove_dir_all(directory).unwrap();
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn node_repl_proxy_does_not_search_path_for_missing_runtime() {
-    let output = Command::new(env!("CARGO_BIN_EXE_codexhost-node-repl"))
-        .env_remove("NODE_REPL_NODE_PATH")
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("NODE_REPL_NODE_PATH is required"));
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn desktop_helpers_do_not_reenter_host_runtime() {
-    // Test process = launcher, first fixture = Desktop, additional fixtures = helpers.
-    // Use the same inherited configuration and stdio command at every depth.
-    for depth in [0, 1, 2] {
-        let directory = temporary_directory();
-        let mut child = Command::new(fake_codex_path())
-            .args(["app-server", "--listen", "stdio://"])
-            .env("FAKE_CODEX_HELPER_SHIM", shim_path())
-            .env("FAKE_CODEX_HELPER_DEPTH", depth.to_string())
-            .env("FAKE_CODEX_PRINT_INVOCATION", "1")
-            .env("FAKE_CODEX_ROUTE_RESPONSE", "1")
-            .env("CODEXHOST_LAUNCHER_PID", process::id().to_string())
-            .env("CODEXHOST_DATA_DIR", &directory)
-            .env_remove("CODEXHOST_NPM_NODE_PATH")
-            .env_remove("CODEXHOST_NPM_PACKAGE_ROOT")
-            .env(STOCK_CODEX_PATH_ENV, fake_codex_path())
-            .env(CODEX_CLI_PATH_ENV, shim_path())
-            .env(HOST_NODE_PATH_ENV, fake_codex_path())
-            .env(HOST_RUNTIME_PATH_ENV, fake_codex_path())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn launcher-owned Desktop fixture");
-        let mut stdin = child.stdin.take().expect("fixture stdin");
-        stdin.write_all(b"x").expect("write fixture request");
-        let mut response = [0; 8];
-        child
-            .stdout
-            .as_mut()
-            .unwrap()
-            .read_exact(&mut response)
-            .expect("read routing response before closing stdin");
-        assert_eq!(&response, b"response");
-        drop(stdin);
-        let output = child.wait_with_output().expect("wait for fixture");
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(output.status.success(), "depth={depth}: {stderr}");
-        assert!(output.stdout.is_empty());
-        if depth == 0 {
-            assert!(
-                !stderr.contains("args=app-server|"),
-                "main Desktop must use Host Runtime: {stderr}"
-            );
-        } else {
-            assert!(
-                stderr.contains("args=app-server|--listen|stdio://"),
-                "helper must use stock CLI: {stderr}"
-            );
-            assert!(
-                !directory.join("local-host-runtime-owner.lock").exists(),
-                "helper must not acquire a Host Runtime lease"
-            );
-        }
-        fs::remove_dir_all(directory).expect("remove isolated routing fixture");
-    }
 }
 
 fn temporary_directory() -> PathBuf {
@@ -458,7 +343,7 @@ fn rejects_missing_official_cli_without_falling_back_to_path() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("does not exist"));
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 #[test]
 fn rejects_missing_stock_cli_when_cli_override_does_not_name_the_running_shim() {
     let output = proxy_shim()
@@ -728,59 +613,7 @@ fn rejects_missing_stock_cli_without_a_cli_override() {
     );
 }
 
-#[cfg(target_os = "windows")]
-#[test]
-fn discovers_official_cli_when_browser_helper_preserves_only_codex_cli_path() {
-    let installation_root = temporary_directory().join("portable-codex");
-    let app_root = installation_root.join("app");
-    let resources = app_root.join("resources");
-    fs::create_dir_all(&resources).expect("create portable Codex resources");
-    fs::write(app_root.join("ChatGPT.exe"), b"desktop").expect("write fake Desktop executable");
-    fs::write(resources.join("app.asar"), b"asar").expect("write fake app.asar");
-    fs::copy(fake_codex_path(), resources.join("codex.exe"))
-        .expect("install fake official Codex CLI");
-
-    let output = proxy_shim()
-        .args(["config", "read"])
-        .env_remove(STOCK_CODEX_PATH_ENV)
-        .env(CODEX_CLI_PATH_ENV, shim_path())
-        .env(CUSTOM_INSTALL_ROOT_ENV, &installation_root)
-        .env_remove(HOST_NODE_PATH_ENV)
-        .env_remove(HOST_RUNTIME_PATH_ENV)
-        .env_remove(REMOTE_SSH_MANAGED_ENV)
-        .env("FAKE_CODEX_PRINT_INVOCATION", "1")
-        .env("FAKE_CODEX_PRINT_PROXY_ENV", "1")
-        .env("HTTP_PROXY", "http://explicit-proxy.invalid:3128")
-        .env_remove("NODE_USE_ENV_PROXY")
-        .stdin(Stdio::null())
-        .output()
-        .expect("run Browser Use style shim invocation");
-
-    assert!(
-        output.status.success(),
-        "Browser Use style shim invocation exited {}; stderr={}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(output.stdout.is_empty());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("args=config|read"), "{stderr}");
-    assert!(stderr.contains("codex_cli_path_present=false"), "{stderr}");
-    assert!(
-        stderr.contains("HTTP_PROXY=http://explicit-proxy.invalid:3128"),
-        "{stderr}"
-    );
-    assert!(stderr.contains("NODE_USE_ENV_PROXY=1"), "{stderr}");
-
-    fs::remove_dir_all(
-        installation_root
-            .parent()
-            .expect("portable installation parent"),
-    )
-    .expect("remove portable Codex installation");
-}
-
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 #[test]
 fn browser_helper_fallback_does_not_guess_an_official_cli_from_path() {
     let missing_installation = temporary_directory().join("missing-portable-codex");
@@ -1190,7 +1023,7 @@ fn wait_for_optional_file(path: &std::path::Path, timeout: Duration) -> Option<S
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn wait_for_child_file_matching(
     child: &mut process::Child,
     path: &std::path::Path,
@@ -1243,7 +1076,7 @@ fn wait_for_child_file_matching(
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn wait_for_complete_owner_record(
     child: &mut process::Child,
     data_directory: &std::path::Path,
@@ -1267,7 +1100,7 @@ fn wait_for_complete_owner_record(
     )
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn process_id_from_ready(contents: &str, label: &str) -> u32 {
     contents
         .lines()
@@ -1277,7 +1110,7 @@ fn process_id_from_ready(contents: &str, label: &str) -> u32 {
         .expect("ready process identity PID")
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn host_runtime_shim(directory: &std::path::Path, ready: &std::path::Path) -> process::Child {
     proxy_shim()
         .args(["app-server", "--stdio"])
@@ -1293,7 +1126,7 @@ fn host_runtime_shim(directory: &std::path::Path, ready: &std::path::Path) -> pr
         .expect("spawn fake Host Runtime Shim")
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn legacy_host_runtime_shim(
     directory: &std::path::Path,
     ready: &std::path::Path,
@@ -1313,7 +1146,7 @@ fn legacy_host_runtime_shim(
         .expect("spawn legacy fake Host Runtime Shim")
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn desktop_owned_shim(
     directory: &std::path::Path,
     launcher_ready: &std::path::Path,
@@ -1338,14 +1171,8 @@ fn desktop_owned_shim(
     command.spawn().expect("start fake live Desktop")
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn force_stop_test_process(process_id: u32) {
-    #[cfg(target_os = "windows")]
-    let _ = Command::new("taskkill.exe")
-        .args(["/PID", &process_id.to_string(), "/T", "/F"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     let _ = Command::new("/bin/kill")
         .args(["-KILL", &process_id.to_string()])
@@ -1354,7 +1181,7 @@ fn force_stop_test_process(process_id: u32) {
         .status();
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn wait_for_process_exit(child: &mut process::Child, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while child.try_wait().expect("poll test process").is_none() && Instant::now() < deadline {
@@ -1363,7 +1190,7 @@ fn wait_for_process_exit(child: &mut process::Child, timeout: Duration) -> bool 
     child.try_wait().expect("final test process poll").is_some()
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn wait_for_process_id_exit(process_id: u32, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while process_exists(process_id) && Instant::now() < deadline {
@@ -1372,7 +1199,7 @@ fn wait_for_process_id_exit(process_id: u32, timeout: Duration) -> bool {
     !process_exists(process_id)
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn exact_process_instance_is_executable(process_id: u32, started_at_micros: u64) -> bool {
     // Linux keeps a killed child PID visible to kill(2) while its parent is about to reap the
     // zombie, even though /proc/<pid>/exe is already gone. Match the production lease's exact
@@ -1381,7 +1208,7 @@ fn exact_process_instance_is_executable(process_id: u32, started_at_micros: u64)
         .is_ok_and(|snapshot| snapshot.started_at_micros == started_at_micros)
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn forwards_validated_host_runtime_paths_to_the_host_runtime() {
     let directory = temporary_directory();
@@ -1420,7 +1247,7 @@ fn forwards_validated_host_runtime_paths_to_the_host_runtime() {
     fs::remove_dir_all(directory).expect("remove Host Runtime path forwarding fixture");
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn hands_off_local_host_runtime_ownership_and_converges_on_stdin_eof() {
     let directory = temporary_directory();
@@ -1496,7 +1323,7 @@ fn hands_off_local_host_runtime_ownership_and_converges_on_stdin_eof() {
     fs::remove_dir_all(directory).expect("remove Host Runtime handoff fixture");
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn replacement_waits_for_the_local_runtime_owner_mutation_lock() {
     let directory = temporary_directory();
@@ -1558,7 +1385,7 @@ fn replacement_waits_for_the_local_runtime_owner_mutation_lock() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn migrates_a_live_version_one_owner_before_starting_a_replacement() {
     let directory = temporary_directory();
@@ -1631,7 +1458,7 @@ fn migrates_a_live_version_one_owner_before_starting_a_replacement() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn waits_for_a_version_one_owner_to_publish_its_child_before_migration() {
     let directory = temporary_directory();
@@ -1749,7 +1576,7 @@ fn waits_for_a_version_one_owner_to_publish_its_child_before_migration() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn rejects_a_childless_version_one_owner_whose_process_id_was_reused() {
     let directory = temporary_directory();
@@ -1807,7 +1634,7 @@ fn rejects_a_childless_version_one_owner_whose_process_id_was_reused() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn discards_a_childless_version_one_owner_that_names_the_current_shim() {
     let directory = temporary_directory();
@@ -1855,65 +1682,6 @@ fn discards_a_childless_version_one_owner_that_names_the_current_shim() {
     assert!(
         replacement_identity.is_some(),
         "replacement waited on the childless version-one record that named its own Shim PID"
-    );
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn ignores_a_reused_version_one_child_pid_after_its_shim_exits() {
-    let directory = temporary_directory();
-    let owner_directory = directory.join("local-host-runtime-owner-v1");
-    let replacement_ready = directory.join("replacement-ready");
-    fs::create_dir(&owner_directory).expect("create stale version-one owner directory");
-
-    let mut unrelated = Command::new(fake_codex_path())
-        .env("FAKE_CODEX_DELAY_MS", "60000")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn unrelated reused-child-PID fixture");
-    fs::write(
-        owner_directory.join("owner"),
-        format!(
-            "version=1\nprocess_id={}\ndesktop_process_id={}\nchild_process_id={}\n",
-            u32::MAX,
-            process::id(),
-            unrelated.id(),
-        ),
-    )
-    .expect("publish stale version-one owner record with a reused child PID");
-
-    let mut replacement = host_runtime_shim(&directory, &replacement_ready);
-    let replacement_stdin = replacement
-        .stdin
-        .take()
-        .expect("replacement Host Runtime stdin");
-    let replacement_identity = wait_for_optional_file(&replacement_ready, Duration::from_secs(2));
-    let unrelated_was_not_signalled = unrelated
-        .try_wait()
-        .expect("poll unrelated reused-child-PID fixture")
-        .is_none();
-
-    force_stop_test_process(unrelated.id());
-    let _ = unrelated.wait();
-    drop(replacement_stdin);
-    if !wait_for_process_exit(&mut replacement, Duration::from_secs(5)) {
-        force_stop_test_process(replacement.id());
-        if let Some(identity) = replacement_identity.as_deref() {
-            force_stop_test_process(process_id_from_ready(identity, "root="));
-        }
-        let _ = replacement.wait();
-    }
-    let _ = fs::remove_dir_all(&directory);
-
-    assert!(
-        replacement_identity.is_some(),
-        "replacement trusted a live process that reused a dead Windows v1 child PID"
-    );
-    assert!(
-        unrelated_was_not_signalled,
-        "replacement signalled an unrelated process that reused a dead Windows v1 child PID"
     );
 }
 
@@ -1993,7 +1761,7 @@ fn refuses_version_one_takeover_when_the_recorded_child_outlives_its_shim() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn retires_an_exact_owner_child_after_its_shim_exits() {
     let directory = temporary_directory();
@@ -2112,7 +1880,7 @@ fn retires_an_exact_owner_child_after_its_shim_exits() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn replacement_does_not_signal_a_reused_owner_process_id() {
     let directory = temporary_directory();
@@ -2207,7 +1975,7 @@ fn replacement_does_not_signal_a_reused_owner_process_id() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn replacement_does_not_signal_an_exact_owner_with_a_mismatched_executable() {
     let directory = temporary_directory();
@@ -2292,7 +2060,7 @@ fn replacement_does_not_signal_an_exact_owner_with_a_mismatched_executable() {
     );
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn refuses_handoff_from_another_live_desktop() {
     let directory = temporary_directory();
@@ -2335,7 +2103,7 @@ fn refuses_handoff_from_another_live_desktop() {
     fs::remove_dir_all(directory).expect("remove live Desktop owner fixture");
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn retires_a_legacy_runtime_from_its_mapping_store_lock() {
     let directory = temporary_directory();
@@ -2408,7 +2176,7 @@ fn retires_a_legacy_runtime_from_its_mapping_store_lock() {
     fs::remove_dir_all(directory).expect("remove legacy Host Runtime fixture");
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn refuses_legacy_migration_from_another_live_desktop() {
     let directory = temporary_directory();
@@ -2794,44 +2562,5 @@ fn cleans_an_escaped_descendant_after_the_cli_root_exits() {
     assert!(
         !process_exists(child_id),
         "escaped descendant PID {child_id} survived"
-    );
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn job_terminates_the_official_cli_tree_when_shim_is_killed() {
-    let mut shim = proxy_shim()
-        .env(STOCK_CODEX_PATH_ENV, fake_codex_path())
-        .env("FAKE_CODEX_SPAWN_CHILD", "1")
-        .env("FAKE_CODEX_DELAY_MS", "60000")
-        .env("FAKE_CODEX_CHILD_DELAY_MS", "60000")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn job-guarded shim");
-    let shim_id = shim.id();
-    let mut reader = BufReader::new(shim.stdout.take().expect("shim stdout"));
-    let mut child_id_line = String::new();
-    reader.read_line(&mut child_id_line).expect("read child id");
-    let child_id = child_id_line.trim().parse::<u32>().expect("child id");
-    assert!(process_exists(child_id));
-
-    let status = Command::new("taskkill.exe")
-        .args(["/PID", &shim_id.to_string(), "/F"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .expect("kill shim");
-    assert!(status.success());
-    let _ = shim.wait();
-
-    let started = Instant::now();
-    while process_exists(child_id) && started.elapsed() < Duration::from_secs(10) {
-        thread::sleep(Duration::from_millis(100));
-    }
-    assert!(
-        !process_exists(child_id),
-        "kill-on-close Job left child PID {child_id} running"
     );
 }

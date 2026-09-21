@@ -1,5 +1,3 @@
-#[cfg(target_os = "windows")]
-use std::env;
 use std::error::Error;
 use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
@@ -11,8 +9,6 @@ use std::time::{Duration, Instant};
 use codexhost_platform::{
     DesktopInstallation, descendant_executable_exists, desktop_root_process_ids_for_installation,
 };
-#[cfg(target_os = "windows")]
-use codexhost_platform::{process_executable_path, process_exists, terminate_process_by_id};
 
 use crate::ResolvedLaunchOptions;
 use crate::runtime_instance::{
@@ -178,32 +174,6 @@ pub(super) fn try_activate_controlled_instance(
     send_controlled_attachment(stream, descriptor)
 }
 
-#[cfg(target_os = "windows")]
-pub(super) fn stop_stale_launcher(descriptor: &RuntimeDescriptor) -> Result<(), Box<dyn Error>> {
-    if descriptor.launcher_pid == std::process::id() || !process_exists(descriptor.launcher_pid) {
-        return Ok(());
-    }
-    let expected = env::current_exe()?.canonicalize()?;
-    let actual = process_executable_path(descriptor.launcher_pid)?.canonicalize()?;
-    if actual != expected {
-        return Ok(());
-    }
-    terminate_process_by_id(descriptor.launcher_pid)?;
-    let started = Instant::now();
-    while process_exists(descriptor.launcher_pid) && started.elapsed() < Duration::from_secs(2) {
-        thread::sleep(Duration::from_millis(20));
-    }
-    if process_exists(descriptor.launcher_pid) {
-        return Err(format!(
-            "stale codexhost launcher PID {} did not exit before timeout",
-            descriptor.launcher_pid
-        )
-        .into());
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
 pub(super) fn stop_stale_launcher(_descriptor: &RuntimeDescriptor) -> Result<(), Box<dyn Error>> {
     Ok(())
 }

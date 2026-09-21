@@ -26,30 +26,6 @@ export const RELEASE_TARGETS = Object.freeze({
     nodeArchiveRoot: `node-v${NODE_VERSION}-darwin-x64`,
     nodeExecutable: "bin/node",
   }),
-  "windows-x64": Object.freeze({
-    id: "windows-x64",
-    hostPlatform: "win32",
-    rustTarget: "x86_64-pc-windows-msvc",
-    installerArchitecture: "x64",
-    executableSuffix: ".exe",
-    nodeArchive: `node-v${NODE_VERSION}-win-x64.zip`,
-    nodeArchiveSha256: "fba577c4bb87df04d54dd87bbdaa5a2272f1f99a2acbf9152e1a91b8b5f0b279",
-    nodeArchiveFormat: "zip",
-    nodeArchiveRoot: `node-v${NODE_VERSION}-win-x64`,
-    nodeExecutable: "node.exe",
-  }),
-  "windows-arm64": Object.freeze({
-    id: "windows-arm64",
-    hostPlatform: "win32",
-    rustTarget: "aarch64-pc-windows-msvc",
-    installerArchitecture: "arm64",
-    executableSuffix: ".exe",
-    nodeArchive: `node-v${NODE_VERSION}-win-arm64.zip`,
-    nodeArchiveSha256: "0cd29eeb64f3c649db2c4c868779ca277f5a4c49e26c69e5928d01fe0ae06da8",
-    nodeArchiveFormat: "zip",
-    nodeArchiveRoot: `node-v${NODE_VERSION}-win-arm64`,
-    nodeExecutable: "node.exe",
-  }),
   "linux-x64": Object.freeze({
     id: "linux-x64",
     hostPlatform: "linux",
@@ -98,8 +74,6 @@ export function releaseTargetForHost(name, hostPlatform = process.platform) {
 export function hostReleaseTargetId(platform = process.platform, arch = process.arch) {
   if (platform === "darwin" && arch === "arm64") return "macos-arm64";
   if (platform === "darwin" && arch === "x64") return "macos-x64";
-  if (platform === "win32" && arch === "x64") return "windows-x64";
-  if (platform === "win32" && arch === "arm64") return "windows-arm64";
   if (platform === "linux" && arch === "x64") return "linux-x64";
   if (platform === "linux" && arch === "arm64") return "linux-arm64";
   throw new Error(`unsupported npm release host: ${platform}/${arch}`);

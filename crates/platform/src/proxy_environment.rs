@@ -13,21 +13,6 @@ pub(crate) struct ProxySettings {
     pub(crate) exceptions: Vec<String>,
 }
 
-/// Windows Desktop tool servers may retain CODEX_CLI_PATH but discard proxy
-/// variables. Restore only the current user's static system proxy in that
-/// scoped helper path; explicit environment values (including empty) win.
-#[cfg(target_os = "windows")]
-pub fn desktop_helper_proxy_environment() -> Vec<(OsString, OsString)> {
-    let system = match crate::windows_proxy::static_proxy_settings() {
-        Ok(settings) => settings,
-        Err(_) => {
-            eprintln!("codexhost: could not read Windows helper proxy settings");
-            None
-        }
-    };
-    proxy_environment_from(env::vars_os(), system.as_ref())
-}
-
 /// Returns the proxy environment that should be passed to a codexhost child.
 ///
 /// Explicit environment variables always win. On macOS, missing variables are

@@ -1,42 +1,16 @@
 #!/usr/bin/env node
-// Copies the launcher icon into the macOS packaging workspace so Windows and
-// macOS packages use the same reviewed codexhost artwork.
+// Copies the launcher icon into the macOS packaging workspace.
 // Usage: node assets.mjs --output <directory>
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const ICON_SOURCE = path.resolve(
-  import.meta.dirname,
-  "../../../crates/launcher/assets/codexhost.ico",
-);
 const PNG_SOURCE = path.resolve(
   import.meta.dirname,
   "../../../crates/launcher/assets/codexhost.png",
 );
 
-export function readIcon() {
-  return readFileSync(ICON_SOURCE);
-}
-
-export function iconDimensions(buffer) {
-  if (buffer.readUInt16LE(0) !== 0 || buffer.readUInt16LE(2) !== 1) {
-    throw new Error("invalid ICO header");
-  }
-
-  const dimensions = [];
-  const imageCount = buffer.readUInt16LE(4);
-  for (let index = 0; index < imageCount; index += 1) {
-    const offset = 6 + index * 16;
-    dimensions.push({
-      width: buffer[offset] || 256,
-      height: buffer[offset + 1] || 256,
-    });
-  }
-  return dimensions;
-}
 
 function parseArguments(args) {
   const output = [];
@@ -57,7 +31,6 @@ function parseArguments(args) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const output = parseArguments(process.argv.slice(2));
   await mkdir(output, { recursive: true });
-  await writeFile(path.join(output, "codexhost.ico"), await readFile(ICON_SOURCE));
   await writeFile(path.join(output, "codexhost-icon.png"), await readFile(PNG_SOURCE));
-  console.log(`icon=${path.join(output, "codexhost.ico")}`);
+  console.log(`icon=${path.join(output, "codexhost-icon.png")}`);
 }

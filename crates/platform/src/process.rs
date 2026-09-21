@@ -1,6 +1,4 @@
 use super::{DesktopInstallation, PlatformError};
-#[cfg(target_os = "windows")]
-use super::{node_entrypoint_path, windows_process};
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::thread;
@@ -126,47 +124,10 @@ pub fn process_snapshot(process_id: u32) -> Result<ProcessSnapshot, PlatformErro
     unix_process_snapshot(process_id)
 }
 
-#[cfg(target_os = "windows")]
-pub fn process_snapshot(process_id: u32) -> Result<ProcessSnapshot, PlatformError> {
-    let parent_id = windows_process::process_entries()
-        .map_err(|error| {
-            PlatformError::Io(std::io::Error::new(
-                error.kind(),
-                format!("enumerate processes while inspecting PID {process_id}: {error}"),
-            ))
-        })?
-        .into_iter()
-        .find(|process| process.id == process_id)
-        .ok_or_else(|| PlatformError::NotFound(format!("cannot inspect PID {process_id}")))?
-        .parent_id;
-    let executable = windows_process::process_image_path(process_id).map_err(|source| {
-        PlatformError::ProcessInspection {
-            process_id,
-            operation: "read executable",
-            source,
-        }
-    })?;
-    let started_at_micros =
-        windows_process::process_started_at_micros(process_id).map_err(|source| {
-            PlatformError::ProcessInspection {
-                process_id,
-                operation: "read start time",
-                source,
-            }
-        })?;
-    Ok(ProcessSnapshot {
-        id: process_id,
-        parent_id,
-        process_group_id: process_id,
-        executable,
-        started_at_micros,
-    })
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn process_snapshot(_process_id: u32) -> Result<ProcessSnapshot, PlatformError> {
     Err(PlatformError::Unsupported(
-        "process snapshots require Windows, macOS, or Linux",
+        "process snapshots require macOS or Linux",
     ))
 }
 
@@ -603,49 +564,6 @@ pub(crate) fn signal_processes_exact(
     ObservedProcessTree::new_with_process_group(root, None, None).signal_processes(&live, signal)
 }
 
-#[cfg(target_os = "windows")]
-pub fn desktop_process_ids() -> Result<Vec<u32>, PlatformError> {
-    let mut matches = Vec::new();
-    for process in windows_process::process_entries()? {
-        let Ok(path) = windows_process::process_image_path(process.id) else {
-            continue;
-        };
-        let path = path.to_string_lossy().replace('/', "\\").to_lowercase();
-        if path.contains("\\windowsapps\\openai.codex_") && path.ends_with("\\app\\chatgpt.exe") {
-            matches.push(process.id);
-        }
-    }
-    Ok(matches)
-}
-
-#[cfg(target_os = "windows")]
-pub fn desktop_root_process_ids() -> Result<Vec<u32>, PlatformError> {
-    let entries = windows_process::process_entries()?;
-    let desktop_ids = desktop_process_ids()?;
-    Ok(entries
-        .into_iter()
-        .filter(|process| {
-            desktop_ids.contains(&process.id) && !desktop_ids.contains(&process.parent_id)
-        })
-        .map(|process| process.id)
-        .collect())
-}
-
-#[cfg(target_os = "windows")]
-pub fn desktop_process_ids_for_installation(
-    installation: &DesktopInstallation,
-) -> Result<Vec<u32>, PlatformError> {
-    let expected = windows_executable_key(&installation.desktop_executable);
-    Ok(windows_process::process_entries()?
-        .into_iter()
-        .filter(|process| {
-            windows_process::process_image_path(process.id)
-                .is_ok_and(|path| windows_executable_key(&path) == expected)
-        })
-        .map(|process| process.id)
-        .collect())
-}
-
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn desktop_process_ids_for_installation(
     installation: &DesktopInstallation,
@@ -657,12 +575,12 @@ pub fn desktop_process_ids_for_installation(
         .collect())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn desktop_process_ids_for_installation(
     _installation: &DesktopInstallation,
 ) -> Result<Vec<u32>, PlatformError> {
     Err(PlatformError::Unsupported(
-        "Desktop process discovery currently supports Windows, macOS, and Linux only",
+        "Desktop process discovery currently supports macOS and Linux only",
     ))
 }
 
@@ -676,21 +594,6 @@ pub fn desktop_root_snapshots_for_installation(
     ))
 }
 
-#[cfg(target_os = "windows")]
-pub fn desktop_root_process_ids_for_installation(
-    installation: &DesktopInstallation,
-) -> Result<Vec<u32>, PlatformError> {
-    let entries = windows_process::process_entries()?;
-    let desktop_ids = desktop_process_ids_for_installation(installation)?;
-    Ok(entries
-        .into_iter()
-        .filter(|process| {
-            desktop_ids.contains(&process.id) && !desktop_ids.contains(&process.parent_id)
-        })
-        .map(|process| process.id)
-        .collect())
-}
-
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn desktop_root_process_ids_for_installation(
     installation: &DesktopInstallation,
@@ -701,47 +604,13 @@ pub fn desktop_root_process_ids_for_installation(
         .collect())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn desktop_root_process_ids_for_installation(
     _installation: &DesktopInstallation,
 ) -> Result<Vec<u32>, PlatformError> {
     Err(PlatformError::Unsupported(
-        "Desktop process discovery currently supports Windows, macOS, and Linux only",
+        "Desktop process discovery currently supports macOS and Linux only",
     ))
-}
-
-#[cfg(target_os = "windows")]
-fn windows_executable_key(path: &Path) -> String {
-    node_entrypoint_path(path)
-        .to_string_lossy()
-        .replace('/', "\\")
-        .to_lowercase()
-}
-
-#[cfg(target_os = "windows")]
-pub fn descendant_executable_exists(
-    root_process_id: u32,
-    executable: &Path,
-) -> Result<bool, PlatformError> {
-    let entries = windows_process::process_entries()?;
-    let mut owned = vec![root_process_id];
-    loop {
-        let mut changed = false;
-        for process in &entries {
-            if !owned.contains(&process.id) && owned.contains(&process.parent_id) {
-                owned.push(process.id);
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    let expected = windows_executable_key(executable);
-    Ok(owned.into_iter().skip(1).any(|process_id| {
-        windows_process::process_image_path(process_id)
-            .is_ok_and(|path| windows_executable_key(&path) == expected)
-    }))
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -755,22 +624,14 @@ pub fn descendant_executable_exists(
         .any(|process| process.executable == executable))
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn descendant_executable_exists(
     _root_process_id: u32,
     _executable: &Path,
 ) -> Result<bool, PlatformError> {
     Err(PlatformError::Unsupported(
-        "descendant process discovery currently supports Windows, macOS, and Linux only",
+        "descendant process discovery currently supports macOS and Linux only",
     ))
-}
-
-#[cfg(target_os = "windows")]
-pub fn parent_process_id(process_id: u32) -> Result<Option<u32>, PlatformError> {
-    Ok(windows_process::process_entries()?
-        .into_iter()
-        .find(|process| process.id == process_id)
-        .map(|process| process.parent_id))
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -778,27 +639,11 @@ pub fn parent_process_id(process_id: u32) -> Result<Option<u32>, PlatformError> 
     unix_process_snapshot(process_id).map(|process| Some(process.parent_id))
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn parent_process_id(_process_id: u32) -> Result<Option<u32>, PlatformError> {
     Err(PlatformError::Unsupported(
-        "parent process discovery currently supports Windows, macOS, and Linux only",
+        "parent process discovery currently supports macOS and Linux only",
     ))
-}
-
-#[cfg(target_os = "windows")]
-pub fn process_executable_path(process_id: u32) -> Result<PathBuf, PlatformError> {
-    windows_process::process_image_path(process_id).map_err(PlatformError::Io)
-}
-
-#[cfg(target_os = "windows")]
-pub fn process_started_at_micros(process_id: u32) -> Result<u64, PlatformError> {
-    windows_process::process_started_at_micros(process_id).map_err(|source| {
-        PlatformError::ProcessInspection {
-            process_id,
-            operation: "read start time",
-            source,
-        }
-    })
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -806,29 +651,17 @@ pub fn process_executable_path(process_id: u32) -> Result<PathBuf, PlatformError
     process_snapshot(process_id).map(|process| process.executable)
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn process_executable_path(_process_id: u32) -> Result<PathBuf, PlatformError> {
     Err(PlatformError::Unsupported(
-        "process executable discovery currently supports Windows, macOS, and Linux only",
+        "process executable discovery currently supports macOS and Linux only",
     ))
 }
 
-#[cfg(target_os = "windows")]
-pub fn terminate_process_by_id(process_id: u32) -> Result<(), PlatformError> {
-    windows_process::terminate_process(process_id, 1).map_err(PlatformError::Io)
-}
-
-#[cfg(not(target_os = "windows"))]
 pub fn terminate_process_by_id(_process_id: u32) -> Result<(), PlatformError> {
     Err(PlatformError::Unsupported(
-        "process termination by ID is currently supported on Windows only",
+        "process termination by ID is currently supported on macOS and Linux only",
     ))
-}
-
-#[cfg(target_os = "windows")]
-pub fn process_exists(process_id: u32) -> bool {
-    windows_process::process_entries()
-        .is_ok_and(|entries| entries.iter().any(|process| process.id == process_id))
 }
 
 #[cfg(target_os = "macos")]
@@ -897,24 +730,9 @@ pub fn force_stop_desktop(
     }
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn process_exists(_process_id: u32) -> bool {
     false
-}
-
-#[cfg(all(test, target_os = "windows"))]
-mod windows_tests {
-    use std::path::Path;
-
-    use super::windows_executable_key;
-
-    #[test]
-    fn treats_verbatim_and_regular_windows_executable_paths_as_equal() {
-        assert_eq!(
-            windows_executable_key(Path::new(r"\\?\D:\Program\node.exe")),
-            windows_executable_key(Path::new(r"d:\program\node.exe")),
-        );
-    }
 }
 
 #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]

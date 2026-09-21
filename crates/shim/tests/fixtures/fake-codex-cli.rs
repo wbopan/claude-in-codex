@@ -98,7 +98,7 @@ fn run_signal_observer() -> bool {
     false
 }
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[allow(clippy::zombie_processes)]
 fn run_orphan_shim_launcher() -> bool {
     let Some(shim_path) = env::var_os("FAKE_CODEX_ORPHAN_SHIM") else {

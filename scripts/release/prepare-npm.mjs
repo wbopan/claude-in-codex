@@ -25,16 +25,12 @@ export const NPM_PACKAGE_NAME = "@codexhost/cli";
 export const NPM_PLATFORM_PACKAGE_NAMES = Object.freeze({
   "macos-arm64": "@codexhost/cli-darwin-arm64",
   "macos-x64": "@codexhost/cli-darwin-x64",
-  "windows-x64": "@codexhost/cli-win32-x64",
-  "windows-arm64": "@codexhost/cli-win32-arm64",
   "linux-x64": "@codexhost/cli-linux-x64",
   "linux-arm64": "@codexhost/cli-linux-arm64",
 });
 export const NPM_RUNTIME_PLATFORM_PACKAGES = Object.freeze({
   "darwin-arm64": NPM_PLATFORM_PACKAGE_NAMES["macos-arm64"],
   "darwin-x64": NPM_PLATFORM_PACKAGE_NAMES["macos-x64"],
-  "win32-x64": NPM_PLATFORM_PACKAGE_NAMES["windows-x64"],
-  "win32-arm64": NPM_PLATFORM_PACKAGE_NAMES["windows-arm64"],
   "linux-x64": NPM_PLATFORM_PACKAGE_NAMES["linux-x64"],
   "linux-arm64": NPM_PLATFORM_PACKAGE_NAMES["linux-arm64"],
 });
@@ -219,7 +215,6 @@ export function expectedNpmPackagePaths(target) {
     "README.md",
     `bin/codexhost${target.executableSuffix}`,
     `libexec/codexhost-shim${target.executableSuffix}`,
-    ...(target.hostPlatform === "win32" ? ["libexec/codexhost-node-repl.exe"] : []),
     "app/desktop-controller.mjs",
     "app/host-runtime.mjs",
     "app/renderer-extension.js",
@@ -970,14 +965,6 @@ export async function prepareNpmPackage({
     "npm Shim",
     true,
   );
-  if (target.hostPlatform === "win32") {
-    await copyReleaseFile(
-      path.join(rustOutput, "codexhost-node-repl.exe"),
-      path.join(packageRoot, "libexec", "codexhost-node-repl.exe"),
-      "npm Desktop tool proxy",
-      true,
-    );
-  }
   await runCommand(
     {
       label: "production Host Bundle build",

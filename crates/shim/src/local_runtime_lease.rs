@@ -428,16 +428,6 @@ fn executable_file_name_matches(observed: &Path, expected: &Path) -> bool {
     false
 }
 
-#[cfg(target_os = "windows")]
-fn ensure_no_live_version_one_child(_owner: &VersionOneOwnerRecord) -> Result<(), Box<dyn Error>> {
-    // Released Windows Shims spawn the Host Runtime only after assigning it to their
-    // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE Job. Once the Shim process is gone, that child cannot
-    // legitimately remain alive; a live process at the PID-only v1 child ID is therefore PID
-    // reuse. Never wait on or signal that unrelated process.
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
 fn ensure_no_live_version_one_child(owner: &VersionOneOwnerRecord) -> Result<(), Box<dyn Error>> {
     let Some(child_process_id) = owner.child_process_id else {
         return Ok(());
@@ -792,7 +782,7 @@ mod tests {
         })
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(target_os = "linux")]
     fn contender_can_acquire(data_directory: &Path) -> bool {
         let contender = OwnerMutationLock::open(data_directory).expect("open contender owner lock");
         let acquired = contender.try_lock_exclusive().is_ok();
@@ -811,7 +801,7 @@ mod tests {
         ))
     }
 
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    #[cfg(target_os = "linux")]
     #[test]
     fn holds_the_mutation_lock_until_child_identity_is_published() {
         let data_directory = temporary_data_directory();
