@@ -80,9 +80,7 @@ import {
 import { ExternalSteerError, ExternalTurnSteering } from "./external-turn-steering.js";
 import { loadHarnessPlugins } from "./harness-plugin-loader.js";
 import { HarnessLaunchSettingsStore } from "./harness-launch-settings.js";
-import {} from "@codexhost/shared-contracts";
 import { DesktopRequestQueue } from "./desktop-request-queue.js";
-import {} from "./official-codex-model-ref.js";
 import {
   spawnOfficialAppServerConnection,
   type OfficialAppServerConnection,

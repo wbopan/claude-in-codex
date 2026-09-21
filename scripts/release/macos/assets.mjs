@@ -11,7 +11,6 @@ const PNG_SOURCE = path.resolve(
   "../../../crates/launcher/assets/codexhost.png",
 );
 
-
 function parseArguments(args) {
   const output = [];
   for (let i = 0; i < args.length; i += 1) {

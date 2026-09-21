@@ -290,7 +290,6 @@ fn parse_launch_options(arguments: &[String]) -> Result<LaunchOptions, String> {
     })
 }
 
-
 fn absolute_file(path: &Path, label: &str) -> Result<PathBuf, Box<dyn Error>> {
     if !path.is_absolute() {
         return Err(format!("{label} must be an absolute path").into());
@@ -859,10 +858,10 @@ mod tests {
     use super::{
         CONTROL_NONCE_ENV, CONTROL_PORT_ENV, DEFAULT_AGENT_ENV, HOST_NODE_PATH_ENV,
         LAUNCHER_EXECUTABLE_ENV, LAUNCHER_PID_ENV, RUNTIME_DESCRIPTOR_PATH_ENV,
-        ResolvedLaunchOptions, RuntimeControl, STARTUP_TRACE_ENV,
-        allocate_runtime_control, desktop_controller_command, desktop_environment, emit_ready_line,
-        managed_desktop_data_directory, parse_launch_options,
-        read_bounded_controller_line, read_bounded_loopback_url, validate_loopback_root_url,
+        ResolvedLaunchOptions, RuntimeControl, STARTUP_TRACE_ENV, allocate_runtime_control,
+        desktop_controller_command, desktop_environment, emit_ready_line,
+        managed_desktop_data_directory, parse_launch_options, read_bounded_controller_line,
+        read_bounded_loopback_url, validate_loopback_root_url,
     };
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::{DESKTOP_TREE_REFRESH_INTERVAL, desktop_tree_refresh_due};
@@ -999,7 +998,8 @@ mod tests {
     #[test]
     fn removed_custom_install_option_is_rejected() {
         assert!(
-            parse_launch_options(&["--custom-install".into(), "/opt/CodexPortable".into()]).is_err()
+            parse_launch_options(&["--custom-install".into(), "/opt/CodexPortable".into()])
+                .is_err()
         );
     }
 
@@ -1007,7 +1007,6 @@ mod tests {
     fn removed_agent_option_is_rejected() {
         assert!(parse_launch_options(&["--agent".into(), "pi".into()]).is_err());
     }
-
 
     fn resolved_options() -> ResolvedLaunchOptions {
         ResolvedLaunchOptions {

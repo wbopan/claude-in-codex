@@ -36,9 +36,7 @@ const REMOTE_PROFILE_ONLY_ENVIRONMENT: [&str; 3] = [
 
 fn remove_codexhost_environment(command: &mut Command, names: impl IntoIterator<Item = OsString>) {
     for name in names {
-        if name == CODEX_CLI_PATH_ENV
-            || name.to_string_lossy().starts_with("CODEXHOST_")
-        {
+        if name == CODEX_CLI_PATH_ENV || name.to_string_lossy().starts_with("CODEXHOST_") {
             command.env_remove(name);
         }
     }

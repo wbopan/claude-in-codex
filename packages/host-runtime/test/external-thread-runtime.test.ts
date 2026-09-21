@@ -1,4 +1,3 @@
-import type {} from "@codexhost/harness-adapter";
 import { FakeHarnessAdapter } from "@codexhost/harness-adapter/testing";
 import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
 import {
@@ -7,12 +6,10 @@ import {
   hostThreadIdSchema,
   nativeSessionRefSchema,
 } from "@codexhost/shared-contracts";
-import {} from "@codexhost/protocol-core";
 import { describe, expect, it } from "vitest";
 
 import type { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
-
 import { transportModelIdForHarness } from "@codexhost/protocol-core";
 
 const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");

@@ -50,9 +50,7 @@ describe("host-runtime package", () => {
       selectedHarness: "codex",
       selectionSource: "official-model",
     });
-    expect(
-      classifyCreateRequestRoute({ id: 43, method: "thread/read", params: {} }),
-    ).toBeNull();
+    expect(classifyCreateRequestRoute({ id: 43, method: "thread/read", params: {} })).toBeNull();
   });
 
   it("keeps codexhost-internal variables out of the official Codex environment", () => {
