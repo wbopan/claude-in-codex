@@ -41,6 +41,26 @@ function modelEfforts(model: HarnessModel, catalog: HarnessModelCatalog): string
   return NATIVE_EFFORTS.filter((effort) => supported.has(effort));
 }
 
+/**
+ * Picker names are the bare Model name ("Opus", "Sonnet"): trailing qualifiers such as
+ * "(recommended)" or "(1M context)" are dropped. A Model keeps its full label when the short
+ * name would be empty or shared with another Model.
+ */
+function shortModelNames(models: readonly HarnessModel[]): Map<HarnessModel, string> {
+  const short = (label: string) => label.replace(/(?:\s*\([^()]*\))+\s*$/u, "").trim();
+  const counts = new Map<string, number>();
+  for (const model of models) {
+    const name = short(model.label).toLowerCase();
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return new Map(
+    models.map((model) => {
+      const name = short(model.label);
+      return [model, name && counts.get(name.toLowerCase()) === 1 ? name : model.label];
+    }),
+  );
+}
+
 export interface NativeModelProjectionInput {
   harnessName: string;
   catalog: HarnessModelCatalog;
@@ -51,6 +71,7 @@ export interface NativeModelProjectionInput {
 /** Project a Harness Model Catalog into official `model/list` entries. */
 export function projectNativeModels(input: NativeModelProjectionInput): JsonObject[] {
   const labels = new Map(input.catalog.thinkingOptions.map(({ id, label }) => [id, label]));
+  const names = shortModelNames(input.catalog.models);
   return input.catalog.models.map((model) => {
     const efforts = modelEfforts(model, input.catalog);
     const advertised = efforts.length > 0 ? efforts : [FALLBACK_EFFORT];
@@ -62,9 +83,7 @@ export function projectNativeModels(input: NativeModelProjectionInput): JsonObje
           ? FALLBACK_EFFORT
           : (advertised[0] ?? FALLBACK_EFFORT);
     const route = input.routeId(model);
-    const displayName = model.label.toLowerCase().includes(input.harnessName.toLowerCase())
-      ? model.label
-      : `${input.harnessName} · ${model.label}`;
+    const displayName = names.get(model) ?? model.label;
     return {
       id: route,
       model: route,

@@ -47,7 +47,7 @@ describe("native Model picker projection", () => {
     expect(opus).toMatchObject({
       id: route,
       model: route,
-      displayName: "Claude · Opus",
+      displayName: "Opus",
       description: "claude-opus",
       hidden: false,
       isDefault: false,
@@ -60,6 +60,31 @@ describe("native Model picker projection", () => {
     ]);
     // A Model without a displayable effort still advertises one so the picker stays valid.
     expect(haiku).toMatchObject({ displayName: "Claude Haiku", defaultReasoningEffort: "medium" });
+  });
+
+  it("names Models by their bare name unless that would be ambiguous", () => {
+    const names = (labels: string[]) =>
+      projectNativeModels({
+        harnessName: "Claude Code",
+        catalog: harnessModelCatalogSchema.parse({
+          models: labels.map((label, index) => ({ ref: { id: `m${index}` }, label })),
+          thinkingOptions: [{ id: "auto", label: "Auto" }],
+          defaultThinkingOptionId: "auto",
+        }),
+        routeId: (model) => `codexhost/claude-code-native@${model.ref.id}`,
+      }).map((entry) => entry.displayName);
+    expect(names(["Default (recommended)", "Opus (1M context)", "Sonnet", "Haiku"])).toEqual([
+      "Default",
+      "Opus",
+      "Sonnet",
+      "Haiku",
+    ]);
+    // Two Opus variants stay distinguishable; an all-qualifier label is kept as it is.
+    expect(names(["Opus", "Opus (1M context)", "(preview)"])).toEqual([
+      "Opus",
+      "Opus (1M context)",
+      "(preview)",
+    ]);
   });
 
   it("maps official efforts to Thinking options", () => {
