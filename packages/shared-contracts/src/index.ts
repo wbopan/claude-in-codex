@@ -81,7 +81,6 @@ export type {
   CodexAccountPlanType,
   CodexAccountSummary,
 } from "./codex-accounts.js";
-export { REASONING_TRANSCRIPT_COMMAND } from "./reasoning-transcript.js";
 export type { CodexhostError } from "./errors.js";
 export {
   HARNESS_SESSION_IMPORT_CWD_MAX_LENGTH,

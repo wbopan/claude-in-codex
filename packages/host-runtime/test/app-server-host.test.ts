@@ -5521,15 +5521,14 @@ describe("AppServerHost HarnessAdapter projection", () => {
       fixture.collector.waitFor(
         (message) =>
           method(message, "item/started") &&
-          ((message.params as JsonObject).item as JsonObject | undefined)?.id ===
-            `${reasoningId}-summary`,
+          ((message.params as JsonObject).item as JsonObject | undefined)?.id === reasoningId,
       ),
     ).resolves.toMatchObject({
       params: { item: { type: "reasoning", summary: [], content: [] } },
     });
-    await fixture.collector.waitFor((message) =>
-      method(message, "item/reasoning/summaryPartAdded"),
-    );
+    await expect(
+      fixture.collector.waitFor((message) => method(message, "item/reasoning/summaryPartAdded")),
+    ).resolves.toMatchObject({ params: { itemId: reasoningId, summaryIndex: 0 } });
     session.appendReasoning(reasoningId, "analysis");
     await expect(
       fixture.collector.waitFor(
@@ -5537,7 +5536,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
           method(message, "item/reasoning/summaryTextDelta") &&
           (message.params as JsonObject).delta === "analysis",
       ),
-    ).resolves.toMatchObject({ params: { summaryIndex: 0 } });
+    ).resolves.toMatchObject({ params: { itemId: reasoningId, summaryIndex: 0 } });
     session.completeItem(reasoningId, { status: "succeeded" });
     await fixture.collector.waitFor(
       (message) =>
@@ -5554,16 +5553,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
         turn: {
           items: [
             {
-              id: `${reasoningId}-summary`,
+              id: reasoningId,
               type: "reasoning",
               summary: ["visible analysis"],
               content: [],
-            },
-            {
-              id: reasoningId,
-              type: "commandExecution",
-              command: "thinking",
-              aggregatedOutput: "visible analysis",
             },
             { type: "agentMessage", text: "answer" },
           ],
@@ -5586,16 +5579,10 @@ describe("AppServerHost HarnessAdapter projection", () => {
               items: [
                 { type: "userMessage" },
                 {
-                  id: `${reasoningId}-summary`,
+                  id: reasoningId,
                   type: "reasoning",
                   summary: ["visible analysis"],
                   content: [],
-                },
-                {
-                  id: reasoningId,
-                  type: "commandExecution",
-                  command: "thinking",
-                  aggregatedOutput: "visible analysis",
                 },
                 { type: "agentMessage", text: "answer" },
               ],
