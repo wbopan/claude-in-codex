@@ -629,14 +629,6 @@ describe("AppServerHost installed Harness plugins", () => {
     try {
       await fixture.ready;
       writeRequest(fixture.desktopInput, {
-        id: 901,
-        method: "codexhost/harness/plugins/list",
-        params: {},
-      });
-      expect(await fixture.collector.waitFor((message) => requestId(message, 901))).toMatchObject({
-        result: { plugins: [{ id: "sample-agent", name: "Sample Agent", version: "1.0.0" }] },
-      });
-      writeRequest(fixture.desktopInput, {
         id: 907,
         method: "codexhost/harness/accounts/sources",
         params: {},
@@ -660,14 +652,6 @@ describe("AppServerHost installed Harness plugins", () => {
             credits: { usedPercent: 1 },
           },
         },
-      });
-      writeRequest(fixture.desktopInput, {
-        id: 902,
-        method: "codexhost/harness/inspect",
-        params: { harnessId: "sample-agent" },
-      });
-      expect(await fixture.collector.waitFor((message) => requestId(message, 902))).toMatchObject({
-        result: { status: "ready" },
       });
       writeRequest(fixture.desktopInput, {
         id: 905,
@@ -757,12 +741,7 @@ describe("AppServerHost installed Harness plugins", () => {
     }
   });
 
-  const pluginWaitMethods = [
-    "codexhost/harness/inspect",
-    "codexhost/harness/commands/inspect",
-    "thread/start",
-    "thread/resume",
-  ];
+  const pluginWaitMethods = ["codexhost/harness/accounts/inspect", "thread/start", "thread/resume"];
   it.each(pluginWaitMethods)(
     "keeps official requests moving during plugin loading: %s",
     async (blockedMethod) => {
@@ -1159,14 +1138,6 @@ describe("AppServerHost installed Harness plugins", () => {
     const fixture = createFixture();
     try {
       writeRequest(fixture.desktopInput, {
-        id: 911,
-        method: "codexhost/harness/plugins/list",
-        params: { directory: "/untrusted" },
-      });
-      expect(await fixture.collector.waitFor((message) => requestId(message, 911))).toMatchObject({
-        error: { code: -32602 },
-      });
-      writeRequest(fixture.desktopInput, {
         id: 912,
         method: "thread/start",
         params: {
@@ -1340,36 +1311,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
       await expect(
         fixture.collector.waitFor((message) => message.id === 912),
       ).resolves.toMatchObject({ result: { account: null } });
-    } finally {
-      await stopFixture(fixture);
-    }
-  });
-
-  it("refreshes native-derived Account selection before returning an Account list", async () => {
-    const stale: CodexAccountListResult = {
-      version: 2,
-      currentAccountId: null,
-      phase: "ready",
-      revision: 1,
-      accounts: [],
-    };
-    const fresh: CodexAccountListResult = {
-      ...stale,
-      currentAccountId: "native",
-      revision: 2,
-      accounts: [{ accountId: "native", label: "Observed native Account" }],
-    };
-    const refresh = vi.fn(async () => fresh);
-    const accountControl = Object.assign(new SingleNativeCodexAccount(() => stale), { refresh });
-    const fixture = createFixture({ accountControl });
-    try {
-      await fixture.ready;
-      writeRequest(fixture.desktopInput, { id: 908, method: "codexhost/account/list", params: {} });
-      await expect(fixture.collector.waitFor((message) => message.id === 908)).resolves.toEqual({
-        id: 908,
-        result: fresh,
-      });
-      expect(refresh).toHaveBeenCalledOnce();
     } finally {
       await stopFixture(fixture);
     }
@@ -2588,173 +2529,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("handles Pi inspection locally without opening a Thread Session", async () => {
-    const fixture = createFixture();
-    const officialWrite = vi.fn();
-    fixture.official.stdin.on("data", officialWrite);
-
-    writeRequest(fixture.desktopInput, {
-      id: 30,
-      method: "codexhost/harness/inspect",
-      params: { harnessId: "pi", cwd: "/synthetic", refresh: true },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 30)),
-    ).resolves.toMatchObject({
-      result: {
-        status: "ready",
-        catalog: { models: [{ label: "Fake Primary" }, { label: "Fake Secondary" }] },
-        capabilities: {
-          configuration: { selectModel: true, selectThinkingOption: true },
-          history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: false },
-        },
-      },
-    });
-    expect(fixture.adapter.inspectionCalls).toBe(1);
-    expect(fixture.adapter.sessions).toHaveLength(0);
-    expect(officialWrite).not.toHaveBeenCalled();
-    await stopFixture(fixture);
-  });
-
-  it("dispatches inspection by registered Harness ID and rejects unknown Harnesses", async () => {
-    const pi = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const claude = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["pi", pi],
-        ["claude-code", claude],
-      ]),
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 31,
-      method: "codexhost/harness/inspect",
-      params: { harnessId: "claude-code", cwd: "/synthetic-claude" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 31)),
-    ).resolves.toMatchObject({ result: { status: "ready" } });
-    expect(claude.inspectionCalls).toBe(1);
-    expect(pi.inspectionCalls).toBe(0);
-
-    writeRequest(fixture.desktopInput, {
-      id: 32,
-      method: "codexhost/harness/inspect",
-      params: { harnessId: "unregistered" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 32)),
-    ).resolves.toMatchObject({
-      error: { code: -32077, message: "Harness 'unregistered' is unavailable" },
-    });
-    await stopFixture(fixture);
-  });
-
-  it("opens a Harness Web UI without returning or echoing its credential", async () => {
-    const adapter = new WebUiHarnessAdapter(harnessIdSchema.parse("deepseek-harness"));
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["deepseek-harness", adapter],
-      ]),
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 37,
-      method: "codexhost/harness/web-ui/open",
-      params: { harnessId: "deepseek-harness" },
-    });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 37))).resolves.toEqual({
-      id: 37,
-      result: {},
-    });
-    expect(adapter.openCalls).toBe(1);
-
-    const canary = "SECRET_CANARY";
-    writeRequest(fixture.desktopInput, {
-      id: 38,
-      method: "codexhost/harness/web-ui/open",
-      params: { harnessId: "deepseek-harness", url: `http://127.0.0.1/?token=${canary}` },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 38)),
-    ).resolves.toMatchObject({ error: { code: -32602 } });
-    expect(adapter.openCalls).toBe(1);
-
-    adapter.failureMessage = `failed near ?token=${canary}`;
-    writeRequest(fixture.desktopInput, {
-      id: 39,
-      method: "codexhost/harness/web-ui/open",
-      params: { harnessId: "deepseek-harness" },
-    });
-    await expect(fixture.collector.waitFor((message) => requestId(message, 39))).resolves.toEqual({
-      id: 39,
-      error: { code: -32092, message: "Harness Web UI could not be opened" },
-    });
-    expect(JSON.stringify(fixture.collector.messages)).not.toContain(canary);
-    await stopFixture(fixture);
-  });
-
-  it("answers a later Harness inspect while an earlier inspect is still running", async () => {
-    const pi = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const claude = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
-    let releaseClaude = (): void => undefined;
-    const claudeReady = new Promise<void>((resolve) => {
-      releaseClaude = resolve;
-    });
-    const inspectClaude = claude.inspect.bind(claude);
-    claude.inspect = async (input) => {
-      await claudeReady;
-      return inspectClaude(input);
-    };
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([
-        ["pi", pi],
-        ["claude-code", claude],
-      ]),
-    });
-
-    writeRequest(fixture.desktopInput, {
-      id: 33,
-      method: "codexhost/harness/inspect",
-      params: { harnessId: "claude-code" },
-    });
-    writeRequest(fixture.desktopInput, {
-      id: 34,
-      method: "codexhost/harness/inspect",
-      params: { harnessId: "pi" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 34)),
-    ).resolves.toMatchObject({ result: { status: "ready" } });
-    expect(fixture.collector.messages.some((message) => requestId(message, 33))).toBe(false);
-    expect(pi.inspectionCalls).toBe(1);
-
-    releaseClaude();
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 33)),
-    ).resolves.toMatchObject({ result: { status: "ready" } });
-    await stopFixture(fixture);
-  });
-
-  it("answers a Harness inspect while official thread/list is still pending", async () => {
-    const fixture = createFixture();
-    writeRequest(fixture.desktopInput, {
-      id: 35,
-      method: "thread/list",
-      params: { limit: 10, sortKey: "created_at", sortDirection: "desc" },
-    });
-    writeRequest(fixture.desktopInput, {
-      id: 36,
-      method: "codexhost/harness/inspect",
-      params: { harnessId: "pi" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 36)),
-    ).resolves.toMatchObject({ result: { status: "ready" } });
-    expect(fixture.collector.messages.some((message) => requestId(message, 35))).toBe(false);
-    await stopFixture(fixture);
-  });
-
   it("passes Runtime connection and current Thread identity when manually creating an external Thread", async () => {
     class RecordingAdapter extends FakeHarnessAdapter {
       openedInputs: Parameters<FakeHarnessAdapter["open"]>[0][] = [];
@@ -3721,59 +3495,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
       },
     });
     await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
-    await stopFixture(fixture);
-  });
-
-  it("reads static Harness command catalogs without inspection or opening a Session", async () => {
-    const fixture = createFixture();
-    const catalog = {
-      commands: [
-        harnessCommandDescriptorSchema.parse({
-          id: "fake.compact",
-          invocation: "/compact",
-          label: "Compact",
-          argumentMode: "none",
-        }),
-      ],
-    };
-    Object.assign(fixture.adapter, { commandCatalog: catalog });
-    const inspect = vi.spyOn(fixture.adapter, "inspect");
-    const open = vi.spyOn(fixture.adapter, "open");
-    writeRequest(fixture.desktopInput, {
-      id: 1,
-      method: "codexhost/harness/commands/inspect",
-      params: { harnessId: "pi" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 1)),
-    ).resolves.toMatchObject({ result: catalog });
-    expect(inspect).not.toHaveBeenCalled();
-    expect(open).not.toHaveBeenCalled();
-    expect(fixture.adapter.sessions).toHaveLength(0);
-
-    for (const [id, params, code] of [
-      [2, { threadId: "unused" }, -32602],
-      [3, { harnessId: "missing" }, -32077],
-    ] as const) {
-      writeRequest(fixture.desktopInput, {
-        id,
-        method: "codexhost/harness/commands/inspect",
-        params,
-      });
-      await expect(
-        fixture.collector.waitFor((message) => requestId(message, id)),
-      ).resolves.toMatchObject({ error: { code } });
-    }
-    Object.assign(fixture.adapter, { commandCatalog: { commands: [{ id: "invalid" }] } });
-    writeRequest(fixture.desktopInput, {
-      id: 4,
-      method: "codexhost/harness/commands/inspect",
-      params: { harnessId: "pi" },
-    });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 4)),
-    ).resolves.toMatchObject({ error: { code: -32078 } });
-    expect(open).not.toHaveBeenCalled();
     await stopFixture(fixture);
   });
 

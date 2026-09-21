@@ -5,7 +5,6 @@ import {
   LOADED_SESSIONS_METHOD,
   idleReleaseSettingsSchema,
 } from "@codexhost/shared-contracts";
-import {} from "@codexhost/shared-contracts";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
@@ -38,17 +37,13 @@ import {
   harnessAccountSourceListParamsSchema,
   codexAccountUsageParamsSchema,
   codexAccountUsageResultSchema,
-  harnessPluginListParamsSchema,
-  harnessPluginListResultSchema,
   type HarnessPluginDescriptor,
-  harnessCommandCatalogSchema,
-  harnessCommandsInspectParamsSchema,
-  type HarnessId,
   threadCommandExecuteResultSchema,
-  harnessInspectParamsSchema,
   harnessInspectionSchema,
-  harnessWebUiOpenParamsSchema,
-  harnessWebUiOpenResultSchema,
+  HARNESS_LAUNCH_SETTINGS_GET_METHOD,
+  HARNESS_LAUNCH_SETTINGS_SET_METHOD,
+  harnessLaunchSettingsGetSchema,
+  harnessLaunchSettingsSetSchema,
   hostItemIdSchema,
   hostTurnIdSchema,
   jsonValueSchema,
@@ -85,12 +80,7 @@ import {
 import { ExternalSteerError, ExternalTurnSteering } from "./external-turn-steering.js";
 import { loadHarnessPlugins } from "./harness-plugin-loader.js";
 import { HarnessLaunchSettingsStore } from "./harness-launch-settings.js";
-import {
-  HARNESS_LAUNCH_SETTINGS_GET_METHOD,
-  HARNESS_LAUNCH_SETTINGS_SET_METHOD,
-  harnessLaunchSettingsGetSchema,
-  harnessLaunchSettingsSetSchema,
-} from "@codexhost/shared-contracts";
+import {} from "@codexhost/shared-contracts";
 import { DesktopRequestQueue } from "./desktop-request-queue.js";
 import {} from "./official-codex-model-ref.js";
 import {
@@ -473,7 +463,6 @@ export class AppServerHost {
   #pendingDesktopQuestions = new Map<HostQuestionRequestId, PendingDesktopQuestion>();
   #nextApprovalRequestId = HOST_APPROVAL_REQUEST_ID_MAX;
   #nextQuestionRequestId = HOST_QUESTION_REQUEST_ID_MAX;
-  #unsubscribeAccountState: (() => void) | undefined;
   #activeOfficialTurns = new Map<string, string>();
   #pendingOfficialTurnStarts = new Map<unknown, string>();
   #activeWorkDrainWaiters = new Set<() => void>();
@@ -572,12 +561,6 @@ export class AppServerHost {
             this.#diagnose("Codex Account identity or notification could not be updated"),
         })
       : undefined;
-    this.#unsubscribeAccountState = this.#officialRuntimeScope.gate.subscribe(() => {
-      const snapshot = this.#accountControl.snapshot();
-      void this.#writer
-        .json({ method: "codexhost/account/changed", params: jsonValueSchema.parse(snapshot) })
-        .catch(() => undefined);
-    });
     this.#repository = new ExternalThreadRepository(
       options.mappingStore ??
         createProductionExternalThreadStore(this.#options.environment ?? process.env),
@@ -704,8 +687,6 @@ export class AppServerHost {
           Promise.resolve().then(() => adapter.close()),
         ),
       );
-      this.#unsubscribeAccountState?.();
-      this.#unsubscribeAccountState = undefined;
       if (this.#options.closeMappingStoreOnExit !== false) {
         await this.#repository.close().catch((closeError) => this.#diagnose(closeError));
       }
@@ -774,8 +755,6 @@ export class AppServerHost {
       this.#externalRuntime.clear();
       this.#pendingOfficialTurnStarts.clear();
       this.#routeObservationTracker.clear();
-      this.#unsubscribeAccountState?.();
-      this.#unsubscribeAccountState = undefined;
       if (this.#options.closeMappingStoreOnExit !== false) {
         await this.#repository.close().catch((error) => this.#diagnose(error));
       }
@@ -908,11 +887,7 @@ export class AppServerHost {
       });
       return;
     }
-    if (
-      request.method === "codexhost/account/usage/inspect" ||
-      request.method === "codexhost/account/list" ||
-      request.method === "codexhost/account/refresh"
-    ) {
+    if (request.method === "codexhost/account/usage/inspect") {
       this.#dispatchDesktopRequest(() => this.#handleCodexAccountRequest(request));
       return;
     }
@@ -979,14 +954,6 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/harness/inspect") {
-      this.#dispatchDesktopRequest(() => this.#inspectHarness(request));
-      return;
-    }
-    if (request.method === "codexhost/harness/web-ui/open") {
-      this.#dispatchDesktopRequest(() => this.#openHarnessWebUi(request));
-      return;
-    }
     if (
       request.method === HARNESS_LAUNCH_SETTINGS_GET_METHOD ||
       request.method === HARNESS_LAUNCH_SETTINGS_SET_METHOD
@@ -1033,31 +1000,8 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/harness/plugins/list") {
-      this.#dispatchDesktopRequest(async () => {
-        if (!harnessPluginListParamsSchema.safeParse(request.params).success) {
-          await this.#writer.json(rpcError(request, -32602, "Invalid Harness plugin list params"));
-          return;
-        }
-        await this.#waitForPlugins();
-        const result = harnessPluginListResultSchema.parse({ plugins: this.#pluginDescriptors });
-        await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
-      });
-      return;
-    }
     if (request.method === "codexhost/thread/usage/inspect") {
       await this.#inspectThreadUsage(request);
-      return;
-    }
-    if (request.method === "codexhost/harness/commands/inspect") {
-      const params = harnessCommandsInspectParamsSchema.safeParse(request.params);
-      if (!params.success) {
-        await this.#writer.json(
-          rpcError(request, -32602, "Invalid Harness command inspection params"),
-        );
-      } else {
-        await this.#writeHarnessCommandCatalog(request, params.data.harnessId);
-      }
       return;
     }
     // Reads wait for the official runtime without holding Desktop request draining open.
@@ -1993,34 +1937,22 @@ export class AppServerHost {
     return this.#accountControl.currentAccountId();
   }
 
-  async #codexAccountSnapshot() {
-    return this.#accountControl.refresh?.() ?? this.#accountControl.snapshot();
-  }
-
   async #handleCodexAccountRequest(request: JsonRpcRequest): Promise<void> {
     try {
-      if (request.method === "codexhost/account/usage/inspect") {
-        const { accountId, refresh } = codexAccountUsageParamsSchema.parse(requestObject(request));
-        if (accountId !== (await this.#currentCodexAccountId()))
-          throw new Error("Unknown Codex Account");
-        const observation = await this.#refreshOfficialRateLimits(accountId, refresh === true);
-        const usage = this.#officialRateLimits.get(accountId);
-        const accountCredits = this.#officialAccountCredits(accountId);
-        const result = codexAccountUsageResultSchema.parse({
-          accountId,
-          usage,
-          ...(accountCredits ? { accountCredits } : {}),
-          freshness: observation.status === "live" ? ("live" as const) : ("cached" as const),
-          observedAt: observation.observedAt,
-        });
-        await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
-        return;
-      }
-      await this.#writer.json(
-        rpcEnvelope(request, {
-          result: jsonValueSchema.parse(await this.#codexAccountSnapshot()),
-        }),
-      );
+      const { accountId, refresh } = codexAccountUsageParamsSchema.parse(requestObject(request));
+      if (accountId !== (await this.#currentCodexAccountId()))
+        throw new Error("Unknown Codex Account");
+      const observation = await this.#refreshOfficialRateLimits(accountId, refresh === true);
+      const usage = this.#officialRateLimits.get(accountId);
+      const accountCredits = this.#officialAccountCredits(accountId);
+      const result = codexAccountUsageResultSchema.parse({
+        accountId,
+        usage,
+        ...(accountCredits ? { accountCredits } : {}),
+        freshness: observation.status === "live" ? ("live" as const) : ("cached" as const),
+        observedAt: observation.observedAt,
+      });
+      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
     } catch (error) {
       const failure = codexAccountRpcError(error);
       await this.#writer.json(rpcError(request, failure.code, failure.message));
@@ -2125,76 +2057,6 @@ export class AppServerHost {
     });
   }
 
-  async #inspectHarness(request: JsonRpcRequest): Promise<void> {
-    const params = harnessInspectParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Invalid Harness inspection params"));
-      return;
-    }
-    await this.#waitForPlugins();
-    const registered = [...this.#externalAdapters].find(
-      ([harnessId]) => harnessId === params.data.harnessId,
-    );
-    const adapter = registered?.[1];
-    if (!adapter) {
-      await this.#writer.json(
-        rpcError(request, -32077, `Harness '${params.data.harnessId}' is unavailable`),
-      );
-      return;
-    }
-    let inspection: unknown;
-    try {
-      inspection = await adapter.inspect({
-        ...(params.data.cwd ? { cwd: params.data.cwd } : {}),
-        ...(params.data.refresh !== undefined ? { refresh: params.data.refresh } : {}),
-      });
-    } catch (error) {
-      await this.#writer.json(
-        rpcError(request, -32077, `Harness inspection failed: ${errorMessage(error)}`),
-      );
-      return;
-    }
-    const validated = harnessInspectionSchema.safeParse(inspection);
-    if (!validated.success) {
-      await this.#writer.json(
-        rpcError(request, -32077, "Harness inspection returned an invalid result"),
-      );
-      return;
-    }
-    await this.#writer.json(
-      rpcEnvelope(request, { result: jsonValueSchema.parse(validated.data) }),
-    );
-  }
-
-  async #openHarnessWebUi(request: JsonRpcRequest): Promise<void> {
-    const params = harnessWebUiOpenParamsSchema.safeParse(request.params);
-    if (!params.success) {
-      await this.#writer.json(rpcError(request, -32602, "Invalid Harness Web UI params"));
-      return;
-    }
-    await this.#waitForPlugins();
-    const adapter = [...this.#externalAdapters].find(
-      ([harnessId]) => harnessId === params.data.harnessId,
-    )?.[1];
-    const webUi = adapter?.webUi;
-    if (!webUi) {
-      await this.#writer.json(rpcError(request, -32092, "Harness Web UI is unavailable"));
-      return;
-    }
-    try {
-      const result = await webUi.open();
-      if (!result.ok) {
-        await this.#writer.json(rpcError(request, -32092, "Harness Web UI could not be opened"));
-        return;
-      }
-      await this.#writer.json(
-        rpcEnvelope(request, { result: harnessWebUiOpenResultSchema.parse({}) }),
-      );
-    } catch {
-      await this.#writer.json(rpcError(request, -32092, "Harness Web UI could not be opened"));
-    }
-  }
-
   async #inspectThreadUsage(request: JsonRpcRequest): Promise<void> {
     const params = threadUsageInspectionParamsSchema.safeParse(request.params);
     if (!params.success) {
@@ -2251,21 +2113,6 @@ export class AppServerHost {
       this.#officialRateLimits.get(accountId),
       this.#officialRateLimits.getResetCredits(accountId),
     );
-  }
-
-  async #writeHarnessCommandCatalog(request: JsonRpcRequest, harnessId: HarnessId): Promise<void> {
-    await this.#waitForPlugins();
-    const adapter = this.#externalAdapters.get(harnessId);
-    if (!adapter) {
-      await this.#writer.json(rpcError(request, -32077, `Harness '${harnessId}' is unavailable`));
-      return;
-    }
-    try {
-      const catalog = harnessCommandCatalogSchema.parse(adapter.commandCatalog ?? { commands: [] });
-      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(catalog) }));
-    } catch {
-      await this.#writer.json(rpcError(request, -32078, "Harness command catalog is invalid"));
-    }
   }
 
   async #startExternalCommand(
