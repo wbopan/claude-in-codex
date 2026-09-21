@@ -159,6 +159,15 @@ import {
   OfficialRuntimeScope,
 } from "./codex-runtime/official-runtime-scope.js";
 import type { HostUpdateCoordinator } from "./update-coordinator.js";
+import {
+  NativeSelectionStore,
+  isNativeRouteModel,
+  overlayNativeSelection,
+  planConfigEdits,
+  projectNativeModels,
+  requestedNativeSelection,
+  thinkingOptionForEffort,
+} from "./native-picker.js";
 
 const SUBAGENT_TERMINAL_REFRESH_DELAYS_MS = [0, 50, 100, 150] as const;
 const THREAD_USAGE_UPDATED_METHOD = "codexhost/thread/usage/updated";
@@ -383,6 +392,8 @@ const HOST_APPROVAL_REQUEST_ID_MIN = -2_000_000;
 const HOST_APPROVAL_REQUEST_ID_MAX = -1_000_001;
 const HOST_QUESTION_REQUEST_ID_MIN = -1_000_000;
 const HOST_QUESTION_REQUEST_ID_MAX = -1;
+const CROSS_HARNESS_MESSAGE =
+  "This task belongs to a different Agent. Start a new task to use the selected Model.";
 const EXPLICIT_EXTERNAL_THREAD_METHODS = new Set([
   "thread/archive",
   "thread/delete",
@@ -513,6 +524,7 @@ export class AppServerHost {
   #externalRuntime: ExternalThreadRuntime;
   #desktopTools: OfficialDesktopTools;
   readonly #externalSteering = new ExternalTurnSteering();
+  #nativeSelection = new NativeSelectionStore(undefined);
   #repository: ExternalThreadRepository;
   #pendingDesktopApprovals = new Map<HostApprovalRequestId, PendingDesktopApproval>();
   #pendingDesktopQuestions = new Map<HostQuestionRequestId, PendingDesktopQuestion>();
@@ -544,6 +556,9 @@ export class AppServerHost {
   #desktopInputEnded = false;
 
   constructor(options: AppServerHostOptions) {
+    this.#nativeSelection = new NativeSelectionStore(
+      (options.environment ?? process.env).CODEXHOST_DATA_DIR,
+    );
     this.#options = {
       desktopInput: process.stdin,
       desktopOutput: process.stdout,
@@ -1195,6 +1210,21 @@ export class AppServerHost {
       await this.#executeThreadCommand(request);
       return;
     }
+    // Reads wait for the official runtime without holding Desktop request draining open.
+    if (request.method === "model/list") {
+      void this.#listNativeModels(request).catch((error: unknown) => this.#diagnose(error));
+      return;
+    }
+    if (request.method === "config/read") {
+      void this.#readNativeConfig(request).catch((error: unknown) => this.#diagnose(error));
+      return;
+    }
+    if (request.method === "config/batchWrite" || request.method === "config/value/write") {
+      if (await this.#writeNativeConfig(request)) return;
+    }
+    if (request.method === "thread/settings/update") {
+      if (await this.#updateNativeThreadSettings(request)) return;
+    }
     if (request.method === "thread/list") {
       let listRequest: DecodedThreadListRequest;
       try {
@@ -1391,6 +1421,10 @@ export class AppServerHost {
         );
         return;
       }
+      if (isNativeRouteModel(requestedNativeSelection(params).model)) {
+        await this.#writer.json(rpcError(request, -32076, CROSS_HARNESS_MESSAGE));
+        return;
+      }
       if (typeof threadId === "string") {
         this.#pendingOfficialTurnStarts.set(request.id, threadId);
       }
@@ -1524,6 +1558,261 @@ export class AppServerHost {
       }
     }
     await this.#forwardOfficialRequest(request, frame);
+  }
+
+  /** Official `model/list` plus one entry per Model of every ready external Harness. */
+  async #listNativeModels(request: JsonRpcRequest): Promise<void> {
+    const params = isRecord(request.params) ? request.params : {};
+    let response: JsonObject;
+    try {
+      response = await this.#requestOfficial("model/list", params);
+    } catch {
+      await this.#writer.json(
+        rpcError(request, -32001, "Official request failed; retry explicitly"),
+      );
+      return;
+    }
+    const result = isRecord(response.result) ? response.result : undefined;
+    // Only the last page is extended so paginated reads list each projected Model once.
+    if (!result || !Array.isArray(result.data) || result.nextCursor != null) {
+      await this.#writer.json({ ...response, id: request.id });
+      return;
+    }
+    const projected: JsonObject[] = [];
+    try {
+      // Desktop startup must not depend on Harness loading: wait a bounded time, then answer
+      // with the Harnesses that are ready. Desktop refetches the list on focus and expiry.
+      const configuredWait = Number(this.#options.environment?.CODEXHOST_NATIVE_MODEL_WAIT_MS);
+      const waitMs =
+        Number.isFinite(configuredWait) && configuredWait >= 0 ? configuredWait : 5_000;
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        this.#waitForPlugins(),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, waitMs);
+        }),
+      ]);
+      clearTimeout(timer);
+      for (const [harnessId, adapter] of this.#externalAdapters) {
+        const inspection = harnessInspectionSchema.safeParse(await adapter.inspect({}));
+        if (!inspection.success || inspection.data.status !== "ready") continue;
+        const name =
+          this.#pluginDescriptors.find((plugin) => plugin.id === harnessId)?.name ?? harnessId;
+        projected.push(
+          ...projectNativeModels({
+            harnessName: name,
+            catalog: inspection.data.catalog,
+            routeId: (model) => encodeExternalTransportSelection(harnessId, { model: model.ref }),
+          }),
+        );
+      }
+    } catch (error) {
+      this.#diagnose(error);
+    }
+    await this.#writer.json({
+      ...response,
+      id: request.id,
+      result: { ...result, data: [...result.data, ...projected] },
+    });
+  }
+
+  async #readNativeConfig(request: JsonRpcRequest): Promise<void> {
+    let response: JsonObject;
+    try {
+      response = await this.#requestOfficial(
+        "config/read",
+        isRecord(request.params) ? request.params : {},
+      );
+    } catch {
+      await this.#writer.json(
+        rpcError(request, -32001, "Official request failed; retry explicitly"),
+      );
+      return;
+    }
+    const selection = await this.#nativeSelection.get();
+    await this.#writer.json({
+      ...response,
+      id: request.id,
+      ...(isRecord(response.result)
+        ? { result: overlayNativeSelection(response.result, selection) }
+        : {}),
+    });
+  }
+
+  /**
+   * Keep native route ids out of the official config file. Returns false when the request is
+   * untouched and must be forwarded as the original frame.
+   */
+  async #writeNativeConfig(request: JsonRpcRequest): Promise<boolean> {
+    const params = isRecord(request.params) ? request.params : {};
+    const batch = request.method === "config/batchWrite";
+    const edits: JsonValue[] = batch
+      ? Array.isArray(params.edits)
+        ? params.edits
+        : []
+      : [{ keyPath: params.keyPath ?? null, value: params.value ?? null }];
+    const current = await this.#nativeSelection.get();
+    const plan = planConfigEdits(edits, current);
+    if (plan.selection === undefined) return false;
+    if (plan.selection === null) {
+      await this.#nativeSelection.set(null);
+      return false;
+    }
+    await this.#nativeSelection.set(plan.selection);
+    let response: JsonObject | undefined;
+    if (batch && plan.official.length > 0) {
+      try {
+        response = await this.#requestOfficial("config/batchWrite", {
+          ...params,
+          edits: plan.official,
+        });
+      } catch {
+        await this.#writer.json(
+          rpcError(request, -32001, "Official request failed; retry explicitly"),
+        );
+        return true;
+      }
+    }
+    if (response) {
+      await this.#writer.json({ ...response, id: request.id });
+      return true;
+    }
+    // Nothing was written officially: report the unchanged official file and its real version.
+    const layers = await this.#requestOfficial("config/read", { includeLayers: true }).catch(
+      () => undefined,
+    );
+    const userLayer =
+      isRecord(layers?.result) && Array.isArray(layers.result.layers)
+        ? layers.result.layers.find(
+            (layer) => isRecord(layer) && isRecord(layer.name) && layer.name.type === "user",
+          )
+        : undefined;
+    const layerName = isRecord(userLayer) && isRecord(userLayer.name) ? userLayer.name : undefined;
+    await this.#writer.json(
+      rpcEnvelope(request, {
+        result: {
+          status: "ok",
+          version:
+            isRecord(userLayer) && typeof userLayer.version === "string" ? userLayer.version : "",
+          filePath:
+            typeof params.filePath === "string"
+              ? params.filePath
+              : typeof layerName?.file === "string"
+                ? layerName.file
+                : "",
+          overriddenMetadata: null,
+        },
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * A Thread never changes Harness. Same-Harness Model and effort changes are applied to the
+   * external Session; cross-Harness changes are rejected in both directions.
+   */
+  async #updateNativeThreadSettings(request: JsonRpcRequest): Promise<boolean> {
+    const params = requestObject(request);
+    if (typeof params.threadId !== "string") return false;
+    const selection = requestedNativeSelection(params);
+    const resolution = await this.#resolveExternalThread(params.threadId);
+    if (await this.#writeResolutionError(request, resolution)) return true;
+    if (resolution.kind !== "external") {
+      if (!isNativeRouteModel(selection.model)) return false;
+      await this.#writer.json(rpcError(request, -32076, CROSS_HARNESS_MESSAGE));
+      return true;
+    }
+    const failure = await this.#applyNativeSelection(resolution.thread, selection);
+    await this.#writer.json(
+      failure
+        ? rpcError(request, failure.code, failure.message)
+        : rpcEnvelope(request, { result: {} }),
+    );
+    return true;
+  }
+
+  /** Apply a native Model/effort selection to an external Session. Returns an error to report. */
+  async #applyNativeSelection(
+    thread: ExternalThread,
+    selection: { model?: string; effort?: string },
+    officialModel: "reject" | "ignore" = "reject",
+  ): Promise<{ code: number; message: string } | undefined> {
+    // A Turn that still carries an official Model (restored drafts, official App Tools) keeps
+    // running on the Thread's Harness. Explicit settings updates are rejected instead.
+    const ignoreModel =
+      officialModel === "ignore" &&
+      selection.model !== undefined &&
+      !isNativeRouteModel(selection.model);
+    if (selection.model !== undefined && !ignoreModel) {
+      let route: ReturnType<typeof decodeCreateRoute>;
+      try {
+        route = decodeCreateRoute({
+          id: 0,
+          method: "thread/start",
+          params: { model: selection.model },
+        });
+      } catch (error) {
+        return { code: -32602, message: errorMessage(error) };
+      }
+      if (!route || route.harnessId !== thread.harnessId) {
+        return { code: -32076, message: CROSS_HARNESS_MESSAGE };
+      }
+      const current =
+        thread.requestedModel ??
+        decodeExternalTransportSelection(thread.harnessId, thread.transportModelId)?.model;
+      if (
+        route.model &&
+        route.model.id !== current?.id &&
+        thread.session.capabilities.configuration.selectModel
+      ) {
+        const result = await thread.session.execute({ type: "model.select", model: route.model });
+        if (!result.ok) return { code: -32078, message: result.error.message };
+        thread.requestedModel = route.model;
+        await this.#persistNativeSelection(thread);
+      }
+    }
+    if (
+      selection.effort !== undefined &&
+      thread.session.capabilities.configuration.selectThinkingOption
+    ) {
+      const adapter = this.#externalAdapters.get(thread.harnessId);
+      const inspection = adapter
+        ? harnessInspectionSchema.safeParse(await adapter.inspect({}).catch(() => undefined))
+        : undefined;
+      const thinkingOptionId =
+        inspection?.success && inspection.data.status === "ready"
+          ? thinkingOptionForEffort(selection.effort, inspection.data.catalog)
+          : undefined;
+      if (thinkingOptionId && thinkingOptionId !== thread.requestedThinkingOptionId) {
+        const result = await thread.session.execute({ type: "thinking.select", thinkingOptionId });
+        if (!result.ok) return { code: -32078, message: result.error.message };
+        thread.requestedThinkingOptionId = thinkingOptionId;
+        await this.#persistNativeSelection(thread);
+      }
+    }
+    return undefined;
+  }
+
+  async #persistNativeSelection(thread: ExternalThread): Promise<void> {
+    const previous = decodeExternalTransportSelection(thread.harnessId, thread.transportModelId);
+    const model = thread.requestedModel ?? previous?.model;
+    if (!model) return;
+    const transportModelId = encodeExternalTransportSelection(thread.harnessId, {
+      ...(previous ?? {}),
+      model,
+      ...(thread.requestedThinkingOptionId
+        ? { thinkingOptionId: thread.requestedThinkingOptionId }
+        : {}),
+    });
+    thread.transportModelId = transportModelId;
+    try {
+      thread.record = await this.#repository.setTransportModelId(
+        thread.record.hostThreadId,
+        transportModelId,
+      );
+    } catch (error) {
+      this.#diagnose(error);
+    }
   }
 
   async #forwardOfficialNonRequest(
@@ -2955,8 +3244,18 @@ export class AppServerHost {
     const params = requestObject(request);
     const route = decodeCreateRoute(request);
     const requestedModel = route && route.harnessId !== "codex" ? route.model : undefined;
-    const requestedThinkingOptionId =
+    let requestedThinkingOptionId =
       route && route.harnessId !== "codex" ? route.thinkingOptionId : undefined;
+    const nativeEffort = requestedNativeSelection(params).effort;
+    if (!requestedThinkingOptionId && nativeEffort) {
+      // The native picker carries effort separately from the Model route id.
+      const inspection = harnessInspectionSchema.safeParse(
+        await adapter.inspect({}).catch(() => undefined),
+      );
+      if (inspection.success && inspection.data.status === "ready") {
+        requestedThinkingOptionId = thinkingOptionForEffort(nativeEffort, inspection.data.catalog);
+      }
+    }
     const requestedPermissionModeId =
       route && route.harnessId !== "codex" ? route.permissionModeId : undefined;
     const transportModelId =
@@ -3539,6 +3838,15 @@ export class AppServerHost {
         );
         return;
       }
+    }
+    const selectionFailure = await this.#applyNativeSelection(
+      thread,
+      requestedNativeSelection(params),
+      "ignore",
+    );
+    if (selectionFailure) {
+      await this.#writer.json(rpcError(request, selectionFailure.code, selectionFailure.message));
+      return;
     }
     let text: string;
     try {

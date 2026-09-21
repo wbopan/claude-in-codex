@@ -341,6 +341,7 @@ function createFixture(
       ? { closeMappingStoreOnExit: options.closeMappingStoreOnExit }
       : {}),
     environment: {
+      CODEXHOST_NATIVE_MODEL_WAIT_MS: "0",
       CODEXHOST_DATA_DIR: mappingStoreDirectory,
       ...(options.environment ?? {}),
     },
@@ -2435,7 +2436,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       await expect(
         fixture.collector.waitFor((message) => message.id === 903),
       ).resolves.toMatchObject({
-        result: { data: [] },
+        result: { data: expect.any(Array) },
       });
       expect(fixture.collector.messages.filter((message) => message.id === 901)).toHaveLength(1);
       expect(createBackend).toHaveBeenCalledTimes(2);

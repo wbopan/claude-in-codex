@@ -35,7 +35,12 @@ const center = (expression) =>
 async function click(point) {
   await client.command("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
   for (const type of ["mousePressed", "mouseReleased"])
-    await client.command("Input.dispatchMouseEvent", { type, ...point, button: "left", clickCount: 1 });
+    await client.command("Input.dispatchMouseEvent", {
+      type,
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
 }
 try {
   if (command === "click") {
@@ -49,9 +54,17 @@ try {
     );
     console.log("clicked");
   } else if (command === "key") {
-    const keyCode = { Escape: 27, Enter: 13, ArrowRight: 39, ArrowLeft: 37, ArrowDown: 40, Tab: 9 }[args[0]];
+    const keyCode = { Escape: 27, Enter: 13, ArrowRight: 39, ArrowLeft: 37, ArrowDown: 40, Tab: 9 }[
+      args[0]
+    ];
     for (const type of ["keyDown", "keyUp"])
-      await client.command("Input.dispatchKeyEvent", { type, key: args[0], code: args[0], windowsVirtualKeyCode: keyCode, ...(type === "keyDown" && args[0] === "Enter" ? { text: "\r" } : {}) });
+      await client.command("Input.dispatchKeyEvent", {
+        type,
+        key: args[0],
+        code: args[0],
+        windowsVirtualKeyCode: keyCode,
+        ...(type === "keyDown" && args[0] === "Enter" ? { text: "\r" } : {}),
+      });
     console.log("key sent");
   } else if (command === "text") {
     await client.command("Input.insertText", { text: args[0] });
@@ -66,7 +79,10 @@ try {
           `(()=>{const r=document.querySelector(${JSON.stringify(args[1])}).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,scale:1}})()`,
         )
       : undefined;
-    const shot = await client.command("Page.captureScreenshot", { format: "png", ...(clip ? { clip } : {}) });
+    const shot = await client.command("Page.captureScreenshot", {
+      format: "png",
+      ...(clip ? { clip } : {}),
+    });
     const file = path.join(out, args[0] ?? "screen.png");
     await fs.writeFile(file, Buffer.from(shot.data, "base64"));
     console.log(file);
