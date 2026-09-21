@@ -31,8 +31,10 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
 - [x] F. `thread/settings/update` guarded both ways with the native error toast and picker
       rollback; same-Harness Sonnet -> Haiku works (`F-*`).
 - [x] R1. Tool calls, native approval cards, command rendering, streaming (`R1-tools-*.png`).
-- [x] G. Claude called `codex_app.list_threads` through the Host (`G-*`). Needs
-      `CODEXHOST_NATIVE_APP_TOOLS=1` because of the macOS peer signature check.
+- [x] G. Claude called `codex_app.list_threads` through the Host (`G-*`). This relies on the
+      native parent topology, which is the macOS default (`CODEXHOST_NATIVE_APP_TOOLS=0` opts
+      out). Verified with no variable set: the official `codex` is Desktop's direct child and
+      the catalogue lists 44 codex_app tools plus cua_repl js/js_reset (`N-*`).
 - [x] H. Claude called `cua_repl.js` in-Host with no Python bridge: `cua.getState()`, then the
       in-app browser opened example.com, read "Example Domain", closed the tab
       (`H-cua-repl-trace.jsonl`, `H-result.txt`). One elicitation was forwarded to the owning task.
@@ -54,6 +56,9 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
   import, accounts/settings and Windows code are still in the tree.
 - `turn_ended` after a cua_repl Turn is unit-tested; its live call is not in the trace yet.
 - The answer to the forwarded elicitation is not recorded in the trace.
+- The native parent topology holds no `LocalRuntimeLease`: there is no owner handoff when the
+  Desktop respawns its app-server before the previous Host has exited. The Mapping Store lock
+  fails closed, so the cost is an unavailable session, not corrupted data.
 
 ## Findings worth keeping
 
@@ -73,3 +78,6 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
   vitest 1429 passed; acceptance A-I verified live.
 - 2026-09-21: side chat fixed (inject_items handled, fork inherits native settings, Thread
   responses carry the permission preset); vitest 1431 passed.
+- 2026-09-21: native parent topology is the macOS default; picker Models use bare names
+  (Default, Fable, Haiku, Opus, Sonnet). Rust tests need `npm run test:rust` (test-utils
+  feature) and a shell without inherited `CODEXHOST_*` variables.
