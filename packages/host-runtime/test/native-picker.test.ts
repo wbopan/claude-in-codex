@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import {
   NativeSelectionStore,
   effortForThinkingOption,
+  injectedItemsText,
   nativePermissionLevel,
+  nativePermissionResponse,
   nativePlanMode,
   permissionModeForLevel,
   overlayNativeSelection,
@@ -178,5 +180,52 @@ describe("native Model picker projection", () => {
     expect(nativePlanMode({ collaborationMode: { mode: "plan", settings: {} } })).toBe(true);
     expect(nativePlanMode({ collaborationMode: { mode: "default", settings: {} } })).toBe(false);
     expect(nativePlanMode({})).toBeUndefined();
+  });
+  it("answers Thread responses with the preset the official selector recognises", () => {
+    const granular = { granular: { rules: true } };
+    // A response outside these presets is shown as a custom level.
+    expect(nativePermissionResponse("ask", granular)).toEqual({
+      approvalPolicy: granular,
+      approvalsReviewer: "user",
+      activePermissionProfile: { id: ":workspace", extends: null },
+    });
+    expect(nativePermissionResponse("ask")).toMatchObject({ approvalPolicy: "on-request" });
+    expect(nativePermissionResponse("auto-review", granular)).toMatchObject({
+      approvalPolicy: "on-request",
+      approvalsReviewer: "guardian_subagent",
+    });
+    const fullAccess = nativePermissionResponse("full-access");
+    expect(fullAccess).toEqual({
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+      activePermissionProfile: { id: ":danger-full-access", extends: null },
+      sandbox: { type: "dangerFullAccess" },
+    });
+    // The response round-trips to the same level when the Desktop sends it back.
+    expect(nativePermissionLevel(fullAccess)).toBe("full-access");
+    expect(nativePermissionLevel(nativePermissionResponse("auto-review"))).toBe("auto-review");
+    expect(nativePermissionLevel(nativePermissionResponse("ask", granular))).toBe("ask");
+  });
+
+  it("reads the text of injected side chat items", () => {
+    expect(
+      injectedItemsText({
+        threadId: "t",
+        items: [
+          {
+            type: "message",
+            role: "user",
+            content: [
+              { type: "input_text", text: "parent context" },
+              { type: "input_image", image_url: "data:..." },
+              { type: "input_text", text: "  " },
+            ],
+          },
+          { type: "message", role: "user", content: [{ type: "input_text", text: "second" }] },
+          "unexpected",
+        ],
+      }),
+    ).toEqual(["parent context", "second"]);
+    expect(injectedItemsText({ threadId: "t" })).toEqual([]);
   });
 });

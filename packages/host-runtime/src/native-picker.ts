@@ -173,6 +173,41 @@ export function nativePermissionLevel(params: JsonObject): NativePermissionLevel
   return profile !== undefined || params.approvalPolicy !== undefined ? "ask" : undefined;
 }
 
+/**
+ * Permission fields a Thread response must carry so the official selector shows the Thread's
+ * level. Values mirror the Desktop presets; anything else is displayed as a custom level.
+ */
+export function nativePermissionResponse(
+  level: NativePermissionLevel,
+  approvalPolicy?: JsonValue,
+): JsonObject {
+  if (level === "full-access")
+    return {
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+      activePermissionProfile: { id: FULL_ACCESS_PROFILE, extends: null },
+      sandbox: { type: "dangerFullAccess" },
+    };
+  return {
+    approvalPolicy:
+      level === "ask" && isRecord(approvalPolicy) ? (approvalPolicy as JsonObject) : "on-request",
+    approvalsReviewer: level === "auto-review" ? "guardian_subagent" : "user",
+    activePermissionProfile: { id: ":workspace", extends: null },
+  };
+}
+
+/** Text of items sent with `thread/inject_items` (side chat context). */
+export function injectedItemsText(params: JsonObject): string[] {
+  if (!Array.isArray(params.items)) return [];
+  return params.items.flatMap((item) =>
+    isRecord(item) && Array.isArray(item.content)
+      ? item.content.flatMap((part) =>
+          isRecord(part) && typeof part.text === "string" && part.text.trim() ? [part.text] : [],
+        )
+      : [],
+  );
+}
+
 /** Whether the request turns the native Plan collaboration mode on (`true`) or off (`false`). */
 export function nativePlanMode(params: JsonObject): boolean | undefined {
   const mode = isRecord(params.collaborationMode) ? params.collaborationMode.mode : undefined;

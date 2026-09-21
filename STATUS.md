@@ -40,6 +40,11 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       ask -> `default`, auto-review -> `auto`, Plan on -> `plan`, Plan off -> `default`
       (`I-permission-trace.jsonl`).
       NOT live-verified on purpose: full access -> `bypassPermissions` (unit tests only).
+- [x] S. Side chat (`thread/fork` + `thread/inject_items`): no failure toast, the fork inherits
+      Model, Thinking and Permission Mode, both composers show the parent's level instead of a
+      custom one, and the injected parent context reaches Claude (`S-side-chat-*`).
+      This run also gave live evidence for full access -> `bypassPermissions`, selected by the
+      user; only text-only Turns were sent under it.
 - [ ] J. Usage chip (bonus). Not started; there is no native seam, the renderer reads only
       `rateLimitsByLimitId.codex`, so this needs a one-way CDP overlay.
 
@@ -66,3 +71,5 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
 - 2026-09-21: repo created from codex-host `43b8f282`; tsc green; vitest 1420 passed.
 - 2026-09-21: native picker, thread settings guards, in-Host cua_repl, permission mapping;
   vitest 1429 passed; acceptance A-I verified live.
+- 2026-09-21: side chat fixed (inject_items handled, fork inherits native settings, Thread
+  responses carry the permission preset); vitest 1431 passed.

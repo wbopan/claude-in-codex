@@ -4,6 +4,7 @@ import {
   type HostTurnId,
   type JsonObject,
   type JsonRpcRequest,
+  type JsonValue,
 } from "@codexhost/shared-contracts";
 
 export interface DecodedThreadForkRequest {
@@ -182,7 +183,9 @@ export function threadForkResult(
     model: string;
     cwd: string;
     runtimeWorkspaceRoots?: string[];
-    approvalPolicy?: string;
+    approvalPolicy?: JsonValue;
+    approvalsReviewer?: string;
+    activePermissionProfile?: JsonObject | null;
     sandbox: JsonObject;
     serviceTier?: string;
     reasoningEffort?: string;
@@ -197,9 +200,9 @@ export function threadForkResult(
     runtimeWorkspaceRoots: input.runtimeWorkspaceRoots ?? [],
     instructionSources: [],
     approvalPolicy: input.approvalPolicy ?? "never",
-    approvalsReviewer: "user",
+    approvalsReviewer: input.approvalsReviewer ?? "user",
     sandbox: input.sandbox,
-    activePermissionProfile: null,
+    activePermissionProfile: input.activePermissionProfile ?? null,
     reasoningEffort: input.reasoningEffort ?? "medium",
     multiAgentMode: "explicitRequestOnly",
   };

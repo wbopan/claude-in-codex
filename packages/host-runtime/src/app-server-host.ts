@@ -169,7 +169,9 @@ import {
   overlayNativeSelection,
   planConfigEdits,
   projectNativeModels,
+  injectedItemsText,
   nativePermissionLevel,
+  nativePermissionResponse,
   nativePlanMode,
   permissionModeForLevel,
   requestedNativePermission,
@@ -1244,6 +1246,9 @@ export class AppServerHost {
     if (request.method === "config/batchWrite" || request.method === "config/value/write") {
       if (await this.#writeNativeConfig(request)) return;
     }
+    if (request.method === "thread/inject_items") {
+      if (await this.#injectExternalThreadItems(request)) return;
+    }
     if (request.method === "thread/settings/update") {
       if (await this.#updateNativeThreadSettings(request)) return;
     }
@@ -1872,6 +1877,95 @@ export class AppServerHost {
     return undefined;
   }
 
+  /** Permission fields for a Thread response; empty until the Thread's level is known. */
+  #nativePermissionFields(thread: ExternalThread): {
+    approvalPolicy?: JsonValue;
+    approvalsReviewer?: string;
+    activePermissionProfile?: JsonObject;
+    sandbox?: JsonObject;
+  } {
+    return thread.nativePermissionLevel
+      ? nativePermissionResponse(thread.nativePermissionLevel, thread.nativeApprovalPolicy)
+      : {};
+  }
+
+  /**
+   * The Desktop sends side chat context with `thread/inject_items`. An external Thread has no
+   * official rollout to inject into, so the text waits for the Thread's next Turn.
+   */
+  async #injectExternalThreadItems(request: JsonRpcRequest): Promise<boolean> {
+    const params = requestObject(request);
+    if (typeof params.threadId !== "string") return false;
+    const resolution = await this.#resolveExternalThread(params.threadId);
+    if (resolution.kind !== "external") return false;
+    const text = injectedItemsText(params);
+    (resolution.thread.pendingInjectedContext ??= []).push(...text);
+    this.#traceNativePicker({
+      event: "thread/inject_items",
+      harnessId: resolution.thread.harnessId,
+      items: text.length,
+    });
+    await this.#writer.json(rpcEnvelope(request, { result: {} }));
+    return true;
+  }
+
+  /**
+   * A fork opens a fresh Harness Session with default settings. Carry over the source Thread's
+   * Model, Thinking option and Permission Mode; the fork request may override the level.
+   */
+  async #inheritNativeSettings(
+    source: ExternalThread,
+    derived: ExternalThread,
+    params: JsonObject,
+  ): Promise<void> {
+    const selection = decodeExternalTransportSelection(source.harnessId, source.transportModelId);
+    const capabilities = derived.session.capabilities.configuration;
+    const applied: JsonObject = {};
+    try {
+      const model = source.requestedModel ?? selection?.model;
+      if (model && capabilities.selectModel) {
+        const result = await derived.session.execute({ type: "model.select", model });
+        if (result.ok) derived.requestedModel = model;
+        applied.model = result.ok ? model.id : "failed";
+      }
+      const thinkingOptionId = source.requestedThinkingOptionId ?? selection?.thinkingOptionId;
+      if (thinkingOptionId && capabilities.selectThinkingOption) {
+        const result = await derived.session.execute({ type: "thinking.select", thinkingOptionId });
+        if (result.ok) derived.requestedThinkingOptionId = thinkingOptionId;
+        applied.thinkingOptionId = result.ok ? thinkingOptionId : "failed";
+      }
+      const level = nativePermissionLevel(params) ?? source.nativePermissionLevel;
+      if (level) derived.nativePermissionLevel = level;
+      const approvalPolicy = params.approvalPolicy ?? source.nativeApprovalPolicy;
+      if (approvalPolicy !== undefined) derived.nativeApprovalPolicy = approvalPolicy;
+      const offered = await this.#offeredPermissionModes(derived.harnessId);
+      const wanted =
+        nativePermissionLevel(params) !== undefined && level
+          ? permissionModeForLevel(level, offered)
+          : (source.requestedPermissionModeId ??
+            (level ? permissionModeForLevel(level, offered) : undefined));
+      const permissionModeId = harnessPermissionModeIdSchema.safeParse(wanted);
+      if (permissionModeId.success && capabilities.selectPermissionMode) {
+        const result = await derived.session.execute({
+          type: "permissionMode.select",
+          permissionModeId: permissionModeId.data,
+        });
+        if (result.ok) derived.requestedPermissionModeId = permissionModeId.data;
+        applied.permissionModeId = result.ok ? permissionModeId.data : "failed";
+      }
+      await this.#persistNativeSelection(derived);
+    } catch (error) {
+      this.#diagnose(error);
+    }
+    this.#traceNativePicker({
+      event: "thread/fork",
+      harnessId: derived.harnessId,
+      nativeLevel: derived.nativePermissionLevel ?? null,
+      permission: requestedNativePermission(params),
+      applied,
+    });
+  }
+
   async #offeredPermissionModes(harnessId: ExternalHarnessId): Promise<string[]> {
     const adapter = this.#externalAdapters.get(harnessId);
     const inspection = adapter
@@ -1894,7 +1988,10 @@ export class AppServerHost {
     if (!thread.session.capabilities.configuration.selectPermissionMode) return undefined;
     const level = scope === "level-and-plan" ? nativePermissionLevel(params) : undefined;
     const plan = nativePlanMode(params);
-    if (level) thread.nativePermissionLevel = level;
+    if (level) {
+      thread.nativePermissionLevel = level;
+      if (params.approvalPolicy !== undefined) thread.nativeApprovalPolicy = params.approvalPolicy;
+    }
     const inPlan = thread.requestedPermissionModeId === "plan";
     if (level === undefined && (plan === undefined || plan === inPlan)) return undefined;
     const offered = await this.#offeredPermissionModes(thread.harnessId);
@@ -1953,6 +2050,9 @@ export class AppServerHost {
       model,
       ...(thread.requestedThinkingOptionId
         ? { thinkingOptionId: thread.requestedThinkingOptionId }
+        : {}),
+      ...(thread.requestedPermissionModeId
+        ? { permissionModeId: thread.requestedPermissionModeId }
         : {}),
     });
     thread.transportModelId = transportModelId;
@@ -3504,7 +3604,11 @@ export class AppServerHost {
           ...(requestedThinkingOptionId ? { requestedThinkingOptionId } : {}),
           ...(requestedPermissionModeId ? { requestedPermissionModeId } : {}),
         });
-        if (startLevel) externalThread.nativePermissionLevel = startLevel;
+        if (startLevel) {
+          externalThread.nativePermissionLevel = startLevel;
+          if (params.approvalPolicy !== undefined)
+            externalThread.nativeApprovalPolicy = params.approvalPolicy;
+        }
         this.#routeObservationTracker.bindCreatedThread(request.id, externalThread.id);
         await this.#writer.json(
           rpcEnvelope(request, {
@@ -3647,6 +3751,7 @@ export class AppServerHost {
       await this.#writer.json(rpcError(request, result.error.code, result.error.message));
       return;
     }
+    await this.#inheritNativeSettings(source, result.derived, requestObject(request));
     const params: JsonObject = {
       ...(fork.sandbox ? { sandbox: fork.sandbox } : {}),
     };
@@ -3660,6 +3765,7 @@ export class AppServerHost {
             : {}),
           ...(fork.approvalPolicy ? { approvalPolicy: fork.approvalPolicy } : {}),
           sandbox: sandboxResult(params),
+          ...this.#nativePermissionFields(result.derived),
           ...(fork.serviceTier ? { serviceTier: fork.serviceTier } : {}),
         }),
       }),
@@ -3900,6 +4006,7 @@ export class AppServerHost {
         : [],
       approvalPolicy: typeof params.approvalPolicy === "string" ? params.approvalPolicy : "never",
       sandbox: sandboxResult(params),
+      ...this.#nativePermissionFields(thread),
       ...(typeof params.serviceTier === "string" ? { serviceTier: params.serviceTier } : {}),
     });
     try {
@@ -4168,10 +4275,19 @@ export class AppServerHost {
     thread.responseGates.set(turnId, gate);
 
     try {
+      const injected = thread.pendingInjectedContext?.splice(0) ?? [];
       const result = await thread.session.execute({
         type: "turn.start",
         turnId,
-        input: [{ type: "text", text }],
+        input: [
+          {
+            type: "text",
+            text:
+              injected.length > 0
+                ? `<injected_context>\n${injected.join("\n\n")}\n</injected_context>\n\n${text}`
+                : text,
+          },
+        ],
       });
       if (!result.ok) throw new ExternalSteerError(-32073, result.error.message);
       return { turnId, turn: projection.projector.pendingTurn(), gate };

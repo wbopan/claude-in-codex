@@ -19,6 +19,7 @@ import {
   type ExternalHarnessId,
   type ExternalThreadRpcError,
   type JsonObject,
+  type JsonValue,
 } from "@codexhost/protocol-core";
 import { HarnessOutputChannel } from "@codexhost/harness-adapter";
 import {
@@ -56,6 +57,10 @@ export interface ExternalThread {
   requestedPermissionModeId?: HarnessPermissionModeId;
   /** Level last chosen in the official permission selector; restored when Plan mode ends. */
   nativePermissionLevel?: "ask" | "auto-review" | "full-access";
+  /** Approval policy as the Desktop sent it (the ask level uses a granular object). */
+  nativeApprovalPolicy?: JsonValue;
+  /** Items injected by the Desktop (side chat context) awaiting the next Turn. */
+  pendingInjectedContext?: string[];
   record: StoredThreadRecordV1;
   sessionId: string;
   stateObserver: SessionStateObserver;
