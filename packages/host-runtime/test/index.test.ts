@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonRpcRequest } from "@codexhost/protocol-core";
 
-import { classifyCreateRequestRoute, packageMetadata } from "../src/index.js";
+import { classifyCreateRequestRoute, officialEnvironment, packageMetadata } from "../src/index.js";
 
 import { transportModelIdForHarness } from "@codexhost/protocol-core";
 
@@ -53,5 +53,20 @@ describe("host-runtime package", () => {
     expect(
       classifyCreateRequestRoute({ id: 43, method: "thread/read", params: {} }),
     ).toBeNull();
+  });
+
+  it("keeps codexhost-internal variables out of the official Codex environment", () => {
+    const official = officialEnvironment({
+      PATH: "/usr/bin",
+      CODEX_CLI_PATH: "/opt/shim",
+      CODEXHOST_DATA_DIR: "/opt/data",
+      CODEXHOST_STOCK_CODEX_PATH: "/opt/codex",
+      CODEXHOST_NPM_NODE_PATH: "/opt/node",
+      CODEXHOST_NPM_CLI_PATH: "/opt/npm-cli.js",
+      CODEXHOST_NPM_LAUNCHER_PATH: "/opt/launcher.mjs",
+      CODEXHOST_NPM_PACKAGE_ROOT: "/opt/package",
+    });
+
+    expect(official).toEqual({ PATH: "/usr/bin" });
   });
 });

@@ -276,6 +276,10 @@ export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEn
     "CODEXHOST_RUNTIME_DESCRIPTOR_PATH",
     "CODEXHOST_CONTROL_PORT",
     "CODEXHOST_CONTROL_NONCE",
+    "CODEXHOST_NPM_NODE_PATH",
+    "CODEXHOST_NPM_CLI_PATH",
+    "CODEXHOST_NPM_LAUNCHER_PATH",
+    "CODEXHOST_NPM_PACKAGE_ROOT",
   ]);
   return Object.fromEntries(Object.entries(source).filter(([key]) => !internal.has(key)));
 }
