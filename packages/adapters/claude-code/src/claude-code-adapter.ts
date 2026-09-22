@@ -536,6 +536,9 @@ class ClaudeHarnessSession implements HarnessSession {
   #statePublished = false;
   #unpersistedMessageIds: string[] = [];
   #transport: ClaudeTurnTransport | null = null;
+  get backgroundTaskCount(): number {
+    return this.#transport?.backgroundTaskCount ?? 0;
+  }
   #hardCancelTask: Promise<void> | null = null;
   #usageGeneration = 0;
   #latestUsage: HostUsage | null = null;

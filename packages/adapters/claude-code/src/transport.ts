@@ -180,6 +180,7 @@ export interface ClaudeIdleTurnHandler {
 
 export interface ClaudeTurnTransport {
   readonly sessionId: string;
+  readonly backgroundTaskCount?: number;
   setAutonomousTurnHandler(handler: (turn: ClaudeAutonomousTurn) => void): void;
   setIdleTurnHandler(handler: ClaudeIdleTurnHandler | null): void;
   /**

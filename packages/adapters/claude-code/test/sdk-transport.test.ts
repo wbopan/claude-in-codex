@@ -1253,6 +1253,7 @@ describe("ClaudeSdkTransport abort", () => {
     }
     await new Promise((resolve) => setTimeout(resolve, 0));
     await value.transport.stopTask("agent-one");
+    expect(value.transport.backgroundTaskCount).toBe(1);
     expect(value.fakeQuery.stopTask).toHaveBeenCalledExactlyOnceWith("agent-one");
     expect(value.fakeQuery.interrupt).not.toHaveBeenCalled();
     await expect(value.transport.stopTask("unknown-agent")).rejects.toThrow("not running");
@@ -1265,6 +1266,7 @@ describe("ClaudeSdkTransport abort", () => {
     await expect(turn).resolves.toMatchObject({ status: "succeeded" });
     await value.transport.close();
     expect(value.fakeQuery.stopTask).toHaveBeenLastCalledWith("agent-two");
+    expect(value.transport.backgroundTaskCount).toBe(0);
   });
 
   it("closes the transport when interrupt does not settle", async () => {

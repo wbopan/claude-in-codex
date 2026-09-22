@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import vm from "node:vm";
 import { installDesktopModelHook } from "./desktop-model-hook.mjs";
 import { refreshDesktopModelCatalogue } from "./desktop-model-refresh.mjs";

@@ -77,7 +77,7 @@ controller 退出时关闭 Desktop。这种生命周期不能直接用作热退�
 在仓库根目录执行：
 
 ```sh
-node --test tools/probes/desktop-model-hook.test.mjs
+npx vitest run --config tests/vitest.config.js tools/probes/desktop-model-hook.test.mjs
 node tools/probes/desktop-hot-attach.mjs start
 node tools/probes/desktop-hot-attach.mjs attach
 ```

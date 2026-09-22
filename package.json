@@ -5,8 +5,13 @@
   "license": "MIT",
   "type": "module",
   "packageManager": "npm@11.8.0",
-  "engines": { "node": ">=22.19.0 <23.0.0 || >=24.0.0 <25.0.0" },
-  "workspaces": ["packages/*", "packages/adapters/*"],
+  "engines": {
+    "node": ">=22.19.0 <23.0.0 || >=24.0.0 <25.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "packages/adapters/*"
+  ],
   "prettier": {
     "arrowParens": "always",
     "endOfLine": "lf",
@@ -24,7 +29,6 @@
     "build:rust": "cargo build --locked --package codexhost-launcher --package codexhost-platform --package codexhost-shim",
     "typecheck": "tsc -b --pretty false",
     "test:typescript": "npm run build:typescript && vitest run --config tests/vitest.config.js",
-    "test:rust": "cargo test --workspace --locked --features codexhost-shim/test-utils",
     "test": "npm run test:typescript && npm run test:rust",
     "format": "prettier --write . && cargo fmt --all",
     "test:rust": "bash tools/fork/with-toolchain.sh cargo test --workspace --features codexhost-shim/test-utils",
@@ -33,7 +37,8 @@
     "debug:restart": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs restart",
     "debug:stop": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs stop",
     "debug:status": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs status",
-    "debug": "npm run debug:build && npm run debug:restart"
+    "debug": "npm run debug:build && npm run debug:restart",
+    "menubar:build": "npm run build:typescript && node tools/menubar/build.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.246",

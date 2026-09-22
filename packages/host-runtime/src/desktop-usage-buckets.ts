@@ -401,6 +401,11 @@ export class DesktopUsagePublisher implements DesktopBackendRewrite {
     this.#source = null;
   }
 
+  /** Populate the source's native account cache before the first interactive menu read. */
+  async warmup(): Promise<void> {
+    await this.#source?.();
+  }
+
   matches(request: { method: string; path: string }): boolean {
     return request.method === "GET" && request.path === DESKTOP_USAGE_PATH;
   }
