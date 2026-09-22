@@ -1141,6 +1141,41 @@ describe("Claude Code HarnessAdapter", () => {
     await session.close();
   });
 
+  it("mirrors Claude memory into Codex after each completed Turn and on close", async () => {
+    const { adapter, dependencies, transports } = fixture();
+    const exportMemory = vi.fn(async () => undefined);
+    dependencies.exportMemory = exportMemory;
+    const environment = { CODEX_HOME: "/synthetic-codex" };
+    const session = await openSession(adapter, environment);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await session.execute(textTurn("turn-1"));
+    transports[0]?.finish({ status: "succeeded" });
+    while ((await nextEvent(iterator)).type !== "turn.completed");
+    await vi.waitFor(() => expect(exportMemory).toHaveBeenCalledOnce());
+    expect(exportMemory).toHaveBeenCalledWith({ cwd: "/synthetic", environment });
+
+    await session.close();
+    expect(exportMemory).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a failing memory export away from the Turn and the close", async () => {
+    const { adapter, dependencies, transports } = fixture();
+    dependencies.exportMemory = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await session.execute(textTurn("turn-1"));
+    transports[0]?.finish({ status: "succeeded" });
+    let event: HarnessOutput;
+    do event = await nextEvent(iterator);
+    while (event.type !== "turn.completed");
+    expect(event).toMatchObject({ outcome: { status: "succeeded" } });
+    await expect(session.close()).resolves.toBeUndefined();
+  });
+
   it("exposes Claude compact as a command whose native events drive the standard UI lifecycle", async () => {
     const { adapter, transports } = fixture();
     const session = await openSession(adapter);

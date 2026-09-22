@@ -5,17 +5,18 @@ import { readFile } from "node:fs/promises";
 /** Set to `0` to keep the Codex memory summary out of Claude Sessions. */
 export const CODEX_MEMORY_ENV = "CODEXHOST_CODEX_MEMORY";
 
-/** Skysight writes its consolidated summary here; Codex core injects the same file for GPT Threads. */
-const MEMORY_SUMMARY_RELATIVE_PATH = path.join("memories", "memory_summary.md");
-
 /** Skysight keeps the summary small; the cap only guards against a runaway file. */
 const MAX_SUMMARY_BYTES = 64 * 1024;
 
-export function codexMemorySummaryPath(environment: NodeJS.ProcessEnv): string {
+export function codexMemoriesDirectory(environment: NodeJS.ProcessEnv): string {
   const codexHome = environment.CODEX_HOME
     ? path.resolve(environment.CODEX_HOME)
     : path.join(os.homedir(), ".codex");
-  return path.join(codexHome, MEMORY_SUMMARY_RELATIVE_PATH);
+  return path.join(codexHome, "memories");
+}
+
+export function codexMemorySummaryPath(environment: NodeJS.ProcessEnv): string {
+  return path.join(codexMemoriesDirectory(environment), "memory_summary.md");
 }
 
 /**

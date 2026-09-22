@@ -70,6 +70,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
+import { exportClaudeMemoryToCodex } from "./codex-memory-export.js";
 import { traceClaude, traceRef } from "./debug-trace.js";
 import { ClaudeCodeExecutableError, resolveClaudeCodeExecutable } from "./command.js";
 import { ClaudePendingSessions, isPendingClaudeSession } from "./pending-session.js";
@@ -504,6 +505,10 @@ class ClaudeHarnessSession implements HarnessSession {
   readonly #closeTimeoutMs: number;
   readonly #createTransport: ClaudeAdapterDependencies["createTransport"];
   readonly #cwd: string;
+  readonly #exportMemory: ClaudeAdapterDependencies["exportMemory"];
+  readonly #environment: NodeJS.ProcessEnv;
+  #memoryExport: Promise<void> | null = null;
+  #memoryExportQueued = false;
   readonly #nativeRef: NativeSessionRef;
   readonly #onClosed: () => void;
   readonly #onPlanLimitObserved: (planLimit: ClaudePlanLimitEvent) => ClaudePlanLimitEvent | null;
@@ -580,6 +585,8 @@ class ClaudeHarnessSession implements HarnessSession {
         ...(environment ? { environment } : {}),
         ...(options.clientTools ? { clientTools: options.clientTools } : {}),
       });
+    this.#environment = environment ?? process.env;
+    this.#exportMemory = dependencies.exportMemory;
     this.#randomUUID = dependencies.randomUUID;
     this.#readSessionMessages = dependencies.readSessionMessages;
     this.#cancelTimeoutMs = options.cancelTimeoutMs;
@@ -1382,6 +1389,8 @@ class ClaudeHarnessSession implements HarnessSession {
     if (active)
       this.#finishFailed(active, invalidState("Claude Code Session closed during active Turn"));
     this.#interruptBackgroundSubagents("interrupted");
+    // Last chance to mirror memories Claude saved during this Session; bounded like the rest.
+    await settle(this.#syncMemoryToCodex());
     this.#phase = "closed";
     this.#channel.end();
     this.#onClosed();
@@ -2426,6 +2435,42 @@ class ClaudeHarnessSession implements HarnessSession {
     if (!preserveBackground) this.#occupancy.clear();
     this.#transport?.setIdleLive(false);
     active.resolveCompletion();
+    // Claude may have saved an auto-memory during the Turn; mirror it for Codex's memory pipeline.
+    void this.#syncMemoryToCodex();
+  }
+
+  /**
+   * Mirrors this Session's Claude memory directory into Codex's memory extension. Runs at most
+   * one export at a time and coalesces requests that arrive meanwhile; never rejects, so callers
+   * can fire and forget. Failures are traced: memory sync must not affect the Turn.
+   */
+  #syncMemoryToCodex(): Promise<void> {
+    if (!this.#exportMemory) return Promise.resolve();
+    if (this.#memoryExport) {
+      this.#memoryExportQueued = true;
+      return this.#memoryExport;
+    }
+    const exportMemory = this.#exportMemory;
+    const run = async (): Promise<void> => {
+      do {
+        this.#memoryExportQueued = false;
+        try {
+          await exportMemory({ cwd: this.#cwd, environment: this.#environment });
+        } catch (error) {
+          traceClaude({
+            event: "claude/memory-export-failed",
+            sessionId: this.#sessionId,
+            cwd: this.#cwd,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      } while (this.#memoryExportQueued);
+    };
+    const task = run().finally(() => {
+      if (this.#memoryExport === task) this.#memoryExport = null;
+    });
+    this.#memoryExport = task;
+    return task;
   }
 
   #handleTurnTransportFailure(active: ActiveTurn): void {
@@ -2653,6 +2698,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         });
         return transcript ?? [];
       },
+      exportMemory: exportClaudeMemoryToCodex,
     };
   }
 

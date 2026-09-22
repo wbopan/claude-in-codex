@@ -2,14 +2,24 @@ import os from "node:os";
 import path from "node:path";
 import { readFile, readdir, stat } from "node:fs/promises";
 
-function projectDirectoryName(cwd: string): string {
+export function projectDirectoryName(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/gu, "-");
 }
 
-function configDirectory(environment: NodeJS.ProcessEnv): string {
+export function configDirectory(environment: NodeJS.ProcessEnv): string {
   return environment.CLAUDE_CONFIG_DIR
     ? path.resolve(environment.CLAUDE_CONFIG_DIR)
     : path.join(os.homedir(), ".claude");
+}
+
+/** Claude Code's auto-memory directory for `cwd`: one Markdown file per saved lesson. */
+export function claudeProjectMemoryDirectory(cwd: string, environment: NodeJS.ProcessEnv): string {
+  return path.join(
+    configDirectory(environment),
+    "projects",
+    projectDirectoryName(path.resolve(cwd)),
+    "memory",
+  );
 }
 
 async function existingFile(file: string): Promise<boolean> {

@@ -264,4 +264,6 @@ export interface ClaudeAdapterDependencies {
     nativeSubagentId: string;
   }): Promise<unknown[]>;
   randomUUID(): string;
+  /** Mirrors the Session's Claude memory directory into Codex's memory extension; optional. */
+  exportMemory?(input: { cwd: string; environment: NodeJS.ProcessEnv }): Promise<unknown>;
 }
