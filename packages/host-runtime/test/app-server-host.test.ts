@@ -6498,3 +6498,276 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 });
+
+describe("AppServerHost External Thread message queue", () => {
+  function queueAdd(threadId: string, id: number, textValue: string, clientId = textValue) {
+    return {
+      id,
+      method: "thread/queue/add",
+      params: {
+        threadId,
+        input: [{ type: "text", text: textValue }],
+        clientUserMessageId: clientId,
+      },
+    };
+  }
+
+  function turnStartText(call: unknown): string | null {
+    const [command] = call as [JsonObject];
+    if (!isRecordValue(command) || command.type !== "turn.start") return null;
+    const input = command.input as Array<{ text: string }>;
+    return input.map((item) => item.text).join("\n");
+  }
+
+  function isRecordValue(value: unknown): value is JsonObject {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  it("queues a message while an External Turn runs and drains it after the Turn completes", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    const firstTurnId = await startPiTurn(fixture, threadId);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", firstTurnId));
+    const execute = vi.spyOn(session, "execute");
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+
+    writeRequest(fixture.desktopInput, queueAdd(threadId, 3, "queued one", "client-one"));
+    const added = await fixture.collector.waitFor((message) => requestId(message, 3));
+    const queued = (added.result as JsonObject).queuedSubmission as JsonObject;
+    expect(queued).toMatchObject({
+      input: [{ type: "text", text: "queued one" }],
+      clientUserMessageId: "client-one",
+    });
+    expect(typeof queued.id).toBe("string");
+    await fixture.collector.waitFor(
+      (message) =>
+        method(message, "thread/queue/changed") && messageParams(message).threadId === threadId,
+    );
+    expect(execute).not.toHaveBeenCalledWith(expect.objectContaining({ type: "turn.start" }));
+
+    writeRequest(fixture.desktopInput, {
+      id: 4,
+      method: "thread/queue/list",
+      params: { threadId },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 4))).resolves.toEqual({
+      id: 4,
+      result: { data: [queued], nextCursor: null },
+    });
+
+    session.appendText("first answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", firstTurnId));
+    await vi.waitFor(() => expect(execute.mock.calls.map(turnStartText)).toContain("queued one"));
+    const secondStarted = await fixture.collector.waitFor(
+      (message) =>
+        method(message, "turn/started") &&
+        (messageParams(message).turn as JsonObject).id !== firstTurnId,
+    );
+    const secondTurnId = (messageParams(secondStarted).turn as JsonObject).id as string;
+    writeRequest(fixture.desktopInput, {
+      id: 5,
+      method: "thread/queue/list",
+      params: { threadId },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 5))).resolves.toEqual({
+      id: 5,
+      result: { data: [], nextCursor: null },
+    });
+    session.appendText("second answer");
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", secondTurnId),
+    );
+    expect(officialWrite).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
+  it("dispatches a submission queued on an idle External Thread at once", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    const execute = vi.spyOn(session, "execute");
+    writeRequest(fixture.desktopInput, queueAdd(threadId, 2, "run now"));
+    const added = await fixture.collector.waitFor((message) => requestId(message, 2));
+    expect((added.result as JsonObject).queuedSubmission).toMatchObject({
+      clientUserMessageId: "run now",
+    });
+    const started = await fixture.collector.waitFor((message) => method(message, "turn/started"));
+    const turnId = (messageParams(started).turn as JsonObject).id as string;
+    expect(execute.mock.calls.map(turnStartText)).toEqual(["run now"]);
+    writeRequest(fixture.desktopInput, {
+      id: 3,
+      method: "thread/queue/list",
+      params: { threadId },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 3))).resolves.toEqual({
+      id: 3,
+      result: { data: [], nextCursor: null },
+    });
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    await stopFixture(fixture);
+  });
+
+  it("keeps the queue through an interrupt and starts a chosen submission on request", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    const firstTurnId = await startPiTurn(fixture, threadId);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", firstTurnId));
+    const execute = vi.spyOn(session, "execute");
+
+    writeRequest(fixture.desktopInput, queueAdd(threadId, 3, "alpha"));
+    writeRequest(fixture.desktopInput, queueAdd(threadId, 4, "beta"));
+    const alpha = (await fixture.collector.waitFor((message) => requestId(message, 3)))
+      .result as JsonObject;
+    const beta = (await fixture.collector.waitFor((message) => requestId(message, 4)))
+      .result as JsonObject;
+    const alphaId = (alpha.queuedSubmission as JsonObject).id as string;
+    const betaId = (beta.queuedSubmission as JsonObject).id as string;
+
+    session.completeCancellationOnRequest();
+    writeRequest(fixture.desktopInput, {
+      id: 5,
+      method: "turn/interrupt",
+      params: { threadId, turnId: firstTurnId },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 5));
+    const interrupted = await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", firstTurnId),
+    );
+    expect((messageParams(interrupted).turn as JsonObject).status).toBe("interrupted");
+    writeRequest(fixture.desktopInput, {
+      id: 6,
+      method: "thread/queue/list",
+      params: { threadId },
+    });
+    const listed = await fixture.collector.waitFor((message) => requestId(message, 6));
+    expect(((listed.result as JsonObject).data as JsonObject[]).map((entry) => entry.id)).toEqual([
+      alphaId,
+      betaId,
+    ]);
+    expect(execute).not.toHaveBeenCalledWith(expect.objectContaining({ type: "turn.start" }));
+
+    writeRequest(fixture.desktopInput, {
+      id: 7,
+      method: "thread/queue/start",
+      params: { threadId, queuedSubmissionId: betaId },
+    });
+    const startedResponse = await fixture.collector.waitFor((message) => requestId(message, 7));
+    const betaTurnId = ((startedResponse.result as JsonObject).turn as JsonObject).id as string;
+    expect(execute.mock.calls.map(turnStartText)).toEqual([null, "beta"]);
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", betaTurnId));
+
+    writeRequest(fixture.desktopInput, {
+      id: 8,
+      method: "thread/queue/start",
+      params: { threadId },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 8)),
+    ).resolves.toMatchObject({ error: { code: -32072 } });
+
+    writeRequest(fixture.desktopInput, {
+      id: 9,
+      method: "thread/queue/reorder",
+      params: { threadId, queuedSubmissionIds: [alphaId, betaId] },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 9)),
+    ).resolves.toMatchObject({ error: { code: -32602 } });
+
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", betaTurnId));
+    await vi.waitFor(() => expect(execute.mock.calls.map(turnStartText)).toContain("alpha"));
+    const alphaStarted = await fixture.collector.waitFor(
+      (message) =>
+        method(message, "turn/started") &&
+        ![firstTurnId, betaTurnId].includes(
+          (messageParams(message).turn as JsonObject).id as string,
+        ),
+    );
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(
+        message,
+        "turn/completed",
+        (messageParams(alphaStarted).turn as JsonObject).id as string,
+      ),
+    );
+    await stopFixture(fixture);
+  });
+
+  it("forwards official Thread queue requests and edits queued External submissions", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    const officialWrite = vi.fn();
+    fixture.official.stdin.on("data", officialWrite);
+    writeRequest(fixture.desktopInput, {
+      id: 2,
+      method: "thread/queue/list",
+      params: { threadId: "official-thread" },
+    });
+    await vi.waitFor(() =>
+      expect(officialWrite.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+        "thread/queue/list",
+      ),
+    );
+
+    const turnId = await startPiTurn(fixture, threadId, 3);
+    const session = fixture.adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+    writeRequest(fixture.desktopInput, queueAdd(threadId, 4, "draft"));
+    const added = await fixture.collector.waitFor((message) => requestId(message, 4));
+    const submissionId = ((added.result as JsonObject).queuedSubmission as JsonObject).id;
+    writeRequest(fixture.desktopInput, {
+      id: 5,
+      method: "thread/queue/update",
+      params: {
+        threadId,
+        queuedSubmissionId: submissionId,
+        input: [{ type: "text", text: "edited" }],
+      },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 5))).resolves.toEqual({
+      id: 5,
+      result: {
+        queuedSubmission: {
+          id: submissionId,
+          input: [{ type: "text", text: "edited" }],
+          clientUserMessageId: "draft",
+        },
+      },
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 6,
+      method: "thread/queue/delete",
+      params: { threadId, queuedSubmissionId: submissionId },
+    });
+    await expect(fixture.collector.waitFor((message) => requestId(message, 6))).resolves.toEqual({
+      id: 6,
+      result: { deleted: true },
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 7,
+      method: "thread/queue/bogus",
+      params: { threadId },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 7)),
+    ).resolves.toMatchObject({
+      error: { code: -32076, message: "External Thread does not support thread/queue/bogus" },
+    });
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    expect(fixture.adapter.sessions).toHaveLength(1);
+    await stopFixture(fixture);
+  });
+});

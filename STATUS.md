@@ -206,3 +206,25 @@ Kept deliberately, although the carve looked like it could take them:
   after completion, Model and effort survive `debug:restart`, `config.toml` carries no route id
   (`int-*.png`). Not re-verified live in this run: the cross-harness toast and effort submenu
   (the picker popover kept opening on the effort slider under CDP); last verified on `carve`.
+- 2026-09-22: Desktop message queue on External Threads. The Desktop stopped using `turn/start`
+  while a Turn runs and calls the experimental `thread/queue/*` family instead, which the Host
+  answered with `-32076 External Thread does not support thread/queue/list`, so nothing could be
+  queued behind a Claude Turn. Protocol taken from `codex-rs/app-server-protocol/.../v2/thread.rs`
+  and `thread_queue_processor.rs` (0.154): `add {threadId, input, clientUserMessageId} ->
+  {queuedSubmission}`, `list {cursor?, limit?} -> {data, nextCursor}`, `update`, `delete ->
+  {deleted}`, `reorder` (every id exactly once), `start {queuedSubmissionId?} -> {turn}`, and the
+  lightweight `thread/queue/changed {threadId}` notification. Semantics copied from the official
+  suite: a submission added to an idle Thread starts at once, a completed Turn drains the head
+  automatically, an interrupted or failed Turn leaves the queue alone until the user picks
+  `thread/queue/start`. Host-owned and in-memory (`external-thread-queue.ts`, the Harness runs
+  one Turn at a time as before; cleared with `thread/delete`); official Threads keep forwarding.
+  vitest host-runtime 467 passed. Live in the debug Desktop (build 1790059691506, driven through
+  CDP, `Q-*.png`): the Desktop's follow-up mode defaults to "调整方向" (steer) when no local
+  project exists (`settings.general.followUpQueueMode`; ⌘⏎ does the opposite of the setting),
+  so the first attempt steered as before. With "加入队列" selected, the second message while a
+  Claude story was streaming arrived as `thread/queue/add` (trace `thread/queue` running:true →
+  queued:1), the Desktop showed the queued chip above the composer (`Q-8-queued.png`), the story
+  finished with DONE2, `thread/queue-drained` fired within the same second and the queued Turn
+  answered QUEUED_OK_2 (`Q-9-after.png`). The Desktop only takes the server queue path when
+  statsig gate `2120612410` is on (it is) and the app-server version is ≥ `threadQueue:
+  0.148.0-alpha.14`.
