@@ -68,6 +68,14 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       it finished 1..60 and its pane showed prompt, command, handback and reply, matching the
       22-record transcript (15 `attachment` records). Editing history is hidden by the Desktop
       while the parent runs, which is exactly when children run, so the Host guard is a backstop.
+- [x] W. Live Subagent pane (build 1790057469453, 2026-09-22, driven through CDP). A running
+      child's pane now grows while it works: with a six-step `sleep 10; echo STEP_N` Subagent,
+      `subagent/refresh` fired on every nested message and the Desktop's collapsed activity
+      block (`已处理 Ns`, `data-local-conversation-item-target-ids` listing the child Items)
+      showed `已运行 … STEP_1..3` when expanded at 27 s and `STEP_1..5` at 55 s; after the
+      handback the block became `运行了命令 subagent handback` with all six commands and the
+      reply. The header line reads `正在思考` rather than the running command because the
+      refresh only projects completed Items; a command is never shown as in progress.
 - [ ] J. Usage chip (bonus). Not started; there is no native seam, the renderer reads only
       `rateLimitsByLimitId.codex`, so this needs a one-way CDP overlay.
 
@@ -141,6 +149,19 @@ Kept deliberately, although the carve looked like it could take them:
 
 ## Log
 
+- 2026-09-22: Subagent live view. Before: a background child's pane only refreshed while the
+  Root Turn was live and the Agent call still sat in the same Segment, so an opened pane showed
+  the prompt and, at the end, the reply. Now `subagent.transcript.changed` is republished from
+  the idle, autonomous and Thread handlers, every accumulator recognises earlier Agent calls,
+  and the Session occupancy resolves the native child id (`0f4949c`). Found on the way: the
+  SDK sends `task_started`/`task_notification` for every Bash task, including each command a
+  Subagent runs, and the adapter reported the Subagent as settled on each one (`4eaf950`
+  filters by `task_type`). Desktop renderer facts from `app-initial-*.js`: `turn/started` for
+  a known Turn whose local status is not `inProgress` is ignored entirely and never reads
+  `turn.items`; `item/started` appends by id with no status check; `turn/completed` only writes
+  Turn fields. Mid-Turn Items land in the collapsed activity block, which is why the pane looked
+  empty until the user expanded it (W above). Verified live through CDP because the fresh debug
+  Desktop did not expose its web content to the AX tree this time.
 - 2026-09-22: five commits on `integrate-20260922` (launcher data root, SDK 0.3.246, Subagent
   transcripts in append order, individual Subagent stop, Plan mode reverse sync); vitest 1127
   passed, launcher cargo tests green. Live run V above; Plan reverse sync was seen live once

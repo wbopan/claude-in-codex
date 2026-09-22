@@ -2917,6 +2917,18 @@ export class AppServerHost {
         const matched = catalog.value.commands
           .toSorted((left, right) => right.invocation.length - left.invocation.length)
           .find((command) => {
+    if (thread.record.subagent) {
+      this.#traceNativePicker({
+        event: "subagent/history",
+        child: traceRef(thread.id),
+        running: thread.running,
+        turns: thread.turns.map((turn) => ({
+          id: traceRef(isRecord(turn) && typeof turn.id === "string" ? turn.id : null),
+          status: isRecord(turn) && typeof turn.status === "string" ? turn.status : null,
+          items: isRecord(turn) && Array.isArray(turn.items) ? turn.items.length : null,
+        })),
+      });
+    }
             if (commandText === command.invocation) return true;
             return (
               command.argumentMode === "text" && commandText.startsWith(`${command.invocation} `)
@@ -3439,11 +3451,20 @@ export class AppServerHost {
       event: "subagent/refresh",
       child: traceRef(threadId),
       terminal,
-      turns: child.turns.length,
-      items: child.turns.reduce(
-        (count, turn) => count + (Array.isArray(turn.items) ? turn.items.length : 0),
-        0,
-      ),
+      running: child.running,
+      turns: child.turns.map((turn) => ({
+        id: traceRef(typeof turn.id === "string" ? turn.id : null),
+        status: typeof turn.status === "string" ? turn.status : null,
+        items: Array.isArray(turn.items) ? turn.items.length : null,
+        changed: Array.isArray(turn.items)
+          ? turn.items.filter(
+              (item) =>
+                isRecord(item) &&
+                typeof item.id === "string" &&
+                previousItems.get(item.id) !== JSON.stringify(item),
+            ).length
+          : null,
+      })),
       previousItems: previousItems.size,
     });
     for (const turn of child.turns) {
