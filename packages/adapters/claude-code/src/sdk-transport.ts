@@ -401,6 +401,8 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   #threadEventHandler: ((event: ClaudeTurnEvent) => void) | null = null;
   #idleLive = false;
   #idleAccumulator: ClaudeNativeTurnAccumulator | null = null;
+  /** Agent calls seen in this Session, so later Segments still attribute nested messages. */
+  readonly #subagentCallIds = new Set<string>();
   #closePromise: Promise<void> | null = null;
   #consumeTask: Promise<void> | null = null;
   #stderrTail = "";
@@ -446,6 +448,19 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   setIdleLive(live: boolean): void {
     this.#idleLive = live;
     if (!live) this.#idleAccumulator = null;
+  }
+
+  #newAccumulator(): ClaudeNativeTurnAccumulator {
+    return new ClaudeNativeTurnAccumulator({
+      ...(this.#provider ? { provider: this.#provider } : {}),
+      subagentCallIds: this.#subagentCallIds,
+    });
+  }
+
+  #observeSubagentCalls(events: readonly ClaudeTurnEvent[]): void {
+    for (const event of events) {
+      if (event.type === "subagent.started") this.#subagentCallIds.add(event.callId);
+    }
   }
 
   async start(): Promise<void> {
@@ -593,9 +608,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     if (this.#active) return Promise.reject(new Error("Claude SDK transport is busy"));
     const promise = new Promise<ClaudeTransportTurnResult>((resolve, reject) => {
       this.#active = {
-        accumulator: new ClaudeNativeTurnAccumulator(
-          this.#provider ? { provider: this.#provider } : {},
-        ),
+        accumulator: this.#newAccumulator(),
         controlRequestIds: new Set(),
         interactions: new Map(),
         onEvent,
@@ -1019,6 +1032,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         const active = this.#active;
         if (active) {
           const interpreted = active.accumulator.consume(message);
+          this.#observeSubagentCalls(interpreted.events);
           for (const event of interpreted.events) active.onEvent(event);
           if (interpreted.terminal) {
             this.#closeInteractions(active, "superseded");
@@ -1028,12 +1042,9 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
           continue;
         }
         if (this.#idleLive && this.#idleHandler) {
-          const idle =
-            this.#idleAccumulator ??
-            (this.#idleAccumulator = new ClaudeNativeTurnAccumulator(
-              this.#provider ? { provider: this.#provider } : {},
-            ));
+          const idle = this.#idleAccumulator ?? (this.#idleAccumulator = this.#newAccumulator());
           const interpreted = idle.consume(message);
+          this.#observeSubagentCalls(interpreted.events);
           for (const event of interpreted.events) this.#idleHandler.onEvent(event);
           if (interpreted.terminal) {
             this.#idleAccumulator = null;
@@ -1045,9 +1056,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         const autonomous =
           this.#autonomous ??
           (this.#autonomous = {
-            accumulator: new ClaudeNativeTurnAccumulator(
-              this.#provider ? { provider: this.#provider } : {},
-            ),
+            accumulator: this.#newAccumulator(),
             events: [],
             nativeTurnKey: null,
           });
@@ -1062,11 +1071,15 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
           autonomous.nativeTurnKey = message.uuid;
         }
         const interpreted = autonomous.accumulator.consume(message);
+        this.#observeSubagentCalls(interpreted.events);
         for (const event of interpreted.events) {
           if (
             this.#threadEventHandler &&
-            canDeliverSettlementImmediately(event, autonomous.events)
+            (event.type === "subagent.transcript.changed" ||
+              canDeliverSettlementImmediately(event, autonomous.events))
           ) {
+            // A background Subagent's transcript grows while no Turn is open;
+            // buffering the change until the Segment ends would hide it.
             this.#threadEventHandler(event);
             continue;
           }

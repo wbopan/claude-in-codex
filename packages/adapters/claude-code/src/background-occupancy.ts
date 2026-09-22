@@ -69,6 +69,12 @@ export class ClaudeBackgroundOccupancy {
     this.#keyByAgent.set(nativeSubagentId, key);
   }
 
+  /** Native id of a tracked Subagent by its Agent call, once Claude has reported it. */
+  nativeSubagentIdFor(callId: string): string | undefined {
+    const key = this.#keyByCall.get(callId);
+    return key === undefined ? undefined : this.#tasks.get(key)?.nativeSubagentId;
+  }
+
   /** Records that a Subagent stopped and now owes one Root continuation. */
   notify(callId?: string, nativeSubagentId?: string): void {
     const key = this.#lookup(callId, nativeSubagentId);

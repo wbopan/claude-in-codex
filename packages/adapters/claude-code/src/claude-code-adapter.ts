@@ -1440,6 +1440,8 @@ class ClaudeHarnessSession implements HarnessSession {
             event.callId,
             event.resultSummary,
           );
+        } else if (event.type === "subagent.transcript.changed") {
+          this.#publishBackgroundTranscriptChange(event.callId);
         }
       });
       transport.setIdleTurnHandler({
@@ -1456,6 +1458,8 @@ class ClaudeHarnessSession implements HarnessSession {
               event.callId,
               event.resultSummary,
             );
+          } else if (event.type === "subagent.transcript.changed") {
+            this.#publishBackgroundTranscriptChange(event.callId);
           }
         },
         onTerminal: (result) => {
@@ -1670,7 +1674,11 @@ class ClaudeHarnessSession implements HarnessSession {
         );
         return;
       case "subagent.transcript.changed": {
-        const nativeSubagentId = active.subagents.nativeSubagentId(event.callId);
+        // The delegation leaves the Turn's lifecycle once the Agent call returns; a
+        // background Subagent then stays known only through the Session occupancy.
+        const nativeSubagentId =
+          active.subagents.nativeSubagentId(event.callId) ??
+          this.#occupancy.nativeSubagentIdFor(event.callId);
         if (nativeSubagentId) {
           this.#event({ type: "subagent.transcript.changed", nativeSubagentId });
         } else {
@@ -1986,6 +1994,13 @@ class ClaudeHarnessSession implements HarnessSession {
   #continueHeldTurn(active: ActiveTurn, turn: ClaudeAutonomousTurn): void {
     for (const event of turn.events) this.#handleTurnEvent(active, event);
     this.#finishResult(active, turn.result);
+  }
+
+  /** A background Subagent's transcript grew while no Turn owned its delegation. */
+  #publishBackgroundTranscriptChange(callId: string): void {
+    if (this.#phase !== "open") return;
+    const nativeSubagentId = this.#occupancy.nativeSubagentIdFor(callId);
+    if (nativeSubagentId) this.#event({ type: "subagent.transcript.changed", nativeSubagentId });
   }
 
   #settleBackgroundSubagent(

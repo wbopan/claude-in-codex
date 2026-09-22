@@ -2201,6 +2201,66 @@ function pushSettlement(
   } as unknown as SDKMessage);
 }
 
+describe("ClaudeSdkTransport background Subagent transcript attribution", () => {
+  it("keeps attributing nested messages to a background Agent call after its Root Segment ended", async () => {
+    const value = fixture();
+    const idle: ClaudeTurnEvent[] = [];
+    const immediate: ClaudeTurnEvent[] = [];
+    const turns: ClaudeAutonomousTurn[] = [];
+    value.transport.setIdleTurnHandler({
+      onEvent: (event) => idle.push(event),
+      onTerminal: () => undefined,
+    });
+    value.transport.setThreadEventHandler((event) => immediate.push(event));
+    value.transport.setAutonomousTurnHandler((turn) => turns.push(turn));
+    await value.transport.start();
+    try {
+      const turn = value.transport.runTurn(
+        "delegate",
+        "00000000-0000-4000-8000-000000000090",
+        () => undefined,
+      );
+      pushBackgroundDelegation(value.fakeQuery, "agent-1", "native-agent-1");
+      completeTurn(value.fakeQuery);
+      await expect(turn).resolves.toEqual({ status: "succeeded" });
+
+      // Held Root: the Subagent keeps nesting under the finished Segment's call.
+      value.transport.setIdleLive(true);
+      value.fakeQuery.push({
+        type: "assistant",
+        uuid: "00000000-0000-4000-8000-000000000091",
+        session_id: "00000000-0000-4000-8000-000000000001",
+        parent_tool_use_id: "agent-1",
+        message: { id: "nested-1", content: [{ type: "text", text: "nested progress" }] },
+      } as unknown as SDKMessage);
+      await vi.waitFor(() =>
+        expect(idle).toEqual([{ type: "subagent.transcript.changed", callId: "agent-1" }]),
+      );
+
+      // No Turn at all: the change reaches the Thread handler now, not with the next Terminal.
+      value.transport.setIdleLive(false);
+      value.fakeQuery.push({
+        type: "user",
+        uuid: "00000000-0000-4000-8000-000000000092",
+        session_id: "00000000-0000-4000-8000-000000000001",
+        parent_tool_use_id: "agent-1",
+        message: {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "nested-read", content: "x", is_error: false },
+          ],
+        },
+      } as unknown as SDKMessage);
+      await vi.waitFor(() =>
+        expect(immediate).toEqual([{ type: "subagent.transcript.changed", callId: "agent-1" }]),
+      );
+      expect(turns).toEqual([]);
+    } finally {
+      await value.transport.close();
+    }
+  });
+});
+
 describe("ClaudeSdkTransport autonomous Subagent settlement ordering", () => {
   it.each(["unset", "cleared"])(
     "keeps settlements in the autonomous batch when the Thread handler is %s",

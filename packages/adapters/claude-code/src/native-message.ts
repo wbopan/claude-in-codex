@@ -407,9 +407,17 @@ export class ClaudeNativeTurnAccumulator {
   #protocolConflict = false;
   #textConflict = false;
   #tools = new Map<string, ActiveNativeTool>();
+  /**
+   * Agent calls delegated before this Segment. A background Subagent keeps
+   * nesting its messages under the original call id long after the Root
+   * Segment that issued it has ended, so later accumulators must recognise it
+   * without treating it as an open Tool of their own.
+   */
+  readonly #earlierSubagentCalls: Set<string>;
 
-  constructor(options: { provider?: string } = {}) {
+  constructor(options: { provider?: string; subagentCallIds?: Iterable<string> } = {}) {
     this.#provider = options.provider;
+    this.#earlierSubagentCalls = new Set(options.subagentCallIds ?? []);
   }
 
   requestCancel(): void {
@@ -426,7 +434,8 @@ export class ClaudeNativeTurnAccumulator {
     const nested = parentCallId !== null;
     if (
       parentCallId &&
-      this.#tools.get(parentCallId)?.subagent === true &&
+      (this.#tools.get(parentCallId)?.subagent === true ||
+        this.#earlierSubagentCalls.has(parentCallId)) &&
       (message.type === "assistant" || message.type === "user")
     ) {
       events.push({ type: "subagent.transcript.changed", callId: parentCallId });

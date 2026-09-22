@@ -96,6 +96,29 @@ function result(input: Record<string, unknown> = {}) {
 }
 
 describe("Claude native Turn interpretation", () => {
+  it("attributes nested messages to an Agent call delegated in an earlier Segment", () => {
+    const turn = new ClaudeNativeTurnAccumulator({ subagentCallIds: ["agent-call"] });
+
+    expect(
+      turn.consume(
+        assistantBlocks([{ type: "text", text: "nested" }], "nested-1", undefined, "agent-call"),
+      ).events,
+    ).toEqual([{ type: "subagent.transcript.changed", callId: "agent-call" }]);
+    expect(
+      turn.consume({
+        ...toolResult("nested-read", { content: "contents" }),
+        parent_tool_use_id: "agent-call",
+      }).events,
+    ).toEqual([{ type: "subagent.transcript.changed", callId: "agent-call" }]);
+    expect(
+      turn.consume(
+        assistantBlocks([{ type: "text", text: "unknown" }], "other-1", undefined, "other-call"),
+      ).events,
+    ).toEqual([]);
+    // The earlier call is not an open Tool of this Segment, so a clean Terminal stays clean.
+    expect(turn.consume(result()).terminal).toEqual({ status: "succeeded" });
+  });
+
   it("deduplicates partial text and appends only the complete-message suffix", () => {
     const turn = new ClaudeNativeTurnAccumulator();
 

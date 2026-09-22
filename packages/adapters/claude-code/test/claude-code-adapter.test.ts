@@ -2069,6 +2069,67 @@ describe("Claude Code HarnessAdapter", () => {
     await session.close();
   });
 
+  it("publishes background Subagent transcript changes once the delegation has returned", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await session.execute(textTurn("delegate in background"));
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    const transport = transports[0];
+    if (!transport) throw new Error("Fake Claude transport was not created");
+    transport.event({
+      type: "subagent.started",
+      operation: "spawn",
+      callId: "agent-1",
+      description: "Inspect implementation",
+      background: true,
+    });
+    await nextEvent(iterator);
+    transport.event({
+      type: "subagent.completed",
+      callId: "agent-1",
+      isError: false,
+      continuesInBackground: true,
+      nativeSubagentId: "native-agent-1",
+      resultSummary: "Async agent launched successfully",
+    });
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    transport.finish({ status: "succeeded" });
+    await nextEvent(iterator);
+    expect(transport.idleLive).toBe(true);
+
+    // Held Root Turn: the delegation left the Turn when the Agent call returned.
+    transport.idleHandler?.onEvent({ type: "subagent.transcript.changed", callId: "agent-1" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "subagent.transcript.changed",
+      nativeSubagentId: "native-agent-1",
+    });
+
+    // Cancelled Root Turn: no Turn is open, the Session occupancy still knows the Subagent.
+    await session.execute({
+      type: "turn.cancel",
+      turnId: hostTurnIdSchema.parse("delegate in background"),
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "cancelled" },
+    });
+    transport.threadHandler?.({ type: "subagent.transcript.changed", callId: "agent-1" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "subagent.transcript.changed",
+      nativeSubagentId: "native-agent-1",
+    });
+    transport.idleHandler?.onEvent({ type: "subagent.transcript.changed", callId: "agent-1" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "subagent.transcript.changed",
+      nativeSubagentId: "native-agent-1",
+    });
+  });
+
   it.each(["held", "streaming", "continuation", "launch-race"] as const)(
     "preserves background Subagents across %s cancellation and the replacement Turn",
     async (phase) => {
