@@ -17,6 +17,7 @@ import type { HarnessAccountSnapshot, HarnessThinkingOptionId } from "@codexhost
 import { projectClaudeAccountUsage } from "./account-usage.js";
 
 import { resolveClaudeCodeExecutable, withNodeRuntimeOnPath } from "./command.js";
+import { readCodexMemoryAppend } from "./codex-memory.js";
 import {
   mergeClaudeModelPickerOptions,
   readClaudeUserModelPicker,
@@ -474,6 +475,16 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
       environment: this.#environment,
     });
     const thinking = claudeThinkingConfiguration(this.#thinkingOptionId);
+    // Codex core injects memory_summary.md for GPT Threads; Claude Threads bypass it, so
+    // the Host appends the same file to Claude Code's preset system prompt.
+    const codexMemory = await readCodexMemoryAppend(this.#environment);
+    // The SDK maps an omitted systemPrompt to an empty custom prompt, which drops the whole
+    // Claude Code preset (task guidance, tone, auto-memory). Always request the preset.
+    const systemPrompt = {
+      type: "preset",
+      preset: "claude_code",
+      ...(codexMemory ? { append: codexMemory } : {}),
+    } as const;
     this.#desktopTools = await createClaudeClientTools(this.#clientTools);
     if (this.#closePromise) {
       await this.#desktopTools.close();
@@ -485,6 +496,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
         prompt: this.#input,
         options: {
           cwd: this.#cwd,
+          systemPrompt,
           ...(this.#openMode === "resume"
             ? { resume: this.sessionId }
             : { sessionId: this.sessionId }),

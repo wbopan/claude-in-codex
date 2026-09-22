@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -2585,6 +2585,54 @@ describe("Claude SDK official Desktop MCP", () => {
       await f.transport.close();
     },
   );
+
+  it.each(["create", "resume"] as const)(
+    "appends the Codex memory summary to the preset system prompt (%s)",
+    async (mode) => {
+      const codexHome = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-memory-"));
+      await mkdir(path.join(codexHome, "memories"), { recursive: true });
+      await writeFile(
+        path.join(codexHome, "memories", "memory_summary.md"),
+        "v1\n\n## User Profile\n\nPrefers evidence over vibes.\n",
+      );
+      try {
+        const f = fixture(mode, "default", harnessThinkingOptionIdSchema.parse("auto"), {
+          CODEX_HOME: codexHome,
+          PATH: process.env.PATH ?? "",
+        });
+        await f.transport.start();
+        const options = f.queryInput().options;
+        expect(options?.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" });
+        const append = (options?.systemPrompt as { append?: string }).append ?? "";
+        expect(append).toContain("<codex-memory source=");
+        expect(append).toContain("Prefers evidence over vibes.");
+        expect(options?.settingSources).toEqual(["user"]);
+        await f.transport.close();
+      } finally {
+        await rm(codexHome, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("always requests the Claude Code preset system prompt, without an append when no summary exists", async () => {
+    const codexHome = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-no-memory-"));
+    try {
+      const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
+        CODEX_HOME: codexHome,
+        PATH: process.env.PATH ?? "",
+      });
+      await f.transport.start();
+      // An omitted systemPrompt is an empty custom prompt to the SDK, which strips the preset
+      // (task guidance, tone, auto-memory); the preset must be requested explicitly.
+      expect(f.queryInput().options?.systemPrompt).toEqual({
+        type: "preset",
+        preset: "claude_code",
+      });
+      await f.transport.close();
+    } finally {
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
 
   it("does not start native work after closure during client tool discovery", async () => {
     const discovered = Promise.withResolvers<[]>();
