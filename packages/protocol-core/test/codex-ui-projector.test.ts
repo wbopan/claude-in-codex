@@ -121,23 +121,10 @@ describe("Codex UI projector", () => {
           content: [{ type: "text", text: "question", text_elements: [] }],
         },
         {
-          id: "historical-reasoning-summary",
+          id: "historical-reasoning",
           type: "reasoning",
           summary: ["visible analysis"],
           content: [],
-        },
-        {
-          id: "historical-reasoning",
-          type: "commandExecution",
-          command: "thinking",
-          cwd: "/workspace",
-          processId: null,
-          source: "agent",
-          status: "completed",
-          commandActions: [],
-          aggregatedOutput: "visible analysis",
-          exitCode: 0,
-          durationMs: null,
         },
         {
           id: "historical-agent",
@@ -433,25 +420,20 @@ describe("Codex UI projector", () => {
       },
       13_000,
     );
-    expect(reasoningCompleted.messages).toMatchObject([
+    expect(reasoningCompleted.messages).toEqual([
       {
         method: "item/completed",
+        emittedAtMs: 13_000,
         params: {
-          startedAtMs: 11_500,
-          completedAtMs: 13_000,
-          item: { id: `${reasoningId}-summary`, type: "reasoning" },
-        },
-      },
-      {
-        method: "item/completed",
-        params: {
+          threadId: "thread-1",
+          turnId,
           startedAtMs: 11_500,
           completedAtMs: 13_000,
           item: {
             id: reasoningId,
-            type: "commandExecution",
-            command: "thinking",
-            durationMs: 1_500,
+            type: "reasoning",
+            summary: ["thinking"],
+            content: [],
           },
         },
       },
@@ -732,26 +714,16 @@ describe("Codex UI projector", () => {
       {
         method: "item/started",
         params: {
-          item: { id: `${reasoningId}-summary`, type: "reasoning", summary: [], content: [] },
+          item: { id: reasoningId, type: "reasoning", summary: [], content: [] },
         },
-      },
-      {
-        method: "item/started",
-        params: {
-          item: { id: reasoningId, type: "commandExecution", command: "thinking" },
-        },
-      },
-      {
-        method: "item/commandExecution/outputDelta",
-        params: { itemId: reasoningId, delta: "visible " },
       },
       {
         method: "item/reasoning/summaryPartAdded",
-        params: { itemId: `${reasoningId}-summary`, summaryIndex: 0 },
+        params: { itemId: reasoningId, summaryIndex: 0 },
       },
       {
         method: "item/reasoning/summaryTextDelta",
-        params: { itemId: `${reasoningId}-summary`, summaryIndex: 0, delta: "visible " },
+        params: { itemId: reasoningId, summaryIndex: 0, delta: "visible " },
       },
     ]);
     expect(
@@ -763,12 +735,8 @@ describe("Codex UI projector", () => {
       }).messages,
     ).toMatchObject([
       {
-        method: "item/commandExecution/outputDelta",
-        params: { itemId: reasoningId, delta: "analysis" },
-      },
-      {
         method: "item/reasoning/summaryTextDelta",
-        params: { itemId: `${reasoningId}-summary`, summaryIndex: 0, delta: "analysis" },
+        params: { itemId: reasoningId, summaryIndex: 0, delta: "analysis" },
       },
     ]);
     const reasoningCompleted = value.project({
@@ -784,26 +752,16 @@ describe("Codex UI projector", () => {
         method: "item/completed",
         params: {
           item: {
-            id: `${reasoningId}-summary`,
+            id: reasoningId,
             type: "reasoning",
             summary: ["visible analysis"],
             content: [],
           },
         },
       },
-      {
-        method: "item/completed",
-        params: {
-          item: {
-            id: reasoningId,
-            type: "commandExecution",
-            command: "thinking",
-            aggregatedOutput: "visible analysis",
-          },
-        },
-      },
     ]);
     expect(JSON.stringify(reasoningCompleted)).not.toContain("summaryTextDelta");
+    expect(JSON.stringify(reasoningCompleted)).not.toContain("commandExecution");
 
     expect(
       value.project({
@@ -832,16 +790,10 @@ describe("Codex UI projector", () => {
     expect(completed.completedTurn).toMatchObject({
       items: [
         {
-          id: `${reasoningId}-summary`,
+          id: reasoningId,
           type: "reasoning",
           summary: ["visible analysis"],
           content: [],
-        },
-        {
-          id: reasoningId,
-          type: "commandExecution",
-          command: "thinking",
-          aggregatedOutput: "visible analysis",
         },
         { id: agentId, type: "agentMessage", text: "answer" },
       ],
