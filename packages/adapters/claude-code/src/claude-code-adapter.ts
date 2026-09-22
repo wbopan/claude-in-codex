@@ -6,7 +6,6 @@ import {
   deleteSession as deleteClaudeSession,
   forkSession as forkClaudeNativeSession,
   getSessionInfo as getClaudeSessionInfo,
-  getSubagentMessages,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   HarnessOutputChannel,
@@ -2579,8 +2578,15 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         });
         return transcript ?? [];
       },
-      readSubagentMessages: ({ cwd, sessionId, nativeSubagentId }) =>
-        getSubagentMessages(sessionId, nativeSubagentId, { dir: cwd }),
+      readSubagentMessages: async ({ cwd, sessionId, nativeSubagentId }) => {
+        const transcript = await readClaudeTranscript({
+          cwd,
+          environment: options.environment ?? process.env,
+          sessionId,
+          nativeSubagentId,
+        });
+        return transcript ?? [];
+      },
     };
   }
 

@@ -20,15 +20,51 @@ async function existingFile(file: string): Promise<boolean> {
   }
 }
 
+async function findSubagentTranscript(
+  directory: string,
+  nativeSubagentId: string,
+): Promise<string | null> {
+  const expected = path.join(directory, `agent-${nativeSubagentId}.jsonl`);
+  if (await existingFile(expected)) return expected;
+
+  // Claude can store nested agents under additional directories within subagents/.
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const found = await findSubagentTranscript(path.join(directory, entry.name), nativeSubagentId);
+    if (found) return found;
+  }
+  return null;
+}
+
 async function findTranscript(input: {
   cwd: string;
   environment: NodeJS.ProcessEnv;
   sessionId: string;
+  nativeSubagentId?: string;
 }): Promise<string | null> {
   const projectsDirectory = path.join(configDirectory(input.environment), "projects");
-  const name = `${input.sessionId}.jsonl`;
-  const expected = path.join(projectsDirectory, projectDirectoryName(input.cwd), name);
-  if (await existingFile(expected)) return expected;
+  const nativeSubagentId = input.nativeSubagentId;
+  if (nativeSubagentId !== undefined && !/^[A-Za-z0-9_-]+$/u.test(nativeSubagentId)) return null;
+  const findInProject = async (project: string): Promise<string | null> => {
+    const directory = path.join(projectsDirectory, project);
+    if (nativeSubagentId !== undefined) {
+      return findSubagentTranscript(
+        path.join(directory, input.sessionId, "subagents"),
+        nativeSubagentId,
+      );
+    }
+    const candidate = path.join(directory, `${input.sessionId}.jsonl`);
+    return (await existingFile(candidate)) ? candidate : null;
+  };
+  const expectedProject = projectDirectoryName(input.cwd);
+  const expected = await findInProject(expectedProject);
+  if (expected) return expected;
 
   let projects: string[];
   try {
@@ -37,8 +73,9 @@ async function findTranscript(input: {
     return null;
   }
   for (const project of projects) {
-    const candidate = path.join(projectsDirectory, project, name);
-    if (await existingFile(candidate)) return candidate;
+    if (project === expectedProject) continue;
+    const candidate = await findInProject(project);
+    if (candidate) return candidate;
   }
   return null;
 }
@@ -48,18 +85,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Reads the complete append-only Claude Code main-session transcript.
+ * Reads the complete append-only Claude Code main-session or subagent transcript.
  *
  * The Agent SDK's getSessionMessages() intentionally follows one parentUuid
  * branch. Claude can attach a later prompt to a system record before the prior
  * assistant terminal, which makes that otherwise valid branch omit prior
  * assistant messages. History recovery needs every persisted main-session
  * message in transcript order instead.
+ * getSubagentMessages() also drops attachment records before following parentUuid,
+ * so a message whose parent is an attachment truncates the entire earlier history.
+ * Both transcript types must be read in append order without traversing that chain.
  */
 export async function readClaudeTranscript(input: {
   cwd: string;
   environment: NodeJS.ProcessEnv;
   sessionId: string;
+  nativeSubagentId?: string;
 }): Promise<unknown[] | null> {
   const transcript = await findTranscript(input);
   if (!transcript) return null;
