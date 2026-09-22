@@ -165,6 +165,54 @@ impl From<io::Error> for PlatformError {
 
 pub fn configure_background_command(_command: &mut std::process::Command) {}
 
+const BASE64_STANDARD_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Standard-alphabet, padded base64 (RFC 4648 section 4).
+///
+/// The pinning handshake has to travel through an environment variable and a
+/// Chromium switch, so it needs a textual digest. A local encoder keeps the
+/// dependency graph unchanged: the certificate tooling deliberately adds no
+/// crates.
+fn base64_standard(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let first = u32::from(chunk[0]);
+        let second = chunk.get(1).copied().map_or(0, u32::from);
+        let third = chunk.get(2).copied().map_or(0, u32::from);
+        let group = (first << 16) | (second << 8) | third;
+        let indices = [
+            (group >> 18) & 0x3f,
+            (group >> 12) & 0x3f,
+            (group >> 6) & 0x3f,
+            group & 0x3f,
+        ];
+        for (position, index) in indices.into_iter().enumerate() {
+            if position > chunk.len() {
+                encoded.push('=');
+            } else {
+                encoded.push(char::from(BASE64_STANDARD_ALPHABET[index as usize]));
+            }
+        }
+    }
+    encoded
+}
+
+/// SHA-256 of `bytes`, rendered as padded standard base64.
+///
+/// This is the shape Chromium expects for
+/// `--ignore-certificate-errors-spki-list` and the shape Node's
+/// `createHash("sha256").digest("base64")` produces, so both ends of the
+/// handshake compare the same string.
+#[must_use]
+pub fn sha256_base64(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    base64_standard(&digest.finalize())
+}
+
 pub fn atomic_replace_file(source: &Path, target: &Path) -> Result<(), PlatformError> {
     std::fs::rename(source, target)?;
     Ok(())
@@ -224,7 +272,10 @@ fn temporary_directory(prefix: &str) -> PathBuf {
 mod tests {
     use std::fs;
 
-    use super::{CRATE_NAME, PlatformError, temporary_directory, validate_proxy_target};
+    use super::{
+        CRATE_NAME, PlatformError, base64_standard, sha256_base64, temporary_directory,
+        validate_proxy_target,
+    };
 
     fn temporary_file(name: &str) -> std::path::PathBuf {
         let path = temporary_directory("codexhost-platform").join(name);
@@ -252,6 +303,33 @@ mod tests {
         assert_eq!(
             validate_proxy_target(&shim, &target).expect("distinct target"),
             target.canonicalize().expect("canonical target")
+        );
+    }
+
+    #[test]
+    fn encodes_the_rfc_4648_base64_test_vectors() {
+        for (input, expected) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("fooba", "Zm9vYmE="),
+            ("foobar", "Zm9vYmFy"),
+        ] {
+            assert_eq!(
+                base64_standard(input.as_bytes()),
+                expected,
+                "input {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn hashes_the_known_sha256_vector() {
+        assert_eq!(
+            sha256_base64(b"abc"),
+            "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=",
         );
     }
 

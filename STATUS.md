@@ -76,8 +76,17 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       handback the block became `运行了命令 subagent handback` with all six commands and the
       reply. The header line reads `正在思考` rather than the running command because the
       refresh only projects completed Items; a command is never shown as in progress.
-- [ ] J. Usage chip (bonus). Not started; there is no native seam, the renderer reads only
-      `rateLimitsByLimitId.codex`, so this needs a one-way CDP overlay.
+- [x] J. Usage chip (bonus). Premise superseded 2026-09-22: the native usage UI is fed by the
+      Desktop's own `GET <workspaceRouting.backendOrigin>/backend-api/wham/usage`, and
+      `account/read` is the seam. The Host proxies that origin (Phase A) and rewrites the one
+      response (Phase B): `additional_rate_limits` gains one Claude bucket per route id, and
+      `ambient_usage.default` (a server-driven profile-menu section the Desktop renders whenever
+      present, statsig gate `3538455134` on for this account) gains "Codex 7 天 / Claude 5 小时 /
+      Claude 7 天 / Fable 7 天" rows with reset hovers; the account footer stays native (no subtext).
+      Verified in the debug Desktop, localized to the macOS preferred language
+      (`J-ambient-menu-zh.png`, `J-wham-usage-ambient.json`). The richer per-Model sidebar
+      card (`sidebar_usage_warnings.by_model`, statsig gate `3617198761`) is out of reach: the
+      gate cannot be held open from the seam (see the 2026-09-22 log entry).
 
 ## Carve phase (branch `carve`, 2026-09-21)
 
@@ -142,6 +151,13 @@ Kept deliberately, although the carve looked like it could take them:
   `MCP client for codex_app failed to start: Codex app tools pipe closed`). Claude then saw
   only `cua_repl`. The debug instance and the npm wrapper always set the variable, which is why
   acceptance G passed there. Fixed 2026-09-22: the launcher defaults it to `~/.codexhost`.
+- The Desktop replaces the origin of every backend request with `workspaceRouting.backendOrigin`
+  from the app-server `account/read` response (zod: https + origin-only). The Host publishes its
+  loopback proxy there only when the launcher pinned the proxy certificate for Chromium
+  (`--user-data-dir` + `--ignore-certificate-errors-spki-list`, handshake via
+  `CODEXHOST_DESKTOP_PROXY_SPKI`). `CODEXHOST_DESKTOP_PROXY=0` is the kill switch for both
+  processes. The live `/wham/usage` body carries `additional_rate_limits: null` (not `[]`),
+  a 7-day `primary_window` with `reset_after_seconds`, and `model_usage` keyed by slug.
 - A stale `codex_desktop` stdio MCP server in `~/.claude.json` (the retired Python bridge from
   `codexhost-claude-bridge`) still starts its own `codex app-server --listen stdio://` per
   Claude session and only ever exposes `cua_repl.js/js_reset`. It is not part of this repo;
@@ -206,6 +222,77 @@ Kept deliberately, although the carve looked like it could take them:
   after completion, Model and effort survive `debug:restart`, `config.toml` carries no route id
   (`int-*.png`). Not re-verified live in this run: the cross-harness toast and effort submenu
   (the picker popover kept opening on the effort slider under CDP); last verified on `carve`.
+- 2026-09-22: Desktop backend proxy, Phase A. Launcher: `desktop_backend_proxy.rs` (openssl CLI
+  cert under `<data>/desktop-proxy/`, SPKI pin, Chromium args; LibreSSL honours `-addext`),
+  `sha256_base64` in platform. Host: `desktop-backend-proxy.ts` (127.0.0.1 HTTPS, http/1.1,
+  keep-alive upstream, upgrade relay, 502 on upstream failure, `requests.jsonl` without
+  queries/headers/bodies, `rewrite` hook for Phase B) and an `account/read` request branch that
+  replaces `backendOrigin` only while the proxy is active. tsc clean; vitest 1151 passed / 7
+  skipped (12 new proxy tests, 4 new Host tests); Rust 171 passed. Live in the debug Desktop:
+  the Desktop launched with both Chromium args, `native-picker-trace.jsonl` shows
+  `desktop-proxy/account-read` to `https://127.0.0.1:<port>`, 37 routed requests across 25
+  paths all 200 (one upstream 400 on `payments/payment_methods`, same without the proxy),
+  `GET /backend-api/wham/usage` 200 with the renderer's `rate-limit-status` query `success`
+  (`P-wham-usage.json`, redacted), log hygiene grep 0, stable Desktop pids untouched
+  (`P-stable-pids.txt`). Kill switch: `CODEXHOST_DESKTOP_PROXY=0 npm run debug` relaunched
+  without the SPKI arg, no rewrite trace, usage query still `success` against chatgpt.com.
+  Default flipped to on for the stable launch (kill switch stays). Not yet observed by a human:
+  Model picker, a GPT Turn and a Claude Turn through the proxied debug Desktop (P4–P6).
+- 2026-09-22: Desktop backend proxy, Phase B. `desktop-usage-buckets.ts`: `harnessUsageBuckets`
+  (5-hour primary + 7-day secondary from the Harness account snapshot, `allowed: true` and
+  `limit_reached: false` so entries are inert for other Models, ≤64 names) and
+  `DesktopUsagePublisher` (GET `/backend-api/wham/usage` only, 200 JSON only, `null` or array
+  `additional_rate_limits` only, original bytes otherwise; existing names win). The Host feeds
+  it one bucket per `model/list` route id of every ready Harness with `inspectAccount` plus the
+  bare transport id, through a dedicated 90 s account-inspection cache (each Claude inspection
+  spawns a process; the Desktop polls every 30 s). Renderer selectedModel confirmed via CDP to be
+  the route id (`codexhost/claude-code-native@claude-model-v1.*`). vitest 1163 passed / 7
+  skipped (8 bucket tests incl. a transcription of the renderer's `RFa/zFa/jFa/yq`, 1 Host
+  test). Live: `desktop-proxy/usage buckets: 6`, `/wham/usage` 481 → 1093 bytes, renderer cache
+  shows 5-hour 39 % / 7-day 20 % for all six Claude route ids, core Codex entry unchanged, a
+  Claude Turn with a Subagent kept running through the proxied Desktop meanwhile. The very first
+  usage poll during startup answered without buckets (Harness not ready within the 3 s bound);
+  the next poll 30 s later carried them.
+- 2026-09-22: J live check in the debug Desktop. With a Claude Thread active the profile menu
+  item is the simplified "使用情况 · 剩余 73 %" (one svg, no submenu) and clicking it opens
+  Settings › Usage, which renders the core window only (`Rvl`). So the appended Claude buckets
+  are present in the renderer but have no surface on a weekly-only account. Candidate surfaces
+  seen in the bundle: the server-driven `ambient_usage.default.menu.rows` (profile menu +
+  sidebar subtext), gated by a statsig gate (`L_ "3538455134"`) and a zod schema (`wIa`); not
+  attempted.
+- 2026-09-22: J shipped through `ambient_usage`. The per-Model rows path is dead on weekly-only
+  accounts, but the bundle's `h$s`/`a$s` render `ambient_usage.default.menu.rows` (zod `wIa`:
+  `{label, value:{text, tone}, hover?:{text}}`) whenever the field is present and statsig gate
+  `3538455134` is on — checked live via `__STATSIG__` (true). The publisher builds the section
+  with the core Codex windows first (so the native "剩余 73 %" figure survives), appends one row
+  per Harness window, and extends rather than replaces a server-sent section. Text is localized:
+  the Desktop UI follows `app.getSystemLocale()` while its requests carry `en-US`, so the Host
+  reads `defaults read -g AppleLanguages` once (`CODEXHOST_DESKTOP_LANGUAGE` overrides; the
+  request language is the fallback; only that language is logged with a rewritten request).
+  Harness names are shortened to their first word in rows and subtext. vitest 1172 passed / 7
+  skipped. Live: profile menu shows "Usage › Codex · 每周 剩余 72 % / Claude · 5 小时 剩余 53 % /
+  Claude · 每周 剩余 78 % / Claude · Fable · 7 天 剩余 69 %", hover "57 分钟后重置", sidebar subtext
+  "Codex 72% · Claude 53%" — dropped afterwards on request: nothing custom under the account
+  name, `profile_subtext` is sent as `null` unless the backend provided one.
+- 2026-09-22: J labels tightened on request: "Codex 7 天 / Claude 5 小时 / Claude 7 天 / Fable 7 天"
+  (no middle dots, the weekly window reads as 7 days, a product-scoped row keeps only its own
+  label; English: "Codex 7-day / Claude 5-hour / Claude 7-day / Fable 7-day").
+- 2026-09-22: J, sidebar card — attempted and reverted. The bundle's richer per-Model surface,
+  `sidebar_usage_warnings` (zod `MIa`: `{default, by_model: Record<modelId, warning>}`,
+  `wYs` → `_Ys` → `bYs` → `fYs`), picks `by_model[selectedModel]` by exact key and renders the
+  card's own `rate_limit` windows with native labels, progress bars and reset times
+  (`XJs`/`QJs`), but only behind statsig gate `3617198761`, absent from this account. The gate
+  values are seeded from `POST /backend-api/wham/statsig/bootstrap` (`{statsigPayload}`, ~1 MB,
+  through the proxy), so a bootstrap rewrite adding `feature_gates["3617198761"]` was built and
+  did flip the gate on start. It does not hold: the Desktop calls `updateUserAsync` within
+  seconds (user-consistency check, `desktop_app_beta_enabled`, and a periodic "Codex runtime
+  config" refresh), which the SDK answers with a direct `https://ab.chatgpt.com/v1/initialize`
+  (4.5 MB, `networkOverrideFunc` → `Rv.fetch`, not routed through `backendOrigin`, so never
+  through the proxy). The store's source became `Network`/`NetworkNotModified` 14 s after start
+  and the gate was gone; storage-backed cache and `sinceTime` deltas keep the network values
+  afterwards. Holding it would need `ab.chatgpt.com` interception (system CA or hosts hijack —
+  off the table) or gaming Statsig's delta protocol. Reverted the gate publisher, the composite
+  rewrite and the `by_model` cards; `ambient_usage` stays the J surface.
 - 2026-09-22: Desktop message queue on External Threads. The Desktop stopped using `turn/start`
   while a Turn runs and calls the experimental `thread/queue/*` family instead, which the Host
   answered with `-32076 External Thread does not support thread/queue/list`, so nothing could be

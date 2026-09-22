@@ -272,6 +272,7 @@ fn start(root: &Path) -> Result<(), Box<dyn Error>> {
         &std::env::current_exe()?.canonicalize()?,
         &descriptor,
         Some(root.join("host").into_os_string()),
+        crate::desktop_proxy_enabled_for_debug(),
     );
     environment.extend(crate::launcher_proxy_environment());
     instance_environment(

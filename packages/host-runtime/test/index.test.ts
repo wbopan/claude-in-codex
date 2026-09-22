@@ -63,6 +63,9 @@ describe("host-runtime package", () => {
       CODEXHOST_NPM_CLI_PATH: "/opt/npm-cli.js",
       CODEXHOST_NPM_LAUNCHER_PATH: "/opt/launcher.mjs",
       CODEXHOST_NPM_PACKAGE_ROOT: "/opt/package",
+      CODEXHOST_DESKTOP_PROXY: "1",
+      CODEXHOST_DESKTOP_PROXY_SPKI: "pin",
+      CODEXHOST_DESKTOP_PROXY_TRACE: "1",
     });
 
     expect(official).toEqual({ PATH: "/usr/bin" });

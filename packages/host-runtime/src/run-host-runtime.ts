@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { AppServerHost, officialEnvironment } from "./app-server-host.js";
+import { startDesktopBackendProxy } from "./desktop-backend-proxy.js";
+import { DesktopUsagePublisher, desktopUiLanguage } from "./desktop-usage-buckets.js";
 import { prepareLocalCodex } from "./native-account-host.js";
 import { SingleNativeCodexAccount } from "./account/codex-account-control.js";
 import { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
@@ -67,15 +69,26 @@ export async function runHostRuntime(input: {
       diagnosticOutput: process.stderr,
     });
     try {
-      return await new AppServerHost({
-        stockCodexPath,
-        arguments: input.arguments,
-        defaultAgent,
+      const usage = new DesktopUsagePublisher({ language: desktopUiLanguage(input.environment) });
+      const desktopProxy = await startDesktopBackendProxy({
         environment: input.environment,
-        officialRuntimeScope: official.officialRuntimeScope,
-        accountControl: official.accountControl,
-        ...installedHarnessPluginOptions(input.environment, false, input.hostRuntimeUrl),
-      }).run();
+        diagnosticOutput: process.stderr,
+        rewrite: usage,
+      });
+      try {
+        return await new AppServerHost({
+          stockCodexPath,
+          arguments: input.arguments,
+          defaultAgent,
+          environment: input.environment,
+          officialRuntimeScope: official.officialRuntimeScope,
+          accountControl: official.accountControl,
+          ...(desktopProxy ? { desktopProxy, desktopUsage: usage } : {}),
+          ...installedHarnessPluginOptions(input.environment, false, input.hostRuntimeUrl),
+        }).run();
+      } finally {
+        await desktopProxy?.close();
+      }
     } finally {
       await official.close();
     }

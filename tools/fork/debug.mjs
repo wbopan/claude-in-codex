@@ -46,6 +46,8 @@ export function debugEnvironment(environment, instance) {
     CODEXHOST_STARTUP_TRACE: "1",
     // On by default in the Shim; only the explicit opt-out is forwarded.
     ...(environment.CODEXHOST_NATIVE_APP_TOOLS === "0" ? { CODEXHOST_NATIVE_APP_TOOLS: "0" } : {}),
+    // The Desktop backend proxy is on by default in the debug instance; forward only the kill switch.
+    ...(environment.CODEXHOST_DESKTOP_PROXY === "0" ? { CODEXHOST_DESKTOP_PROXY: "0" } : {}),
   };
 }
 

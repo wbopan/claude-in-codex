@@ -18,6 +18,14 @@ export {
   officialEnvironment,
 } from "./app-server-host.js";
 export type { AppServerHostOptions } from "./app-server-host.js";
+export { startDesktopBackendProxy, spkiSha256Base64 } from "./desktop-backend-proxy.js";
+export type { DesktopBackendProxy, DesktopBackendRewrite } from "./desktop-backend-proxy.js";
+export {
+  DesktopUsagePublisher,
+  harnessUsageBuckets,
+  harnessUsageRows,
+} from "./desktop-usage-buckets.js";
+export type { HarnessUsageReport } from "./desktop-usage-buckets.js";
 export type { CodexAccountControl } from "./account/codex-account-control.js";
 export { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
 export { CodexRuntime } from "./codex-runtime/codex-runtime.js";

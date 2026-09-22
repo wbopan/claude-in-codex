@@ -4,6 +4,7 @@ mod compatibility;
 #[cfg(target_os = "macos")]
 mod debug_instance;
 mod desktop_attachment;
+mod desktop_backend_proxy;
 mod desktop_path_overrides;
 mod installation_layout;
 mod native_harness_broker;
@@ -15,7 +16,7 @@ mod system_proxy_environment;
 
 use std::env;
 use std::error::Error;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 #[cfg(target_os = "linux")]
 use std::fmt::{self, Display, Formatter};
 use std::io::{Read, Write};
@@ -52,6 +53,13 @@ use system_proxy_environment::launcher_proxy_environment;
 const HOST_NODE_PATH_ENV: &str = "CODEXHOST_HOST_NODE_PATH";
 const HOST_RUNTIME_PATH_ENV: &str = "CODEXHOST_HOST_RUNTIME_PATH";
 const DATA_DIRECTORY_ENV: &str = "CODEXHOST_DATA_DIR";
+/// Opt-in switch for the Desktop backend proxy. `1` arms it for a stable
+/// launch; `0` disarms it everywhere, including the debug instance.
+const DESKTOP_PROXY_ENV: &str = "CODEXHOST_DESKTOP_PROXY";
+/// Base64 SHA-256 of the pinned SPKI. The Host only rewrites `backendOrigin`
+/// when its own certificate hashes to this value, so an absent or stale entry
+/// simply leaves the Desktop on the real backend.
+const DESKTOP_PROXY_SPKI_ENV: &str = "CODEXHOST_DESKTOP_PROXY_SPKI";
 const REMOTE_SSH_MANAGED_ENV: &str = "CODEXHOST_REMOTE_SSH_MANAGED";
 const DEFAULT_AGENT_ENV: &str = "CODEXHOST_DEFAULT_AGENT";
 const LAUNCHER_PID_ENV: &str = "CODEXHOST_LAUNCHER_PID";
@@ -574,12 +582,73 @@ fn supervise_desktop(
     }
 }
 
+/// The Desktop backend proxy is on by default since Phase A verified it in the
+/// debug instance; `CODEXHOST_DESKTOP_PROXY=0` is the kill switch for both the
+/// stable launch and the debug instance.
+fn desktop_proxy_enabled_for_launch() -> bool {
+    env::var_os(DESKTOP_PROXY_ENV).as_deref() != Some(OsStr::new("0"))
+}
+
+#[cfg(target_os = "macos")]
+fn desktop_proxy_enabled_for_debug() -> bool {
+    env::var_os(DESKTOP_PROXY_ENV).as_deref() != Some(OsStr::new("0"))
+}
+
+/// Chromium honours `--ignore-certificate-errors-spki-list` only alongside an
+/// explicit `--user-data-dir`. Publishing the pin without being able to name a
+/// profile would let the Host rewrite `backendOrigin` towards a certificate the
+/// renderer then refuses, so the handshake is withheld in that case.
+fn desktop_proxy_profile_available() -> bool {
+    env::var_os("CODEX_ELECTRON_USER_DATA_PATH")
+        .is_some_and(|profile| Path::new(&profile).is_absolute())
+        || env::var_os("HOME").is_some_and(|home| {
+            desktop_backend_proxy::default_user_data_directory(Path::new(&home)).is_some()
+        })
+}
+
+/// Certificate handshake for the Desktop backend proxy.
+///
+/// Every failure is reported and swallowed: without these entries the Host
+/// forwards `account/read` verbatim and the Desktop behaves exactly as it does
+/// today, which is the whole point of keeping the launch fail-open.
+fn desktop_backend_proxy_environment(
+    data_directory: Option<&OsStr>,
+    enabled: bool,
+) -> Vec<(OsString, OsString)> {
+    if !enabled {
+        return Vec::new();
+    }
+    let Some(data_directory) = data_directory else {
+        startup_trace("desktop backend proxy skipped: no data directory");
+        return Vec::new();
+    };
+    if !desktop_proxy_profile_available() {
+        startup_trace("desktop backend proxy skipped: no pinnable Chromium profile");
+        return Vec::new();
+    }
+    match desktop_backend_proxy::prepare(Path::new(data_directory)) {
+        Ok(pin) => vec![
+            (OsString::from(DESKTOP_PROXY_ENV), OsString::from("1")),
+            (
+                OsString::from(DESKTOP_PROXY_SPKI_ENV),
+                OsString::from(pin.spki_sha256_base64),
+            ),
+        ],
+        Err(error) => {
+            startup_trace("desktop backend proxy unavailable");
+            eprintln!("codexhost: desktop backend proxy disabled: {error}");
+            Vec::new()
+        }
+    }
+}
+
 fn desktop_environment(
     options: &ResolvedLaunchOptions,
     control: &RuntimeControl,
     launcher_executable: &Path,
     descriptor_path: &Path,
     data_directory: Option<OsString>,
+    desktop_proxy_enabled: bool,
 ) -> Vec<(OsString, OsString)> {
     let mut environment = vec![
         (
@@ -612,8 +681,8 @@ fn desktop_environment(
             OsString::from(&control.nonce),
         ),
     ];
-    if let Some(data_directory) = data_directory {
-        environment.push((OsString::from(DATA_DIRECTORY_ENV), data_directory));
+    if let Some(data_directory) = &data_directory {
+        environment.push((OsString::from(DATA_DIRECTORY_ENV), data_directory.clone()));
     }
     if env::var_os(STARTUP_TRACE_ENV).as_deref() == Some(std::ffi::OsStr::new("1")) {
         environment.push((OsString::from(STARTUP_TRACE_ENV), OsString::from("1")));
@@ -624,6 +693,10 @@ fn desktop_environment(
     {
         environment.push(("CODEXHOST_NATIVE_APP_TOOLS".into(), "0".into()));
     }
+    environment.extend(desktop_backend_proxy_environment(
+        data_directory.as_deref(),
+        desktop_proxy_enabled,
+    ));
     environment.extend(desktop_path_overrides::forwarded(env::vars_os()));
     environment
 }
@@ -703,6 +776,7 @@ fn launch(
                 env::var_os(REMOTE_SSH_MANAGED_ENV),
                 env::var_os("HOME"),
             ),
+            desktop_proxy_enabled_for_launch(),
         );
         #[cfg(target_os = "macos")]
         let environment = {
@@ -791,6 +865,7 @@ fn launch(
             env::var_os(REMOTE_SSH_MANAGED_ENV),
             env::var_os("HOME"),
         ),
+        desktop_proxy_enabled_for_launch(),
     );
     supervise_desktop(
         &installation,
@@ -873,10 +948,12 @@ mod tests {
         CONTROL_NONCE_ENV, CONTROL_PORT_ENV, DEFAULT_AGENT_ENV, HOST_NODE_PATH_ENV,
         LAUNCHER_EXECUTABLE_ENV, LAUNCHER_PID_ENV, RUNTIME_DESCRIPTOR_PATH_ENV,
         ResolvedLaunchOptions, RuntimeControl, STARTUP_TRACE_ENV, allocate_runtime_control,
-        desktop_controller_command, desktop_environment, emit_ready_line,
-        managed_desktop_data_directory, parse_launch_options, read_bounded_controller_line,
-        read_bounded_loopback_url, validate_loopback_root_url,
+        desktop_backend_proxy_environment, desktop_controller_command, desktop_environment,
+        emit_ready_line, managed_desktop_data_directory, parse_launch_options,
+        read_bounded_controller_line, read_bounded_loopback_url, validate_loopback_root_url,
     };
+    #[cfg(target_os = "macos")]
+    use super::{DESKTOP_PROXY_ENV, DESKTOP_PROXY_SPKI_ENV, desktop_backend_proxy};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::{DESKTOP_TREE_REFRESH_INTERVAL, desktop_tree_refresh_due};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1094,6 +1171,7 @@ mod tests {
             Path::new("/opt/codexhost"),
             Path::new("/run/user/1000/codexhost/desktop-runtime-v1.json"),
             None,
+            false,
         );
         let value = |name: &str| {
             environment
@@ -1134,6 +1212,7 @@ mod tests {
             Path::new("/opt/codexhost"),
             Path::new("/run/user/1000/codexhost/desktop-runtime-v1.json"),
             Some(OsString::from("/home/codex/.codexhost")),
+            false,
         );
 
         assert!(environment.contains(&(
@@ -1176,6 +1255,7 @@ mod tests {
             Path::new("/synthetic/codexhost"),
             Path::new("/synthetic/runtime.json"),
             None,
+            false,
         );
         for name in [
             "HOME",
@@ -1192,6 +1272,77 @@ mod tests {
             );
         }
         assert!(!environment.iter().any(|(name, _)| name == "OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn desktop_backend_proxy_environment_stays_silent_unless_it_is_enabled() {
+        let directory = std::env::temp_dir().join(format!(
+            "codexhost-proxy-env-disabled-{}",
+            std::process::id()
+        ));
+        assert!(
+            desktop_backend_proxy_environment(Some(directory.as_os_str()), false).is_empty(),
+            "a disabled proxy must not touch the Desktop environment"
+        );
+        assert!(
+            desktop_backend_proxy_environment(None, true).is_empty(),
+            "without a data directory there is nowhere to keep the certificate"
+        );
+        assert!(
+            !directory.exists(),
+            "a disabled proxy must not create certificate material"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn desktop_backend_proxy_environment_publishes_the_prepared_pin() {
+        let directory = std::env::temp_dir().join(format!(
+            "codexhost-proxy-env-enabled-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&directory).expect("create data directory");
+        let published = desktop_backend_proxy_environment(Some(directory.as_os_str()), true);
+        let expected = desktop_backend_proxy::prepare(&directory).expect("prepare pin");
+        assert_eq!(
+            published,
+            vec![
+                (OsString::from(DESKTOP_PROXY_ENV), OsString::from("1")),
+                (
+                    OsString::from(DESKTOP_PROXY_SPKI_ENV),
+                    OsString::from(expected.spki_sha256_base64),
+                ),
+            ]
+        );
+
+        let environment = desktop_environment(
+            &resolved_options(),
+            &runtime_control(),
+            Path::new("/synthetic/codexhost"),
+            Path::new("/synthetic/runtime.json"),
+            Some(directory.clone().into_os_string()),
+            true,
+        );
+        assert!(
+            environment
+                .iter()
+                .any(|(name, _)| name == DESKTOP_PROXY_SPKI_ENV)
+        );
+        assert!(
+            !desktop_environment(
+                &resolved_options(),
+                &runtime_control(),
+                Path::new("/synthetic/codexhost"),
+                Path::new("/synthetic/runtime.json"),
+                Some(directory.clone().into_os_string()),
+                false,
+            )
+            .iter()
+            .any(|(name, _)| name == DESKTOP_PROXY_ENV || name == DESKTOP_PROXY_SPKI_ENV)
+        );
+
+        std::fs::remove_dir_all(&directory).expect("clean up");
     }
 
     #[test]

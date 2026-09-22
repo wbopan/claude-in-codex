@@ -1,5 +1,7 @@
 import { appConsentEnabled, consentedApp } from "./desktop-app-consent.js";
 import { OfficialDesktopTools } from "./official-desktop-tools.js";
+import type { DesktopBackendProxy } from "./desktop-backend-proxy.js";
+import type { DesktopUsagePublisher, HarnessUsageReport } from "./desktop-usage-buckets.js";
 import {
   IDLE_RELEASE_SETTINGS_METHOD,
   LOADED_SESSIONS_METHOD,
@@ -202,6 +204,10 @@ export interface AppServerHostOptions {
   officialRuntimeScope?: OfficialRuntimeScope;
   onCreateRequestRoute?: (observation: CreateRequestRouteObservation) => void;
   onRequestRoute?: (observation: RequestRouteObservation) => void;
+  /** While active, `account/read` publishes the proxy origin as `workspaceRouting.backendOrigin`. */
+  desktopProxy?: Pick<DesktopBackendProxy, "origin" | "active">;
+  /** Receives the Harness buckets appended to the Desktop's proxied `/wham/usage` response. */
+  desktopUsage?: Pick<DesktopUsagePublisher, "attach">;
 }
 
 interface TurnProjectionGate {
@@ -285,6 +291,9 @@ export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEn
     "CODEXHOST_NPM_CLI_PATH",
     "CODEXHOST_NPM_LAUNCHER_PATH",
     "CODEXHOST_NPM_PACKAGE_ROOT",
+    "CODEXHOST_DESKTOP_PROXY",
+    "CODEXHOST_DESKTOP_PROXY_SPKI",
+    "CODEXHOST_DESKTOP_PROXY_TRACE",
   ]);
   return Object.fromEntries(Object.entries(source).filter(([key]) => !internal.has(key)));
 }
@@ -463,6 +472,8 @@ export class AppServerHost {
   #pluginDescriptors: HarnessPluginDescriptor[] = [];
   readonly #launchSettings: HarnessLaunchSettingsStore;
   readonly #accountInspections = new HarnessAccountInspectionCache();
+  /** The Desktop polls usage every 30s; Claude account inspection spawns a process, so cache longer. */
+  readonly #desktopUsageInspections = new HarnessAccountInspectionCache(90_000);
   #externalRuntime: ExternalThreadRuntime;
   #desktopTools: OfficialDesktopTools;
   readonly #externalSteering = new ExternalTurnSteering();
@@ -507,6 +518,7 @@ export class AppServerHost {
       ...options,
     };
     this.#writer = new OrderedWriter(this.#options.desktopOutput);
+    this.#options.desktopUsage?.attach(() => this.#desktopUsageReports());
     const environment = this.#options.environment ?? process.env;
     this.#launchSettings = new HarnessLaunchSettingsStore(
       this.#options.pluginContext?.environment ?? environment,
@@ -1037,6 +1049,12 @@ export class AppServerHost {
       void this.#readNativeConfig(request).catch((error: unknown) => this.#diagnose(error));
       return;
     }
+    // Only the request side is rewritten: `#handleOfficialOutput` relays official responses
+    // verbatim, and `account/read` is the sole frame that carries `workspaceRouting`.
+    if (request.method === "account/read" && this.#options.desktopProxy?.active) {
+      void this.#readNativeAccount(request).catch((error: unknown) => this.#diagnose(error));
+      return;
+    }
     if (request.method === "config/batchWrite" || request.method === "config/value/write") {
       if (await this.#writeNativeConfig(request)) return;
     }
@@ -1468,6 +1486,88 @@ export class AppServerHost {
       ...response,
       id: request.id,
       result: { ...result, data: [...result.data, ...projected] },
+    });
+  }
+
+  /**
+   * One report per ready Harness with account telemetry: its `model/list` route ids (plus the
+   * bare transport id) and its account snapshot, formatted by the Desktop usage publisher.
+   * Bounded wait: a usage poll during startup answers with what is ready.
+   */
+  async #desktopUsageReports(): Promise<HarnessUsageReport[]> {
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      this.#waitForPlugins(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 3_000);
+      }),
+    ]);
+    clearTimeout(timer);
+    const reports: HarnessUsageReport[] = [];
+    for (const [harnessId, adapter] of this.#externalAdapters) {
+      if (!adapter.inspectAccount) continue;
+      try {
+        const inspection = harnessInspectionSchema.safeParse(await adapter.inspect({}));
+        if (!inspection.success || inspection.data.status !== "ready") continue;
+        const limitNames = [
+          encodeExternalTransportSelection(harnessId, {}),
+          ...inspection.data.catalog.models.map((model) =>
+            encodeExternalTransportSelection(harnessId, { model: model.ref }),
+          ),
+        ];
+        const { harnessName, account } = await this.#desktopUsageInspections.inspect(
+          adapter,
+          this.#pluginDescriptors,
+        );
+        reports.push({ harnessName, limitNames, account });
+      } catch (error) {
+        this.#diagnose(error);
+      }
+    }
+    this.#traceNativePicker({
+      event: "desktop-proxy/usage",
+      harnesses: reports.map((report) => `${report.harnessName}:${report.account ? "ok" : "none"}`),
+    });
+    return reports;
+  }
+
+  /**
+   * Fails open: the official response passes untouched whenever the proxy died meanwhile or the
+   * response carries no `workspaceRouting.backendOrigin`; every other field is preserved.
+   */
+  async #readNativeAccount(request: JsonRpcRequest): Promise<void> {
+    let response: JsonObject;
+    try {
+      response = await this.#requestOfficial(
+        "account/read",
+        isRecord(request.params) ? request.params : {},
+      );
+    } catch {
+      await this.#writer.json(
+        rpcError(request, -32001, "Official request failed; retry explicitly"),
+      );
+      return;
+    }
+    const proxy = this.#options.desktopProxy;
+    const result = isRecord(response.result) ? response.result : undefined;
+    const routing =
+      result && isRecord(result.workspaceRouting) ? result.workspaceRouting : undefined;
+    if (!proxy?.active || !result || !routing || typeof routing.backendOrigin !== "string") {
+      await this.#writer.json({ ...response, id: request.id });
+      return;
+    }
+    this.#traceNativePicker({
+      event: "desktop-proxy/account-read",
+      from: routing.backendOrigin,
+      to: proxy.origin,
+    });
+    await this.#writer.json({
+      ...response,
+      id: request.id,
+      result: {
+        ...result,
+        workspaceRouting: { ...routing, backendOrigin: proxy.origin },
+      },
     });
   }
 
@@ -2856,6 +2956,18 @@ export class AppServerHost {
    * so replayed history agrees with the live refresh stream.
    */
   #runningSubagentTurns(thread: ExternalThread): JsonObject[] {
+    if (thread.record.subagent) {
+      this.#traceNativePicker({
+        event: "subagent/history",
+        child: traceRef(thread.id),
+        running: thread.running,
+        turns: thread.turns.map((turn) => ({
+          id: traceRef(isRecord(turn) && typeof turn.id === "string" ? turn.id : null),
+          status: isRecord(turn) && typeof turn.status === "string" ? turn.status : null,
+          items: isRecord(turn) && Array.isArray(turn.items) ? turn.items.length : null,
+        })),
+      });
+    }
     if (!thread.record.subagent || !thread.running) return thread.turns;
     const last = thread.turns.at(-1);
     if (!isRecord(last)) return thread.turns;
@@ -2956,18 +3068,6 @@ export class AppServerHost {
         const matched = catalog.value.commands
           .toSorted((left, right) => right.invocation.length - left.invocation.length)
           .find((command) => {
-            if (thread.record.subagent) {
-              this.#traceNativePicker({
-                event: "subagent/history",
-                child: traceRef(thread.id),
-                running: thread.running,
-                turns: thread.turns.map((turn) => ({
-                  id: traceRef(isRecord(turn) && typeof turn.id === "string" ? turn.id : null),
-                  status: isRecord(turn) && typeof turn.status === "string" ? turn.status : null,
-                  items: isRecord(turn) && Array.isArray(turn.items) ? turn.items.length : null,
-                })),
-              });
-            }
             if (commandText === command.invocation) return true;
             return (
               command.argumentMode === "text" && commandText.startsWith(`${command.invocation} `)

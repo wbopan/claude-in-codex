@@ -26,6 +26,7 @@ import {
   harnessPluginRouteSchema,
   harnessCommandDescriptorSchema,
   harnessIdSchema,
+  harnessInspectionSchema,
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
@@ -35,6 +36,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { AppServerHost } from "../src/app-server-host.js";
+import type { HarnessUsageReport } from "../src/desktop-usage-buckets.js";
 import {
   SingleNativeCodexAccount,
   type CodexAccountControl,
@@ -237,6 +239,8 @@ function createFixture(
       OfficialAppServerConnection | Promise<OfficialAppServerConnection>;
     accountControl?: CodexAccountControl;
     officialRuntimeScope?: OfficialRuntimeScope;
+    desktopProxy?: { origin: string; active: boolean };
+    desktopUsage?: { attach(source: () => Promise<HarnessUsageReport[]>): void };
   } = {},
 ) {
   const adapter =
@@ -288,6 +292,8 @@ function createFixture(
       : {}),
     ...(options.accountControl ? { accountControl: options.accountControl } : {}),
     ...(options.officialRuntimeScope ? { officialRuntimeScope: options.officialRuntimeScope } : {}),
+    ...(options.desktopProxy ? { desktopProxy: options.desktopProxy } : {}),
+    ...(options.desktopUsage ? { desktopUsage: options.desktopUsage } : {}),
   });
   const running = host.run();
   void running.then(
@@ -1295,6 +1301,189 @@ describe("AppServerHost HarnessAdapter projection", () => {
       await expect(
         fixture.collector.waitFor((message) => message.id === 912),
       ).resolves.toMatchObject({ result: { account: null } });
+    } finally {
+      await stopFixture(fixture);
+    }
+  });
+
+  describe("Desktop backend proxy", () => {
+    const officialAccount = {
+      account: { type: "chatgpt", email: "native@example.com", futureField: "kept" },
+      requiresOpenaiAuth: false,
+      workspaceRouting: {
+        mode: "workspace",
+        backendOrigin: "https://chatgpt.com",
+        futureField: "kept",
+      },
+    };
+
+    it("publishes the proxy origin as backendOrigin while the proxy is active", async () => {
+      const fixture = createFixture({
+        desktopProxy: { origin: "https://127.0.0.1:44301", active: true },
+        environment: { CODEXHOST_NATIVE_PICKER_TRACE: "1" },
+      });
+      try {
+        await fixture.ready;
+        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
+        const official = await readJsonLine(fixture.official.stdin);
+        expect(official).toMatchObject({ method: "account/read", params: {} });
+        expect(String(official.id)).toMatch(/^codexhost:official:/);
+        fixture.official.stdout.write(
+          `${JSON.stringify({ id: official.id, result: officialAccount })}\n`,
+        );
+        await expect(fixture.collector.waitFor((message) => message.id === 912)).resolves.toEqual({
+          id: 912,
+          result: {
+            ...officialAccount,
+            workspaceRouting: {
+              ...officialAccount.workspaceRouting,
+              backendOrigin: "https://127.0.0.1:44301",
+            },
+          },
+        });
+        const trace = readFileSync(
+          path.join(fixture.mappingStoreDirectory, "native-picker-trace.jsonl"),
+          "utf8",
+        );
+        expect(trace).toContain(
+          '"event":"desktop-proxy/account-read","from":"https://chatgpt.com","to":"https://127.0.0.1:44301"',
+        );
+      } finally {
+        await stopFixture(fixture);
+      }
+    });
+
+    it("forwards account/read verbatim while the proxy is inactive", async () => {
+      const fixture = createFixture({
+        desktopProxy: { origin: "https://127.0.0.1:44301", active: false },
+      });
+      try {
+        await fixture.ready;
+        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
+        expect(await readJsonLine(fixture.official.stdin)).toEqual({
+          id: 912,
+          method: "account/read",
+          params: {},
+        });
+        fixture.official.stdout.write(`${JSON.stringify({ id: 912, result: officialAccount })}\n`);
+        await expect(fixture.collector.waitFor((message) => message.id === 912)).resolves.toEqual({
+          id: 912,
+          result: officialAccount,
+        });
+      } finally {
+        await stopFixture(fixture);
+      }
+    });
+
+    it("falls open when the proxy dies mid-flight or routing is absent", async () => {
+      const proxy = { origin: "https://127.0.0.1:44301", active: true };
+      const fixture = createFixture({ desktopProxy: proxy });
+      try {
+        await fixture.ready;
+        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
+        const first = await readJsonLine(fixture.official.stdin);
+        proxy.active = false;
+        fixture.official.stdout.write(
+          `${JSON.stringify({ id: first.id, result: officialAccount })}\n`,
+        );
+        await expect(fixture.collector.waitFor((message) => message.id === 912)).resolves.toEqual({
+          id: 912,
+          result: officialAccount,
+        });
+
+        proxy.active = true;
+        writeRequest(fixture.desktopInput, { id: 913, method: "account/read", params: {} });
+        const second = await readJsonLine(fixture.official.stdin);
+        fixture.official.stdout.write(
+          `${JSON.stringify({ id: second.id, result: { account: null } })}\n`,
+        );
+        await expect(fixture.collector.waitFor((message) => message.id === 913)).resolves.toEqual({
+          id: 913,
+          result: { account: null },
+        });
+
+        writeRequest(fixture.desktopInput, { id: 914, method: "account/read", params: {} });
+        const third = await readJsonLine(fixture.official.stdin);
+        fixture.official.stdout.write(
+          `${JSON.stringify({ id: third.id, error: { code: -32600, message: "native" } })}\n`,
+        );
+        await expect(fixture.collector.waitFor((message) => message.id === 914)).resolves.toEqual({
+          id: 914,
+          error: { code: -32600, message: "native" },
+        });
+      } finally {
+        await stopFixture(fixture);
+      }
+    });
+
+    it("answers -32001 when the official backend is unavailable", async () => {
+      const createOfficialConnection = vi.fn(() => {
+        throw new Error("synthetic startup failure");
+      });
+      const fixture = createFixture({
+        createOfficialConnection,
+        desktopProxy: { origin: "https://127.0.0.1:44301", active: true },
+      });
+      try {
+        const threadId = await startPiThread(fixture);
+        const turnId = await startPiTurn(fixture, threadId);
+        fixture.adapter.sessions[0]?.succeedTurn();
+        await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
+        await expect(
+          fixture.collector.waitFor((message) => message.id === 912),
+        ).resolves.toMatchObject({ id: 912, error: { code: -32001 } });
+        expect(fixture.desktopInput.destroyed).toBe(false);
+      } finally {
+        fixture.host.close();
+        await fixture.running;
+        rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("reports Desktop usage per Harness with account telemetry", async () => {
+    const adapter = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
+    const account = {
+      email: "pi@example.com",
+      credits: {
+        usedPercent: 30,
+        periodType: "five_hour" as const,
+        resetsAt: "2026-09-22T07:30:00Z",
+        productUsage: [{ product: "7-day window", usagePercent: 12 }],
+      },
+    };
+    adapter.inspectAccount = async () => account;
+    let source: (() => Promise<HarnessUsageReport[]>) | undefined;
+    const fixture = createFixture({
+      externalAdapters: new Map<ExternalHarnessId, HarnessAdapter>([["pi", adapter]]),
+      desktopUsage: {
+        attach: (value) => {
+          source = value;
+        },
+      },
+    });
+    try {
+      await fixture.ready;
+      if (!source) throw new Error("usage source was not attached");
+      const reports = await source();
+      const catalog = harnessInspectionSchema.parse(await adapter.inspect({}));
+      if (catalog.status !== "ready") throw new Error("fake catalog not ready");
+      expect(reports).toEqual([
+        {
+          harnessName: "pi",
+          limitNames: [
+            encodeExternalTransportSelection("pi", {}),
+            ...catalog.catalog.models.map((model) =>
+              encodeExternalTransportSelection("pi", { model: model.ref }),
+            ),
+          ],
+          account,
+        },
+      ]);
+
+      delete (adapter as { inspectAccount?: unknown }).inspectAccount;
+      await expect(source()).resolves.toEqual([]);
     } finally {
       await stopFixture(fixture);
     }
