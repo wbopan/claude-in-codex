@@ -70,7 +70,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
-import { traceClaude } from "./debug-trace.js";
+import { traceClaude, traceRef } from "./debug-trace.js";
 import { ClaudeCodeExecutableError, resolveClaudeCodeExecutable } from "./command.js";
 import { ClaudePendingSessions, isPendingClaudeSession } from "./pending-session.js";
 import { forkClaudeSession } from "./claude-fork.js";
@@ -2000,6 +2000,12 @@ class ClaudeHarnessSession implements HarnessSession {
   #publishBackgroundTranscriptChange(callId: string): void {
     if (this.#phase !== "open") return;
     const nativeSubagentId = this.#occupancy.nativeSubagentIdFor(callId);
+    traceClaude({
+      event: "claude/subagent",
+      kind: "transcript.changed",
+      background: true,
+      native: nativeSubagentId !== undefined,
+    });
     if (nativeSubagentId) this.#event({ type: "subagent.transcript.changed", nativeSubagentId });
   }
 
@@ -2015,6 +2021,8 @@ class ClaudeHarnessSession implements HarnessSession {
       status,
       native: nativeSubagentId !== undefined,
       hasCallId: callId !== undefined,
+      task: traceRef(nativeSubagentId ?? null),
+      call: traceRef(callId ?? null),
     });
     // The Subagent stopped, but its Root continuation runs in a later Segment.
     this.#occupancy.notify(callId, nativeSubagentId);

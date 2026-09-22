@@ -3238,6 +3238,11 @@ export class AppServerHost {
           candidate.nativeSessionRef?.nativeSessionId ===
             thread.record.nativeSessionRef?.nativeSessionId,
       );
+      this.#traceNativePicker({
+        event: "subagent/transcript-changed",
+        child: record ? traceRef(record.hostThreadId) : null,
+        loaded: record ? this.#externalRuntime.get(record.hostThreadId) !== undefined : false,
+      });
       if (record) await this.#refreshOpenSubagentThread(record.hostThreadId, false);
       return;
     }
@@ -3430,6 +3435,17 @@ export class AppServerHost {
       return;
     }
     const emittedAtMs = Date.now();
+    this.#traceNativePicker({
+      event: "subagent/refresh",
+      child: traceRef(threadId),
+      terminal,
+      turns: child.turns.length,
+      items: child.turns.reduce(
+        (count, turn) => count + (Array.isArray(turn.items) ? turn.items.length : 0),
+        0,
+      ),
+      previousItems: previousItems.size,
+    });
     for (const turn of child.turns) {
       if (typeof turn.id !== "string" || !Array.isArray(turn.items)) continue;
       const changedItems = turn.items.filter(

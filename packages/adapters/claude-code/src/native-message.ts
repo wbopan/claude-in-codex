@@ -346,6 +346,9 @@ function userMessageText(content: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+/** SDK task_type of a spawned or resumed Subagent; Bash and workflow tasks use other types. */
+const AGENT_TASK_TYPE = "local_agent";
+
 export function parseClaudeTaskNotification(
   message: unknown,
 ): Extract<ClaudeTurnEvent, { type: "subagent.settled" }> | null {
@@ -408,20 +411,48 @@ export class ClaudeNativeTurnAccumulator {
   #textConflict = false;
   #tools = new Map<string, ActiveNativeTool>();
   /**
-   * Agent calls delegated before this Segment. A background Subagent keeps
-   * nesting its messages under the original call id long after the Root
-   * Segment that issued it has ended, so later accumulators must recognise it
-   * without treating it as an open Tool of their own.
+   * Every Agent call this accumulator knows, including calls delegated before
+   * this Segment. A background Subagent keeps nesting its messages under the
+   * original call id long after the Tool returned and the Root Segment that
+   * issued it has ended, so the id must stay recognisable without being an open
+   * Tool.
    */
   readonly #earlierSubagentCalls: Set<string>;
+  /**
+   * SDK tasks that are not Subagents (Bash commands, workflows), shared by
+   * reference across Segments so a task announced in one Segment is still
+   * recognised when it settles in a later one.
+   */
+  readonly #nonAgentTasks: Set<string>;
 
-  constructor(options: { provider?: string; subagentCallIds?: Iterable<string> } = {}) {
+  constructor(
+    options: {
+      provider?: string;
+      subagentCallIds?: Iterable<string>;
+      nonAgentTaskIds?: Set<string>;
+    } = {},
+  ) {
     this.#provider = options.provider;
     this.#earlierSubagentCalls = new Set(options.subagentCallIds ?? []);
+    this.#nonAgentTasks = options.nonAgentTaskIds ?? new Set();
   }
 
   requestCancel(): void {
     this.#cancelRequested = true;
+  }
+
+  #isSubagentCall(callId: string): boolean {
+    return this.#tools.get(callId)?.subagent === true || this.#earlierSubagentCalls.has(callId);
+  }
+
+  #observeTaskType(task: Record<string, unknown>): void {
+    if (
+      typeof task.task_id === "string" &&
+      typeof task.task_type === "string" &&
+      task.task_type !== AGENT_TASK_TYPE
+    ) {
+      this.#nonAgentTasks.add(task.task_id);
+    }
   }
 
   consume(message: unknown): ClaudeNativeMessageResult {
@@ -434,8 +465,7 @@ export class ClaudeNativeTurnAccumulator {
     const nested = parentCallId !== null;
     if (
       parentCallId &&
-      (this.#tools.get(parentCallId)?.subagent === true ||
-        this.#earlierSubagentCalls.has(parentCallId)) &&
+      this.#isSubagentCall(parentCallId) &&
       (message.type === "assistant" || message.type === "user")
     ) {
       events.push({ type: "subagent.transcript.changed", callId: parentCallId });
@@ -549,14 +579,16 @@ export class ClaudeNativeTurnAccumulator {
     if (message.subtype !== "background_tasks_changed" || !Array.isArray(message.tasks)) return;
     const nativeSubagentIds = message.tasks.flatMap((task) => {
       if (!isRecord(task)) return [];
+      this.#observeTaskType(task);
       const taskId = boundedString(task.task_id, SUBAGENT_DESCRIPTION_LIMIT);
-      return taskId ? [taskId] : [];
+      return taskId && !this.#nonAgentTasks.has(taskId) ? [taskId] : [];
     });
     events.push({ type: "subagents.live", nativeSubagentIds });
   }
 
   #consumeTaskLifecycle(message: Record<string, unknown>, events: ClaudeNativeEvent[]): void {
     if (message.type !== "system") return;
+    if (message.subtype === "task_started") this.#observeTaskType(message);
     if (message.subtype === "task_notification") {
       const agentId = boundedString(message.task_id, SUBAGENT_DESCRIPTION_LIMIT);
       const status = taskStatus(message.status);
@@ -565,6 +597,14 @@ export class ClaudeNativeTurnAccumulator {
       }
       const resultSummary = boundedString(message.summary, SUBAGENT_SUMMARY_LIMIT);
       const callId = boundedString(message.tool_use_id, SUBAGENT_DESCRIPTION_LIMIT);
+      // The SDK also notifies for Bash tasks, including every command a Subagent
+      // runs; those never settle a Subagent.
+      if (
+        this.#nonAgentTasks.has(agentId) ||
+        (callId && this.#tools.get(callId)?.subagent === false)
+      ) {
+        return;
+      }
       events.push({
         type: "subagent.settled",
         nativeSubagentId: agentId,
@@ -737,6 +777,7 @@ export class ClaudeNativeTurnAccumulator {
       }
       const subagent = SUBAGENT_TOOLS.has(block.name);
       this.#tools.set(block.id, { name: block.name, subagent });
+      if (subagent) this.#earlierSubagentCalls.add(block.id);
       if (subagent) {
         const prompt = subagentPrompt(argumentsResult.data);
         const role = subagentRole(argumentsResult.data);

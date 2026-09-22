@@ -403,6 +403,8 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   #idleAccumulator: ClaudeNativeTurnAccumulator | null = null;
   /** Agent calls seen in this Session, so later Segments still attribute nested messages. */
   readonly #subagentCallIds = new Set<string>();
+  /** SDK task ids that are not Subagents, learnt from task_started and the background level. */
+  readonly #nonAgentTaskIds = new Set<string>();
   #closePromise: Promise<void> | null = null;
   #consumeTask: Promise<void> | null = null;
   #stderrTail = "";
@@ -454,6 +456,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     return new ClaudeNativeTurnAccumulator({
       ...(this.#provider ? { provider: this.#provider } : {}),
       subagentCallIds: this.#subagentCallIds,
+      nonAgentTaskIds: this.#nonAgentTaskIds,
     });
   }
 
@@ -1022,6 +1025,17 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     try {
       for await (const message of activeQuery) {
         this.#observeBackgroundTasks(message);
+        const raw: unknown = message;
+        if (isRecord(raw) && raw.type === "system" && typeof raw.subtype === "string") {
+          traceClaude({
+            event: "claude/system-message",
+            subtype: raw.subtype,
+            status: typeof raw.status === "string" ? raw.status : null,
+            task: traceRef(typeof raw.task_id === "string" ? raw.task_id : null),
+            call: traceRef(typeof raw.tool_use_id === "string" ? raw.tool_use_id : null),
+            nested: typeof raw.parent_tool_use_id === "string",
+          });
+        }
         const permissionMode = permissionModeFromMessage(message);
         if (permissionMode && permissionMode !== this.#permissionMode) {
           this.#permissionMode = permissionMode;

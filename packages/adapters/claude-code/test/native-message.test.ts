@@ -564,6 +564,53 @@ describe("Claude native Turn interpretation", () => {
     ).toEqual([{ type: "subagents.live", nativeSubagentIds: [] }]);
   });
 
+  it("ignores task_notification for Bash tasks, including a Subagent's own commands", () => {
+    const turn = new ClaudeNativeTurnAccumulator({ subagentCallIds: ["agent-0"] });
+    turn.consume(toolUse("Bash", "bash-1", { command: "sleep 60" }));
+    const notification = (taskId: string, callId: string) => ({
+      type: "system",
+      subtype: "task_notification",
+      task_id: taskId,
+      tool_use_id: callId,
+      status: "completed",
+      summary: "Command finished",
+    });
+
+    // A backgrounded Root Bash task and a Bash task inside a Subagent.
+    expect(turn.consume(notification("b1c2d3e4", "bash-1")).events).toEqual([]);
+    expect(
+      turn.consume({
+        type: "system",
+        subtype: "task_started",
+        task_id: "b9c8d7e6",
+        tool_use_id: "bash-nested",
+        task_type: "local_bash",
+        description: "sleep 10; echo STEP_1",
+      }).events,
+    ).toEqual([]);
+    expect(turn.consume(notification("b9c8d7e6", "bash-nested")).events).toEqual([]);
+    // A task announced through the background level is recognised across Segments.
+    const shared = new Set<string>();
+    const first = new ClaudeNativeTurnAccumulator({ nonAgentTaskIds: shared });
+    first.consume({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [{ task_id: "bcafe123", task_type: "local_bash", description: "sleep 60" }],
+    });
+    const second = new ClaudeNativeTurnAccumulator({ nonAgentTaskIds: shared });
+    expect(second.consume(notification("bcafe123", "bash-2")).events).toEqual([]);
+    // An Agent call delegated in an earlier Segment still settles.
+    expect(turn.consume(notification("a08c4ffa3d980cff8", "agent-0")).events).toEqual([
+      {
+        type: "subagent.settled",
+        nativeSubagentId: "a08c4ffa3d980cff8",
+        callId: "agent-0",
+        status: "completed",
+        resultSummary: "Command finished",
+      },
+    ]);
+  });
+
   it("reports the live background Subagent level and each Segment start", () => {
     const turn = new ClaudeNativeTurnAccumulator();
 
