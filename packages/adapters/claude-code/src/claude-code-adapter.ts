@@ -995,6 +995,7 @@ class ClaudeHarnessSession implements HarnessSession {
       this.#sessionId === sessionId &&
       (this.#phase !== "open" ||
         this.#active !== null ||
+        this.#occupancy.unsettled ||
         this.#acceptingTurn ||
         this.#configurationTask !== null ||
         this.#readingHistory)
@@ -1003,6 +1004,26 @@ class ClaudeHarnessSession implements HarnessSession {
 
   async prepareRollback(sessionId: string): Promise<HarnessResult<unknown>> {
     return this.#sessionId === sessionId ? this.readSnapshot() : { ok: true, value: null };
+  }
+
+  async stopSubagent(
+    sessionId: string,
+    cwd: string,
+    id: string,
+  ): Promise<HarnessResult<void> | null> {
+    if (this.#sessionId !== sessionId || this.#cwd !== path.resolve(cwd)) return null;
+    if (this.#phase !== "open" || !this.#transport?.stopTask) {
+      return { ok: false, error: invalidState("Claude Subagent's owning Session is not running") };
+    }
+    const timeout = rejectAfter(this.#cancelTimeoutMs, "Claude Subagent stop timed out");
+    try {
+      await Promise.race([this.#transport.stopTask(id), timeout.promise]);
+      return { ok: true, value: undefined };
+    } catch {
+      return { ok: false, error: invalidState("Claude Subagent could not be stopped") };
+    } finally {
+      timeout.cancel();
+    }
   }
 
   close(): Promise<void> {
@@ -1304,8 +1325,8 @@ class ClaudeHarnessSession implements HarnessSession {
       return { ok: true, value: { cancellationRequested: true } };
     }
     active.cancellationRequested = true;
-    if (active.held) {
-      this.#finish(active, { status: "cancelled", reason: "Cancelled by user" });
+    if (active.held && !active.rootSegmentActive) {
+      this.#finish(active, { status: "cancelled", reason: "Cancelled by user" }, true);
       return { ok: true, value: { cancellationRequested: true } };
     }
     const timeout = rejectAfter(this.#cancelTimeoutMs, "Claude Code interrupt timed out");
@@ -1360,6 +1381,7 @@ class ClaudeHarnessSession implements HarnessSession {
     const active = this.#active;
     if (active)
       this.#finishFailed(active, invalidState("Claude Code Session closed during active Turn"));
+    this.#interruptBackgroundSubagents("interrupted");
     this.#phase = "closed";
     this.#channel.end();
     this.#onClosed();
@@ -2007,7 +2029,7 @@ class ClaudeHarnessSession implements HarnessSession {
     } else if (result.status === "succeeded") {
       this.#finish(active, { status: "succeeded" });
     } else if (result.status === "cancelled") {
-      this.#finish(active, { status: "cancelled", reason: result.reason });
+      this.#finish(active, { status: "cancelled", reason: result.reason }, true);
     } else {
       this.#finishFailed(active, transportFailure(result.kind));
     }
@@ -2325,7 +2347,7 @@ class ClaudeHarnessSession implements HarnessSession {
     this.#clearContinuationQuiescence();
   }
 
-  #finish(active: ActiveTurn, outcome: TurnOutcome): void {
+  #finish(active: ActiveTurn, outcome: TurnOutcome, preserveBackground = false): void {
     if (this.#active !== active) return;
     this.#requestUsageBoundary += 1;
     this.#clearCancelEscalation();
@@ -2339,7 +2361,7 @@ class ClaudeHarnessSession implements HarnessSession {
     const itemOutcome: HostItemOutcome = outcome;
     if (active.compactionItem) this.#completeCompactionItem(active, itemOutcome);
     active.tools.finalize(active.command.turnId, itemOutcome);
-    active.subagents.finalize(active.command.turnId, itemOutcome);
+    active.subagents.finalize(active.command.turnId, itemOutcome, preserveBackground);
     for (const messageId of [...active.reasoningItems.keys()]) {
       this.#completeReasoning(active, messageId, itemOutcome);
     }
@@ -2352,7 +2374,7 @@ class ClaudeHarnessSession implements HarnessSession {
       this.#armContinuationQuiescence(active);
       return;
     }
-    if (outcome.status !== "succeeded") {
+    if (outcome.status !== "succeeded" && !preserveBackground) {
       this.#interruptBackgroundSubagents(outcome.status === "cancelled" ? "interrupted" : "failed");
     }
     const checkpoint = active.checkpointId
@@ -2376,7 +2398,9 @@ class ClaudeHarnessSession implements HarnessSession {
       outcome: checkpoint ? { ...outcome, checkpoint } : outcome,
     });
     this.#active = null;
-    this.#occupancy.clear();
+    // A cancelled Root turn does not end its Session's background tasks. Keep
+    // their identities for settlements, replacement turns and rollback guards.
+    if (!preserveBackground) this.#occupancy.clear();
     this.#transport?.setIdleLive(false);
     active.resolveCompletion();
   }
@@ -2441,6 +2465,7 @@ class ClaudeHarnessSession implements HarnessSession {
     this.#contextRefreshWake = null;
     const active = this.#active;
     if (active) this.#finishFailed(active, error);
+    this.#interruptBackgroundSubagents("failed");
     this.#phase = "faulted";
     this.#event({ type: "session.faulted", error });
     this.#channel.end();
@@ -2457,6 +2482,24 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly commandCatalog = claudeCommandCatalog;
   readonly harnessId: HarnessId = claudeCodeHarnessId;
   readonly subagents = {
+    stop: async (input: {
+      parent: NativeSessionRef;
+      nativeSubagentId: string;
+      cwd: string;
+    }): Promise<HarnessResult<void>> => {
+      if (input.parent.harnessId !== this.harnessId || !input.nativeSubagentId.trim()) {
+        return { ok: false, error: invalidState("Claude Code Subagent reference is invalid") };
+      }
+      for (const session of this.#sessions) {
+        const stopped = await session.stopSubagent(
+          input.parent.nativeSessionId,
+          input.cwd,
+          input.nativeSubagentId,
+        );
+        if (stopped) return stopped;
+      }
+      return { ok: false, error: invalidState("Claude Subagent's owning Session is not loaded") };
+    },
     readSnapshot: async (input: {
       parent: NativeSessionRef;
       nativeSubagentId: string;
@@ -2738,7 +2781,8 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         ok: false,
         error: {
           code: "sessionBusy",
-          message: "Claude Code Session is busy during rollback",
+          message:
+            "Claude Code Session has active work; wait for background agents to finish before editing history",
           retryable: true,
         },
       };

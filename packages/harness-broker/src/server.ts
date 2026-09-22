@@ -460,13 +460,21 @@ export async function startHarnessBrokerServer(input: {
           ...(parsed.refresh !== undefined ? { refresh: parsed.refresh } : {}),
         });
       }
-      if (request.method === "adapter.subagent.readSnapshot") {
+      if (
+        request.method === "adapter.subagent.readSnapshot" ||
+        request.method === "adapter.subagent.stop"
+      ) {
         const subagents = input.adapter.subagents;
         if (!subagents)
           return { ok: false, error: harnessError("Harness subagents are unavailable", false) };
         const params = subagentReadSnapshotSchema.parse(request.params);
         if (params.parent.harnessId !== input.adapter.harnessId)
           return { ok: false, error: protocolError("Subagent parent belongs to another Harness") };
+        if (request.method === "adapter.subagent.stop") {
+          return subagents.stop
+            ? subagents.stop(params)
+            : { ok: false, error: harnessError("Harness cannot stop individual subagents", false) };
+        }
         return subagents.readSnapshot(params);
       }
       if (request.method === "adapter.open") {

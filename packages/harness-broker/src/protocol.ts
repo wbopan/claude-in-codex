@@ -11,6 +11,7 @@ export const harnessBrokerMethodSchema = z.enum([
   "adapter.inspectAccount",
   "adapter.open",
   "adapter.subagent.readSnapshot",
+  "adapter.subagent.stop",
   "session.readSnapshot",
   "session.refreshUsage",
   "session.execute",

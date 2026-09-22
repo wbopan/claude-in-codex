@@ -489,6 +489,9 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
           persistSession: true,
           includePartialMessages: true,
           forwardSubagentText: true,
+          // A desktop Stop/steer interrupts the Root turn. Background tasks are
+          // session-owned and are stopped explicitly when the session closes.
+          perTaskStopAffordance: true,
           env: withNodeRuntimeOnPath({
             ...this.#environment,
             CLAUDE_CODE_ENTRYPOINT: SESSION_ENTRYPOINT,
@@ -702,8 +705,10 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     });
     const active = this.#active;
     const activeQuery = this.#query;
-    if (!active || !activeQuery) throw new Error("Claude SDK transport has no active Turn");
-    active.accumulator.requestCancel();
+    const accumulator = active?.accumulator ?? (this.#idleLive ? this.#idleAccumulator : null);
+    if (!accumulator || !activeQuery) throw new Error("Claude SDK transport has no active Turn");
+    // Held Root turns can be streaming a continuation through the idle handler.
+    accumulator.requestCancel();
     const timeout = rejectAfter(this.#abortTimeoutMs, INTERRUPT_TIMEOUT_MESSAGE);
     try {
       await Promise.race([activeQuery.interrupt(), timeout.promise]);
@@ -713,6 +718,13 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     } finally {
       timeout.cancel();
     }
+  }
+
+  async stopTask(nativeSubagentId: string): Promise<void> {
+    if (this.#closePromise || !this.#query || !this.#backgroundTasks.has(nativeSubagentId)) {
+      throw new Error("Claude background task is not running in this Session");
+    }
+    await this.#query.stopTask(nativeSubagentId);
   }
 
   close(): Promise<void> {

@@ -44,6 +44,51 @@ afterEach(async () => {
 });
 
 describe("macOS Aqua Harness broker", () => {
+  it("routes a single Subagent stop to its parent and rejects another Harness", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "cx-stop-agent-"));
+    roots.push(root);
+    const descriptorPath = path.join(root, "broker.json");
+    const adapter = Object.assign(new FakeHarnessAdapter(harnessIdSchema.parse("claude-code")), {
+      subagents: {
+        readSnapshot: vi.fn(async () => ({ ok: true as const, value: { turns: [] } })),
+        stop: vi.fn(async () => ({ ok: true as const, value: undefined })),
+      },
+    });
+    const server = await startHarnessBrokerServer({
+      descriptorPath,
+      socketPath:
+        process.platform === "win32"
+          ? `\\\\.\\pipe\\cx-stop-${randomUUID()}`
+          : path.join(root, "b.sock"),
+      adapter,
+    });
+    const client = new BrokeredHarnessAdapter({ descriptorPath });
+    const input = {
+      parent: {
+        harnessId: harnessIdSchema.parse("claude-code"),
+        nativeSessionId: randomUUID(),
+        formatVersion: 1,
+      },
+      nativeSubagentId: "child-1",
+      cwd: "/synthetic",
+    };
+    try {
+      await expect(client.subagents.stop(input)).resolves.toMatchObject({ ok: true });
+      expect(adapter.subagents.stop).toHaveBeenCalledExactlyOnceWith(input);
+      await expect(
+        client.subagents.stop({
+          ...input,
+          parent: { ...input.parent, harnessId: harnessIdSchema.parse("pi") },
+        }),
+      ).resolves.toMatchObject({ ok: false });
+      expect(adapter.subagents.stop).toHaveBeenCalledOnce();
+      expect(adapter.sessions).toHaveLength(0);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("discovers a newly started broker and reconnects on demand after its generation changes", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "cx-broker-restart-"));
     roots.push(root);

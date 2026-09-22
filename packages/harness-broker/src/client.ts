@@ -613,6 +613,20 @@ export class BrokeredHarnessAdapter implements HarnessAdapter {
   #closed = false;
 
   readonly subagents = {
+    stop: async (
+      input: Parameters<NonNullable<NonNullable<HarnessAdapter["subagents"]>["stop"]>>[0],
+    ) => {
+      try {
+        return parseHarnessResult<undefined>(
+          await (await this.#connect()).request("adapter.subagent.stop", input),
+        );
+      } catch (error) {
+        return {
+          ok: false as const,
+          error: unavailable(error instanceof Error ? error.message : String(error)),
+        };
+      }
+    },
     readSnapshot: async (
       input: Parameters<NonNullable<HarnessAdapter["subagents"]>["readSnapshot"]>[0],
     ) => {

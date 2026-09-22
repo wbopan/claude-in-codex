@@ -534,6 +534,12 @@ export interface HarnessSession {
 }
 
 export interface HarnessSubagentCapability {
+  /** Stop one live task in its owning Session without interrupting its siblings. */
+  stop?(input: {
+    parent: NativeSessionRef;
+    nativeSubagentId: string;
+    cwd: string;
+  }): Promise<HarnessResult<void>>;
   readSnapshot(input: {
     parent: NativeSessionRef;
     nativeSubagentId: string;

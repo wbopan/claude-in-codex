@@ -1195,6 +1195,7 @@ describe("ClaudeSdkTransport abort", () => {
   it("interrupts the active Query without closing the transport", async () => {
     const value = fixture();
     await value.transport.start();
+    expect(options(value).perTaskStopAffordance).toBe(true);
     const turn = value.transport.runTurn(
       "synthetic",
       "00000000-0000-4000-8000-000000000030",
@@ -1211,6 +1212,59 @@ describe("ClaudeSdkTransport abort", () => {
     await expect(turn).resolves.toEqual({ status: "cancelled", reason: "aborted_streaming" });
     expect(value.onFault).not.toHaveBeenCalled();
     await value.transport.close();
+  });
+
+  it("interrupts a held Root continuation through the idle handler", async () => {
+    const value = fixture();
+    await value.transport.start();
+    const onEvent = vi.fn();
+    const onTerminal = vi.fn();
+    value.transport.setIdleTurnHandler({ onEvent, onTerminal });
+    value.transport.setIdleLive(true);
+    pushPartialText(value.fakeQuery, "continuation");
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalled());
+    await value.transport.abort();
+    value.fakeQuery.push({
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      terminal_reason: "aborted_streaming",
+    } as unknown as SDKMessage);
+    await vi.waitFor(() =>
+      expect(onTerminal).toHaveBeenCalledWith({
+        status: "cancelled",
+        reason: "aborted_streaming",
+      }),
+    );
+    expect(value.fakeQuery.interrupt).toHaveBeenCalledOnce();
+    expect(value.onFault).not.toHaveBeenCalled();
+    await value.transport.close();
+  });
+
+  it("stops only the requested background task and keeps the Query usable", async () => {
+    const value = fixture();
+    await value.transport.start();
+    for (const task_id of ["agent-one", "agent-two"]) {
+      value.fakeQuery.push({
+        type: "system",
+        subtype: "task_started",
+        task_id,
+      } as unknown as SDKMessage);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await value.transport.stopTask("agent-one");
+    expect(value.fakeQuery.stopTask).toHaveBeenCalledExactlyOnceWith("agent-one");
+    expect(value.fakeQuery.interrupt).not.toHaveBeenCalled();
+    await expect(value.transport.stopTask("unknown-agent")).rejects.toThrow("not running");
+    const turn = value.transport.runTurn(
+      "continue",
+      "00000000-0000-4000-8000-000000000032",
+      () => undefined,
+    );
+    completeTurn(value.fakeQuery);
+    await expect(turn).resolves.toMatchObject({ status: "succeeded" });
+    await value.transport.close();
+    expect(value.fakeQuery.stopTask).toHaveBeenLastCalledWith("agent-two");
   });
 
   it("closes the transport when interrupt does not settle", async () => {

@@ -48,6 +48,7 @@ class FakeClaudeTransport implements ClaudeTurnTransport {
     this.idleLive = live;
   }
   readonly abort = vi.fn(async () => undefined);
+  readonly stopTask = vi.fn<(id: string) => Promise<void>>(async () => undefined);
   readonly close = vi.fn(async () => undefined);
   contextUsage: ClaudeTransportContextUsage | null = null;
   permissionMode: ClaudePermissionMode;
@@ -2068,56 +2069,110 @@ describe("Claude Code HarnessAdapter", () => {
     await session.close();
   });
 
-  it("cancels a held Root Turn without waiting for background Subagents", async () => {
-    const { adapter, transports } = fixture();
-    const session = await openSession(adapter);
-    const iterator = session.outputs[Symbol.asyncIterator]();
+  it.each(["held", "streaming", "continuation", "launch-race"] as const)(
+    "preserves background Subagents across %s cancellation and the replacement Turn",
+    async (phase) => {
+      const { adapter, transports, dependencies } = fixture();
+      const session = await openSession(adapter);
+      const iterator = session.outputs[Symbol.asyncIterator]();
 
-    await session.execute(textTurn("delegate in background"));
-    await nextEvent(iterator);
-    await nextEvent(iterator);
-    await nextEvent(iterator);
-    const transport = transports[0];
-    if (!transport) throw new Error("Fake Claude transport was not created");
-    transport.event({
-      type: "subagent.started",
-      operation: "spawn",
-      callId: "agent-1",
-      description: "Inspect implementation",
-      background: true,
-    });
-    await nextEvent(iterator);
-    transport.event({
-      type: "subagent.completed",
-      callId: "agent-1",
-      isError: false,
-      continuesInBackground: true,
-      nativeSubagentId: "native-agent-1",
-      resultSummary: "Async agent launched successfully",
-    });
-    await nextEvent(iterator);
-    await nextEvent(iterator);
-    transport.finish({ status: "succeeded" });
-    await nextEvent(iterator);
+      await session.execute(textTurn("delegate in background"));
+      await nextEvent(iterator);
+      await nextEvent(iterator);
+      await nextEvent(iterator);
+      const transport = transports[0];
+      if (!transport) throw new Error("Fake Claude transport was not created");
+      transport.event({
+        type: "subagent.started",
+        operation: "spawn",
+        callId: "agent-1",
+        description: "Inspect implementation",
+        background: true,
+      });
+      await nextEvent(iterator);
+      if (phase === "launch-race") {
+        await session.execute({
+          type: "turn.cancel",
+          turnId: textTurn("delegate in background").turnId,
+        });
+      }
+      transport.event({
+        type: "subagent.completed",
+        callId: "agent-1",
+        isError: false,
+        continuesInBackground: true,
+        nativeSubagentId: "native-agent-1",
+        resultSummary: "Async agent launched successfully",
+      });
+      await nextEvent(iterator);
+      await nextEvent(iterator);
+      if (phase === "held" || phase === "continuation") {
+        transport.finish({ status: "succeeded" });
+        await nextEvent(iterator);
+      }
+      if (phase === "continuation") transport.event({ type: "segment.started" });
 
-    await expect(
-      session.execute({
-        type: "turn.cancel",
-        turnId: hostTurnIdSchema.parse("delegate in background"),
-      }),
-    ).resolves.toEqual({ ok: true, value: { cancellationRequested: true } });
-    expect(await nextEvent(iterator)).toMatchObject({
-      type: "subagent.state.changed",
-      nativeSubagentId: "native-agent-1",
-      status: "interrupted",
-    });
-    expect(await nextEvent(iterator)).toMatchObject({
-      type: "turn.completed",
-      outcome: { status: "cancelled" },
-    });
-    expect(transport.abort).not.toHaveBeenCalled();
-    await session.close();
-  });
+      await expect(
+        session.execute({
+          type: "turn.cancel",
+          turnId: hostTurnIdSchema.parse("delegate in background"),
+        }),
+      ).resolves.toEqual({ ok: true, value: { cancellationRequested: true } });
+      if (phase !== "held") {
+        transport.finish({ status: "cancelled", reason: "aborted_streaming" });
+        if (phase !== "continuation")
+          expect(await nextEvent(iterator)).toMatchObject({ type: "item.completed" });
+      }
+      expect(await nextEvent(iterator)).toMatchObject({
+        type: "turn.completed",
+        outcome: { status: "cancelled" },
+      });
+      expect(transport.abort).toHaveBeenCalledTimes(phase === "held" ? 0 : 1);
+      expect(transport.close).not.toHaveBeenCalled();
+
+      const parent = nativeSessionRefSchema.parse({
+        harnessId: "claude-code",
+        nativeSessionId: transport.sessionId,
+        formatVersion: 1,
+      });
+      await expect(
+        adapter.open({ kind: "rollbackLastTurn", sourceRef: parent, cwd: "/synthetic" }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "sessionBusy" },
+      });
+      expect(dependencies.forkSession).not.toHaveBeenCalled();
+
+      await expect(
+        adapter.subagents.stop({ parent, cwd: "/synthetic", nativeSubagentId: "native-agent-1" }),
+      ).resolves.toMatchObject({ ok: true });
+      expect(transport.stopTask).toHaveBeenCalledExactlyOnceWith("native-agent-1");
+      expect(transport.close).not.toHaveBeenCalled();
+
+      await expect(session.execute(textTurn("replacement"))).resolves.toMatchObject({ ok: true });
+      await nextEvent(iterator);
+      await nextEvent(iterator);
+      transport.finish({ status: "succeeded" });
+      await nextEvent(iterator);
+      expect(transport.idleLive).toBe(true);
+      transport.event({
+        type: "subagent.settled",
+        nativeSubagentId: "native-agent-1",
+        status: "completed",
+      });
+      expect(await nextEvent(iterator)).toMatchObject({
+        type: "subagent.state.changed",
+        status: "completed",
+      });
+      expect(await nextEvent(iterator)).toMatchObject({
+        type: "turn.completed",
+        turnId: "replacement",
+        outcome: { status: "succeeded" },
+      });
+      expect(transports).toHaveLength(1);
+      await session.close();
+    },
+  );
 
   it("keeps an existing Agent running when SendMessage returns", async () => {
     const { adapter, transports } = fixture();

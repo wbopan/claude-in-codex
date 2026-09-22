@@ -1767,6 +1767,106 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("stops an observed Subagent individually and blocks history edits while children run", async () => {
+    const adapter = Object.assign(new FakeHarnessAdapter(harnessIdSchema.parse("pi")), {
+      subagents: {
+        stop: vi.fn(async () => ({ ok: true as const, value: undefined })),
+        readSnapshot: vi.fn(async (input: { parent: { nativeSessionId: string } }) => ({
+          ok: true as const,
+          value: {
+            turns: [
+              {
+                nativeTurnRef: {
+                  harnessId: harnessIdSchema.parse("pi"),
+                  nativeSessionId: input.parent.nativeSessionId,
+                  nativeTurnKey: "child-turn",
+                  formatVersion: 1,
+                },
+                input: [{ type: "text", text: "Inspect" }],
+                items: [],
+                outcome: { status: "unknown" as const, reason: "Background work" },
+              },
+            ],
+          },
+        })),
+      },
+    });
+    const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
+    try {
+      const parentId = await startPiThread(fixture);
+      const parentTurnId = await startPiTurn(fixture, parentId);
+      const session = adapter.sessions[0];
+      if (!session) throw new Error("Fake Session was not opened");
+      await fixture.collector.waitFor((m) => turnEvent(m, "turn/started", parentTurnId));
+      const delegation = session.startSubagentDelegation({
+        subagentId: "call-1",
+        nativeSubagentId: "child-1",
+        description: "Inspect",
+        background: true,
+        status: "running",
+      });
+      const started = await fixture.collector.waitFor(
+        (m) =>
+          method(m, "thread/started") &&
+          (messageParams(m).thread as JsonObject)?.parentThreadId === parentId,
+      );
+      const childId = (messageParams(started).thread as JsonObject).id as string;
+      writeRequest(fixture.desktopInput, {
+        id: 980,
+        method: "thread/turns/list",
+        params: { threadId: childId, limit: 20, itemsView: "full" },
+      });
+      const history = await fixture.collector.waitFor((m) => requestId(m, 980));
+      const childTurnId = ((history.result as JsonObject).data as JsonObject[])[0]?.id;
+      if (typeof childTurnId !== "string") throw new Error("Child Turn was not projected");
+      writeRequest(fixture.desktopInput, {
+        id: 981,
+        method: "turn/interrupt",
+        params: { threadId: childId, turnId: "stale" },
+      });
+      expect(await fixture.collector.waitFor((m) => requestId(m, 981))).toHaveProperty("error");
+      expect(adapter.subagents.stop).not.toHaveBeenCalled();
+      writeRequest(fixture.desktopInput, {
+        id: 982,
+        method: "turn/interrupt",
+        params: { threadId: childId, turnId: childTurnId },
+      });
+      expect(await fixture.collector.waitFor((m) => requestId(m, 982))).toMatchObject({
+        result: {},
+      });
+      expect(adapter.subagents.stop).toHaveBeenCalledExactlyOnceWith({
+        parent: expect.objectContaining({ harnessId: "pi" }),
+        nativeSubagentId: "child-1",
+        cwd: "/synthetic",
+      });
+      expect(
+        fixture.collector.messages.some((m) => turnEvent(m, "turn/completed", parentTurnId)),
+      ).toBe(false);
+      session.completeItem(delegation, { status: "succeeded" });
+      session.succeedTurn();
+      await fixture.collector.waitFor((m) => turnEvent(m, "turn/completed", parentTurnId));
+      for (const [id, methodName] of [
+        [983, "thread/rollback"],
+        [984, "thread/revert"],
+      ] as const) {
+        writeRequest(fixture.desktopInput, {
+          id,
+          method: methodName,
+          params: {
+            threadId: parentId,
+            ...(methodName === "thread/revert" ? { beforeTurnId: parentTurnId } : { numTurns: 1 }),
+          },
+        });
+        expect(await fixture.collector.waitFor((m) => requestId(m, id))).toMatchObject({
+          error: { code: -32072, message: expect.stringContaining("Background agents") },
+        });
+      }
+      expect(adapter.sessions).toHaveLength(1);
+    } finally {
+      await stopFixture(fixture);
+    }
+  });
+
   it("keeps a Subagent Thread active when it is opened while its Subagent runs", async () => {
     const base = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
     const adapter = Object.assign(base, {

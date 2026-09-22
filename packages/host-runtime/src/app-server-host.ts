@@ -2461,6 +2461,7 @@ export class AppServerHost {
     thread: ExternalThread,
     revert: DecodedThreadRevertRequest,
   ): Promise<void> {
+    if (await this.#rejectHistoryEditWithRunningSubagents(request, thread)) return;
     if (thread.record.historyMode !== "paginated") {
       await this.#writer.json(
         rpcError(request, -32602, "External thread/revert requires paginated history"),
@@ -2489,6 +2490,7 @@ export class AppServerHost {
     derived: ExternalThread,
     rollback: DecodedThreadRollbackRequest,
   ): Promise<void> {
+    if (await this.#rejectHistoryEditWithRunningSubagents(request, derived)) return;
     const result = await executeExternalThreadRollback({
       derived,
       rollback,
@@ -2502,6 +2504,21 @@ export class AppServerHost {
       return;
     }
     await this.#writer.json(rpcEnvelope(request, { result: threadRollbackResult(result.thread) }));
+  }
+
+  async #rejectHistoryEditWithRunningSubagents(
+    request: JsonRpcRequest,
+    thread: ExternalThread,
+  ): Promise<boolean> {
+    if (!this.#hasRunningSubagents(thread.id)) return false;
+    await this.#writer.json(
+      rpcError(
+        request,
+        -32072,
+        "Background agents are still running. Wait for them to finish or stop them individually before editing history.",
+      ),
+    );
+    return true;
   }
 
   async #setExternalThreadName(
@@ -2997,17 +3014,42 @@ export class AppServerHost {
     });
     if (typeof requestedTurnId === "string")
       this.#externalSteering.interrupt(thread.id, requestedTurnId);
+    const subagent = thread.record.subagent;
+    // Observed children have no active Host Turn. Their latest native history
+    // turn is projected as inProgress while their parent reports them running.
+    const expectedTurnId = subagent ? thread.turns.at(-1)?.id : thread.activeTurnId;
     if (
       typeof requestedTurnId !== "string" ||
       !thread.running ||
-      thread.activeTurnId !== requestedTurnId
+      expectedTurnId !== requestedTurnId
     ) {
       await this.#writer.json(
         rpcError(request, -32074, "External turn/interrupt must reference the active Turn"),
       );
       return;
     }
-    const turnId = thread.activeTurnId;
+    if (subagent) {
+      const capability = this.#externalAdapters.get(thread.harnessId)?.subagents;
+      const parent = thread.record.nativeSessionRef;
+      if (!capability?.stop || !parent) {
+        await this.#writer.json(
+          rpcError(request, -32074, "Individual Subagent stop is unavailable"),
+        );
+        return;
+      }
+      const result = await capability.stop({
+        parent,
+        nativeSubagentId: subagent.nativeSubagentId,
+        cwd: thread.cwd,
+      });
+      await this.#writer.json(
+        result.ok
+          ? rpcEnvelope(request, { result: {} })
+          : rpcError(request, -32074, result.error.message),
+      );
+      return;
+    }
+    const turnId = hostTurnIdSchema.parse(requestedTurnId);
     const cancellationGate = turnProjectionGate();
     const gate: TurnProjectionGate = {
       promise: Promise.all([

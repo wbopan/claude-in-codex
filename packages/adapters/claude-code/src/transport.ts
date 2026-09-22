@@ -217,6 +217,7 @@ export interface ClaudeTurnTransport {
   ): Promise<ClaudeTransportTurnResult>;
   respondToInteraction(response: ClaudeInteractionResponse): Promise<void>;
   abort(): Promise<void>;
+  stopTask?(nativeSubagentId: string): Promise<void>;
   close(): Promise<void>;
 }
 

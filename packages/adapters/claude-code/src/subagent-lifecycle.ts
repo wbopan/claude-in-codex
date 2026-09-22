@@ -100,12 +100,14 @@ export class ClaudeSubagentLifecycle {
     this.#delegations.delete(event.callId);
     const current = active.item.subagents[0];
     if (!current) throw new Error("Claude Code Subagent delegation has no Agent state");
-    const status = cancellationRequested
-      ? "interrupted"
-      : event.isError
-        ? "failed"
-        : active.item.operation === "send" || event.continuesInBackground
-          ? "running"
+    const continuesInBackground =
+      !event.isError && (active.item.operation === "send" || event.continuesInBackground);
+    const status = continuesInBackground
+      ? "running"
+      : cancellationRequested
+        ? "interrupted"
+        : event.isError
+          ? "failed"
           : "completed";
     const subagent: HostSubagentState = {
       ...current,
@@ -129,13 +131,14 @@ export class ClaudeSubagentLifecycle {
     return subagent;
   }
 
-  finalize(turnId: HostTurnId, outcome: HostItemOutcome): void {
+  finalize(turnId: HostTurnId, outcome: HostItemOutcome, preserveBackground = false): void {
     for (const [callId, active] of this.#delegations) {
       this.#delegations.delete(callId);
       const current = active.item.subagents[0];
       if (!current) continue;
       const status =
-        outcome.status === "succeeded"
+        outcome.status === "succeeded" ||
+        (preserveBackground && (current.background || active.item.operation === "send"))
           ? current.status
           : outcome.status === "cancelled"
             ? "interrupted"
