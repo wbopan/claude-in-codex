@@ -57,6 +57,17 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       `turn/start-rejected` in the trace (triggered by the user on build 15).
 - [x] U. Native context ring for Claude Threads: `thread/tokenUsage/updated` is written during
       and after a Turn; tooltip showed 3% used, 34k of 1,000k (`U-context-*.png`).
+- [x] V. Background Subagents on build 1790049566954 (2026-09-22, driven through the AX tree):
+      the Desktop's Stop button always stops the whole agent tree. Stop in a child pane sent
+      `turn/interrupt` to the parent first and to that child 36 ms later; Stop on the parent
+      loaded every running child (`thread/turns/list`) and interrupted each one, including a
+      sibling whose pane was never opened. The Host handled both as designed (held Root turn
+      cancelled without touching the CLI, each child stopped through `stopTask`), so a single
+      background task can only be stopped from chat (`TaskStop`), never from the button.
+      Steering the held parent (`调整方向`) replaced the Turn and left the running child alone;
+      it finished 1..60 and its pane showed prompt, command, handback and reply, matching the
+      22-record transcript (15 `attachment` records). Editing history is hidden by the Desktop
+      while the parent runs, which is exactly when children run, so the Host guard is a backstop.
 - [ ] J. Usage chip (bonus). Not started; there is no native seam, the renderer reads only
       `rateLimitsByLimitId.codex`, so this needs a one-way CDP overlay.
 
@@ -130,6 +141,11 @@ Kept deliberately, although the carve looked like it could take them:
 
 ## Log
 
+- 2026-09-22: five commits on `integrate-20260922` (launcher data root, SDK 0.3.246, Subagent
+  transcripts in append order, individual Subagent stop, Plan mode reverse sync); vitest 1127
+  passed, launcher cargo tests green. Live run V above; Plan reverse sync was seen live once
+  (`harness/permissionMode.changed` plan -> auto in the trace) but the toggle itself was not
+  screenshotted because the Peekaboo Bridge host refused capture.
 - 2026-09-21: repo created from codex-host `43b8f282`; tsc green; vitest 1420 passed.
 - 2026-09-21: native picker, thread settings guards, in-Host cua_repl, permission mapping;
   vitest 1429 passed; acceptance A-I verified live.
