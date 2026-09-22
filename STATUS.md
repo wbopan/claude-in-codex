@@ -110,6 +110,19 @@ Kept deliberately, although the carve looked like it could take them:
   injected renderer UI, so without injection the ring never appeared.
 - The launcher forwards only whitelisted env vars; the acceptance trace rides on
   `CODEXHOST_STARTUP_TRACE=1`.
+- The Shim enters the native parent topology only when `CODEXHOST_DATA_DIR` is set
+  (`crates/shim/src/lib.rs`, `local_host_runtime`). A bare `codexhost launch` from a shell used
+  to leave it unset, so the stable Desktop silently fell back to the proxy topology: the Host
+  spawned its own `codex --listen ws://` backend, the `codex_app` MCP child of that backend had
+  an unsigned ancestry, and the Desktop rejected it on the app-tools pipe
+  (`dynamic_app_tools_peer_rejected reason=untrusted-code-signing-identity`, then
+  `MCP client for codex_app failed to start: Codex app tools pipe closed`). Claude then saw
+  only `cua_repl`. The debug instance and the npm wrapper always set the variable, which is why
+  acceptance G passed there. Fixed 2026-09-22: the launcher defaults it to `~/.codexhost`.
+- A stale `codex_desktop` stdio MCP server in `~/.claude.json` (the retired Python bridge from
+  `codexhost-claude-bridge`) still starts its own `codex app-server --listen stdio://` per
+  Claude session and only ever exposes `cua_repl.js/js_reset`. It is not part of this repo;
+  remove it with `claude mcp remove -s user codex_desktop`.
 
 ## Log
 
@@ -118,6 +131,11 @@ Kept deliberately, although the carve looked like it could take them:
   vitest 1429 passed; acceptance A-I verified live.
 - 2026-09-21: side chat fixed (inject_items handled, fork inherits native settings, Thread
   responses carry the permission preset); vitest 1431 passed.
+- 2026-09-22: `codex_app` missing in the stable Desktop (build 9731598, started by a bare
+  `codexhost launch`): root-caused to the missing `CODEXHOST_DATA_DIR` -> proxy topology -> peer
+  rejection chain above. Launcher now defaults the data root to `~/.codexhost`
+  (`managed_desktop_data_directory`); launcher tests 43 + 5 green. Takes effect on the next
+  stable relaunch; the running stable Desktop was left untouched.
 - 2026-09-21: native parent topology is the macOS default; picker Models use bare names
   (Default, Fable, Haiku, Opus, Sonnet). Rust tests need `npm run test:rust` (test-utils
   feature) and a shell without inherited `CODEXHOST_*` variables.

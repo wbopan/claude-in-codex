@@ -26,6 +26,8 @@ use std::sync::{OnceLock, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use codexhost_platform::launch_desktop_session;
 #[cfg(target_os = "macos")]
 use codexhost_platform::{
     DesktopIdentity, DesktopInstallation, DesktopLaunchMode, SupervisedChild,
@@ -33,8 +35,6 @@ use codexhost_platform::{
     desktop_root_process_ids_for_installation, discover_codex_desktop, node_entrypoint_path,
     spawn_supervised,
 };
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-use codexhost_platform::launch_desktop_session;
 use compatibility::{MAX_CONTROLLER_READINESS_LINE_BYTES, parse_controller_readiness_line};
 use desktop_attachment::{
     LauncherOwnership, RuntimeControl, acquire_launcher_ownership, allocate_runtime_control,
@@ -73,15 +73,27 @@ fn desktop_tree_refresh_due(last_refresh: Instant, now: Instant) -> bool {
     now.saturating_duration_since(last_refresh) >= DESKTOP_TREE_REFRESH_INTERVAL
 }
 
+/// Data root handed to the Shim and Host as `CODEXHOST_DATA_DIR`.
+///
+/// An explicit local value wins. A value inherited from a managed SSH login profile names the
+/// remote data root and is ignored. Without a usable value the launcher falls back to the same
+/// `~/.codexhost` the Host and the npm wrapper use: the Shim enters the native parent topology
+/// only when this variable is present, and without that topology the Desktop's peer
+/// code-signing check rejects the `codex_app` MCP server.
 fn managed_desktop_data_directory(
     data_directory: Option<OsString>,
     remote_ssh_managed: Option<OsString>,
+    home: Option<OsString>,
 ) -> Option<OsString> {
-    if remote_ssh_managed.as_deref() == Some(std::ffi::OsStr::new("1")) {
+    let explicit = if remote_ssh_managed.as_deref() == Some(std::ffi::OsStr::new("1")) {
         None
     } else {
-        data_directory
-    }
+        data_directory.filter(|value| !value.is_empty())
+    };
+    explicit.or_else(|| {
+        home.filter(|value| !value.is_empty())
+            .map(|home| PathBuf::from(home).join(".codexhost").into_os_string())
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -689,6 +701,7 @@ fn launch(
             managed_desktop_data_directory(
                 env::var_os(DATA_DIRECTORY_ENV),
                 env::var_os(REMOTE_SSH_MANAGED_ENV),
+                env::var_os("HOME"),
             ),
         );
         #[cfg(target_os = "macos")]
@@ -776,6 +789,7 @@ fn launch(
         managed_desktop_data_directory(
             env::var_os(DATA_DIRECTORY_ENV),
             env::var_os(REMOTE_SSH_MANAGED_ENV),
+            env::var_os("HOME"),
         ),
     );
     supervise_desktop(
@@ -1183,15 +1197,31 @@ mod tests {
     #[test]
     fn managed_desktop_data_directory_rejects_a_remote_profile_value() {
         let remote_data = Some(OsString::from("/home/codex/.codexhost/remote/data"));
+        let home = Some(OsString::from("/home/codex"));
 
         assert_eq!(
-            managed_desktop_data_directory(remote_data.clone(), Some(OsString::from("1"))),
-            None
+            managed_desktop_data_directory(remote_data.clone(), Some(OsString::from("1")), home),
+            Some(OsString::from("/home/codex/.codexhost"))
         );
         assert_eq!(
-            managed_desktop_data_directory(remote_data.clone(), None),
+            managed_desktop_data_directory(remote_data.clone(), None, None),
             remote_data
         );
+    }
+
+    #[test]
+    fn managed_desktop_data_directory_defaults_to_the_home_data_root() {
+        let home = Some(OsString::from("/Users/codex"));
+
+        assert_eq!(
+            managed_desktop_data_directory(None, None, home.clone()),
+            Some(OsString::from("/Users/codex/.codexhost"))
+        );
+        assert_eq!(
+            managed_desktop_data_directory(Some(OsString::new()), None, home),
+            Some(OsString::from("/Users/codex/.codexhost"))
+        );
+        assert_eq!(managed_desktop_data_directory(None, None, None), None);
     }
 
     #[test]
