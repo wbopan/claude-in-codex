@@ -71,6 +71,7 @@ import {
 } from "@codexhost/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
+import { traceClaude } from "./debug-trace.js";
 import { ClaudeCodeExecutableError, resolveClaudeCodeExecutable } from "./command.js";
 import { ClaudePendingSessions, isPendingClaudeSession } from "./pending-session.js";
 import { forkClaudeSession } from "./claude-fork.js";
@@ -1617,6 +1618,14 @@ class ClaudeHarnessSession implements HarnessSession {
         }
         return;
       case "subagent.completed": {
+        traceClaude({
+          event: "claude/subagent",
+          kind: "completed",
+          continuesInBackground: event.continuesInBackground === true,
+          isError: event.isError,
+          native: event.nativeSubagentId !== undefined,
+          cancellationRequested: active.cancellationRequested,
+        });
         const subagent = active.subagents.complete(
           active.command.turnId,
           event,
@@ -1964,6 +1973,13 @@ class ClaudeHarnessSession implements HarnessSession {
     callId?: string,
     resultSummary?: string,
   ): void {
+    traceClaude({
+      event: "claude/subagent",
+      kind: "settled",
+      status,
+      native: nativeSubagentId !== undefined,
+      hasCallId: callId !== undefined,
+    });
     // The Subagent stopped, but its Root continuation runs in a later Segment.
     this.#occupancy.notify(callId, nativeSubagentId);
     const active = this.#active;

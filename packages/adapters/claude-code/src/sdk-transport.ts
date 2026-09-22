@@ -25,6 +25,7 @@ import {
 import { ClaudeNativeTurnAccumulator, parseClaudePlanLimitEvent } from "./native-message.js";
 import { isClaudePermissionMode, type ClaudePermissionMode } from "./permission-modes.js";
 import { closeClaudeProcessGroup } from "./process-fence.js";
+import { traceCallers, traceClaude, traceRef } from "./debug-trace.js";
 import { claudeThinkingConfiguration, parseClaudeThinkingOptionId } from "./thinking-options.js";
 import type {
   ClaudeApprovalRequest,
@@ -694,6 +695,11 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   }
 
   async abort(): Promise<void> {
+    traceClaude({
+      event: "claude/abort",
+      session: traceRef(this.sessionId),
+      tasks: this.#backgroundTasks.size,
+    });
     const active = this.#active;
     const activeQuery = this.#query;
     if (!active || !activeQuery) throw new Error("Claude SDK transport has no active Turn");
@@ -882,6 +888,12 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   }
 
   async #close(): Promise<void> {
+    traceClaude({
+      event: "claude/transport-close",
+      session: traceRef(this.sessionId),
+      tasks: this.#backgroundTasks.size,
+      callers: traceCallers(),
+    });
     const failures: unknown[] = [];
     this.#clientTools?.close?.();
     await this.#desktopTools?.close().catch((error: unknown) => failures.push(error));
@@ -954,6 +966,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
       for (const id of this.#backgroundTasks) {
         if (requested.has(id)) continue;
         requested.add(id);
+        traceClaude({ event: "claude/stop-task", session: traceRef(this.sessionId) });
         await this.#query.stopTask(id);
       }
       // A control receipt alone is not a task terminal; consume its native stopped notification.

@@ -9,7 +9,7 @@ import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
 import type { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import { appendFileSync } from "node:fs";
 import path from "node:path";
@@ -119,6 +119,11 @@ const SUBAGENT_TERMINAL_REFRESH_DELAYS_MS = [0, 50, 100, 150] as const;
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** Correlates trace lines across Threads without recording an identifier. */
+function traceRef(id: string | undefined | null): string | null {
+  return id ? createHash("sha256").update(id).digest("hex").slice(0, 8) : null;
 }
 import {
   classifyThreadPurpose,
@@ -578,6 +583,11 @@ export class AppServerHost {
       idleRelease: {
         queue: this.#desktopRequests,
         onClosed: async (thread) => {
+          this.#traceNativePicker({
+            event: "external/idle-release-closed",
+            harnessId: thread.harnessId,
+            subagent: thread.record.subagent != null,
+          });
           for (const pending of [...this.#pendingDesktopApprovals.values()]) {
             if (pending.thread === thread)
               await this.#resolveDesktopApproval(pending.interaction.interactionId);
@@ -821,6 +831,15 @@ export class AppServerHost {
         isRecord(request.params) && typeof request.params.threadId === "string"
           ? request.params.threadId
           : undefined;
+      if (threadId !== undefined && this.#subagentThreadStatuses.has(threadId)) {
+        this.#traceNativePicker({
+          event: "subagent/desktop-request",
+          method: request.method,
+          child: traceRef(threadId),
+          childStatus: this.#subagentThreadStatuses.get(threadId) ?? null,
+          childLoaded: this.#externalRuntime.get(threadId) !== undefined,
+        });
+      }
       this.#dispatchDesktopRequest(() =>
         this.#desktopRequests.run(threadId, () =>
           this.#externalRuntime.idleRelease.runOperation(threadId, () =>
@@ -2551,12 +2570,16 @@ export class AppServerHost {
     location: Extract<ExternalThreadLocation, { kind: "external" }>,
   ): Promise<void> {
     try {
+      // A running Subagent has no loaded Session of its own. Reporting the
+      // stored record as idle would tell the Desktop the Agent has finished.
+      const running = this.#subagentThreadStatuses.get(location.record.hostThreadId) === "active";
       const thread = location.thread
         ? { ...location.thread.thread, turns: [] }
         : externalThreadValue({
             record: location.record,
             turns: [],
             sessionId: await this.#repository.sessionTreeId(location.record),
+            ...(running ? { running } : {}),
           });
       await this.#writer.json(rpcEnvelope(request, { result: { thread } }));
       if (location.thread) await this.#replayExternalUsage(location.thread);
@@ -2710,9 +2733,24 @@ export class AppServerHost {
   }
 
   #externalHistoryTurns(thread: ExternalThread): JsonObject[] {
-    if (!thread.activeTurnId) return thread.turns;
+    if (!thread.activeTurnId) return this.#runningSubagentTurns(thread);
     const active = thread.projectedTurns.get(thread.activeTurnId);
     return active ? [...thread.turns, active.projector.pendingTurn()] : thread.turns;
+  }
+
+  /**
+   * A Subagent Thread owns no Host Turn, so its native history always projects
+   * as complete. While the Agent still runs, keep its latest Turn in progress
+   * so replayed history agrees with the live refresh stream.
+   */
+  #runningSubagentTurns(thread: ExternalThread): JsonObject[] {
+    if (!thread.record.subagent || !thread.running) return thread.turns;
+    const last = thread.turns.at(-1);
+    if (!isRecord(last)) return thread.turns;
+    return [
+      ...thread.turns.slice(0, -1),
+      { ...last, status: "inProgress", completedAt: null, durationMs: null },
+    ];
   }
 
   async #startExternalTurn(request: JsonRpcRequest, thread: ExternalThread): Promise<void> {
@@ -2950,6 +2988,13 @@ export class AppServerHost {
     thread: ExternalThread,
     requestedTurnId: JsonValue | undefined,
   ): Promise<void> {
+    this.#traceNativePicker({
+      event: "external/turn-interrupt",
+      harnessId: thread.harnessId,
+      subagent: thread.record.subagent != null,
+      running: thread.running,
+      matchesActive: thread.activeTurnId === requestedTurnId,
+    });
     if (typeof requestedTurnId === "string")
       this.#externalSteering.interrupt(thread.id, requestedTurnId);
     if (
@@ -3017,45 +3062,33 @@ export class AppServerHost {
     }
     let event = output.event;
     if (event.type === "item.started" && event.item.type === "subagentDelegation") {
-      event = {
-        ...event,
-        item: {
-          ...event.item,
-          subagents: await Promise.all(
-            event.item.subagents.map((subagent) =>
-              this.#materializeSubagent(thread, subagent).catch(() => subagent),
-            ),
-          ),
-        },
-      };
+      const subagents = await Promise.all(
+        event.item.subagents.map((subagent) =>
+          this.#materializeSubagent(thread, subagent).catch(() => subagent),
+        ),
+      );
+      this.#traceSubagentDelegation("item.started", subagents, null);
+      event = { ...event, item: { ...event.item, subagents } };
     }
     if (event.type === "item.updated" && event.update.type === "subagents.replace") {
-      event = {
-        ...event,
-        update: {
-          ...event.update,
-          subagents: await Promise.all(
-            event.update.subagents.map((subagent) =>
-              this.#materializeSubagent(thread, subagent).catch(() => subagent),
-            ),
-          ),
-        },
-      };
+      const subagents = await Promise.all(
+        event.update.subagents.map((subagent) =>
+          this.#materializeSubagent(thread, subagent).catch(() => subagent),
+        ),
+      );
+      this.#traceSubagentDelegation("subagents.replace", subagents, null);
+      event = { ...event, update: { ...event.update, subagents } };
     }
     if (event.type === "item.completed" && event.snapshot.item.type === "subagentDelegation") {
+      const subagents = await Promise.all(
+        event.snapshot.item.subagents.map((subagent) =>
+          this.#materializeSubagent(thread, subagent).catch(() => subagent),
+        ),
+      );
+      this.#traceSubagentDelegation("item.completed", subagents, event.snapshot.outcome.status);
       event = {
         ...event,
-        snapshot: {
-          ...event.snapshot,
-          item: {
-            ...event.snapshot.item,
-            subagents: await Promise.all(
-              event.snapshot.item.subagents.map((subagent) =>
-                this.#materializeSubagent(thread, subagent).catch(() => subagent),
-              ),
-            ),
-          },
-        },
+        snapshot: { ...event.snapshot, item: { ...event.snapshot.item, subagents } },
       };
     }
     if (event.type === "session.state.changed") {
@@ -3229,6 +3262,25 @@ export class AppServerHost {
     }
   }
 
+  /** Records the Agent states the Desktop will render, never their text. */
+  #traceSubagentDelegation(
+    kind: string,
+    subagents: readonly HostSubagentState[],
+    outcome: string | null,
+  ): void {
+    this.#traceNativePicker({
+      event: "subagent/delegation",
+      kind,
+      outcome,
+      subagents: subagents.map((subagent) => ({
+        child: traceRef(subagent.subagentId),
+        status: subagent.status,
+        background: subagent.background === true,
+        native: subagent.nativeSubagentId !== undefined,
+      })),
+    });
+  }
+
   async #materializeSubagent(
     parent: ExternalThread,
     subagent: HostSubagentState,
@@ -3380,6 +3432,13 @@ export class AppServerHost {
         );
       }
     }
+    this.#traceNativePicker({
+      event: "subagent/status",
+      child: traceRef(threadId),
+      previous: previousStatus ?? null,
+      status,
+      loaded: child !== undefined,
+    });
     if (previousStatus === status) return;
     this.#subagentThreadStatuses.set(threadId, status);
     await this.#writer.json({

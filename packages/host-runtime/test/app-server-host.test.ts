@@ -1848,6 +1848,124 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("stays truthful and side-effect free through the Desktop's Subagent view open sequence", async () => {
+    const base = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
+    const adapter = Object.assign(base, {
+      subagents: {
+        readSnapshot: vi.fn(async (input: { parent: { nativeSessionId: string } }) => ({
+          ok: true as const,
+          value: {
+            turns: [
+              {
+                nativeTurnRef: {
+                  harnessId: harnessIdSchema.parse("pi"),
+                  nativeSessionId: input.parent.nativeSessionId,
+                  nativeTurnKey: "view-open-turn",
+                  formatVersion: 1,
+                },
+                input: [{ type: "text", text: "Inspect files" }],
+                items: [],
+                outcome: { status: "unknown" as const, reason: "Background work" },
+              },
+            ],
+          },
+        })),
+      },
+    });
+    const fixture = createFixture({
+      externalAdapters: new Map([["pi", adapter]]) as ReadonlyMap<
+        ExternalHarnessId,
+        FakeHarnessAdapter
+      >,
+    });
+    const threadId = await startPiThread(fixture);
+    const turnId = await startPiTurn(fixture, threadId);
+    const session = adapter.sessions[0];
+    if (!session) throw new Error("Fake Session was not opened");
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", turnId));
+    const childStartedPromise = fixture.collector.waitFor(
+      (message) =>
+        method(message, "thread/started") &&
+        (messageParams(message).thread as JsonObject | undefined)?.parentThreadId === threadId,
+    );
+    const itemId = session.startSubagentDelegation({
+      subagentId: "view-open-call",
+      nativeSubagentId: "native-view-open",
+      description: "Inspect files",
+      background: true,
+      status: "running",
+    });
+    const childStarted = await childStartedPromise;
+    const childThreadId = (messageParams(childStarted).thread as JsonObject).id as string;
+    // The Agent tool returns immediately for a background Agent, so the Parent
+    // Turn ends long before the Agent does.
+    session.completeItem(itemId, { status: "succeeded" });
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+
+    const execute = vi.spyOn(session, "execute");
+    const close = vi.spyOn(session, "close");
+
+    // Opening the Subagent view sends metadata read, resume and history paging.
+    writeRequest(fixture.desktopInput, {
+      id: 120,
+      method: "thread/read",
+      params: { threadId: childThreadId },
+    });
+    const metadata = await fixture.collector.waitFor((message) => requestId(message, 120));
+    expect((metadata.result as JsonObject).thread).toEqual(
+      expect.objectContaining({ id: childThreadId, status: { type: "active", activeFlags: [] } }),
+    );
+    writeRequest(fixture.desktopInput, {
+      id: 121,
+      method: "thread/resume",
+      params: { threadId: childThreadId, excludeTurns: true },
+    });
+    const resumed = await fixture.collector.waitFor((message) => requestId(message, 121));
+    expect((resumed.result as JsonObject).thread).toEqual(
+      expect.objectContaining({ id: childThreadId, status: { type: "active", activeFlags: [] } }),
+    );
+    writeRequest(fixture.desktopInput, {
+      id: 122,
+      method: "thread/turns/list",
+      params: { threadId: childThreadId, limit: 20, itemsView: "full" },
+    });
+    const running = await fixture.collector.waitFor((message) => requestId(message, 122));
+    expect(running).toMatchObject({
+      result: { data: [{ status: "inProgress", completedAt: null }] },
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 123,
+      method: "thread/items/list",
+      params: { threadId: childThreadId, limit: 20 },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 123));
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(
+      fixture.collector.messages.some((message) => threadStatus(message, childThreadId, "idle")),
+    ).toBe(false);
+    expect(
+      fixture.collector.messages.some((message) => threadStatus(message, threadId, "idle")),
+    ).toBe(false);
+
+    // Only the real Subagent terminal settles the Agent.
+    session.emitSubagentState("native-view-open", "completed", "Inspection complete");
+    await expect(
+      fixture.collector.waitFor((message) => threadStatus(message, childThreadId, "idle")),
+    ).resolves.toBeTruthy();
+    writeRequest(fixture.desktopInput, {
+      id: 124,
+      method: "thread/turns/list",
+      params: { threadId: childThreadId, limit: 20, itemsView: "full" },
+    });
+    const settled = await fixture.collector.waitFor((message) => requestId(message, 124));
+    expect(settled).toMatchObject({ result: { data: [{ status: "completed" }] } });
+    expect(close).not.toHaveBeenCalled();
+    await stopFixture(fixture);
+  });
+
   it("terminates the official app-server when its Host session closes", async () => {
     const fixture = createFixture({ officialExitsOnInputEnd: false });
     fixture.official.kill.mockImplementationOnce(() => {
