@@ -19,6 +19,7 @@ import type {
   HarnessAdapter,
   HarnessOutput,
   HarnessSession,
+  HarnessSessionState,
   HostApprovalInteraction,
   HostSubagentState,
   HostApprovalResponse,
@@ -1790,6 +1791,61 @@ export class AppServerHost {
   }
 
   /**
+   * Follow a Permission Mode the Harness changed on its own (Claude entering Plan mode, a plan
+   * approval leaving it). The Host bookkeeping is updated so the next Plan toggle compares against
+   * the real mode, and the Desktop is told through `thread/settings/updated` whenever Plan flips,
+   * so its Plan toggle shows what the Harness is actually doing. Host-driven selections already
+   * record the mode before the Session reports it, so they never re-notify here.
+   */
+  async #followHarnessPermissionMode(
+    thread: ExternalThread,
+    state: HarnessSessionState,
+  ): Promise<void> {
+    const effective = state.effectivePermissionModeId;
+    if (!effective || effective === thread.requestedPermissionModeId) return;
+    const wasPlan = thread.requestedPermissionModeId === "plan";
+    const isPlan = effective === "plan";
+    thread.requestedPermissionModeId = effective;
+    await this.#persistNativeSelection(thread);
+    if (wasPlan === isPlan) return;
+    this.#traceNativePicker({
+      event: "harness/permissionMode.changed",
+      harnessId: thread.harnessId,
+      permissionModeId: effective,
+      plan: isPlan,
+    });
+    await this.#writer.json({
+      method: "thread/settings/updated",
+      params: { threadId: thread.id, threadSettings: this.#nativeThreadSettings(thread, isPlan) },
+    });
+  }
+
+  /**
+   * Full `ThreadSettings` for a settings notification. The Desktop replaces its Model, effort,
+   * cwd and collaboration mode from it wholesale, so every field mirrors what the Thread already
+   * reported instead of only the changed one.
+   */
+  #nativeThreadSettings(thread: ExternalThread, plan: boolean): JsonObject {
+    const { model, reasoningEffort } = this.#nativeThreadSelection(thread);
+    const permission = this.#nativePermissionFields(thread);
+    return {
+      model,
+      modelProvider: "codexhost",
+      cwd: thread.cwd,
+      effort: reasoningEffort,
+      approvalPolicy: permission.approvalPolicy ?? "on-request",
+      approvalsReviewer: permission.approvalsReviewer ?? "user",
+      activePermissionProfile: permission.activePermissionProfile ?? null,
+      sandboxPolicy: permission.sandbox ?? sandboxResult({}),
+      serviceTier: "flex",
+      collaborationMode: {
+        mode: plan ? "plan" : "default",
+        settings: { model, reasoning_effort: reasoningEffort },
+      },
+    };
+  }
+
+  /**
    * Model and effort reported for an external Thread. The Model must equal a `model/list` entry
    * id, otherwise the official picker labels a reopened Thread as a custom Model.
    */
@@ -3151,6 +3207,7 @@ export class AppServerHost {
         thread.stateObserver.fault(thread.persistenceError);
         this.#diagnose("External Session state could not be persisted");
       }
+      await this.#followHarnessPermissionMode(thread, event.state);
       return;
     }
     if (event.type === "session.usage.changed") {

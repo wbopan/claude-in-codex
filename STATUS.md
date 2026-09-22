@@ -42,6 +42,10 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       ask -> `default`, auto-review -> `auto`, Plan on -> `plan`, Plan off -> `default`
       (`I-permission-trace.jsonl`).
       NOT live-verified on purpose: full access -> `bypassPermissions` (unit tests only).
+      The reverse direction is covered too: a Permission Mode the Harness changes on its own
+      (Claude's `EnterPlanMode`, a plan approval) updates the Host's Plan bookkeeping and flips
+      the Desktop toggle through `thread/settings/updated` (unit test only; the earlier live
+      run showed the toggle staying dark and a later Plan off being ignored).
 - [x] S. Side chat (`thread/fork` + `thread/inject_items`): no failure toast, the fork inherits
       Model, Thinking and Permission Mode, both composers show the parent's level instead of a
       custom one, and the injected parent context reaches Claude (`S-side-chat-*`).

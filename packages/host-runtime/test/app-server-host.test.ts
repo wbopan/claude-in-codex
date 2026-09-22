@@ -4469,6 +4469,80 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("follows a Harness-initiated Plan mode change and flips the Desktop's Plan toggle", async () => {
+    const permissionModes = harnessPermissionModeCatalogSchema.parse({
+      modes: [
+        { id: "plan", label: "Plan mode" },
+        { id: "default", label: "Default" },
+      ],
+      defaultModeId: "default",
+    });
+    const adapter = new FakeHarnessAdapter(
+      harnessIdSchema.parse("pi"),
+      undefined,
+      true,
+      true,
+      null,
+      permissionModes,
+    );
+    const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
+    const threadId = await startPiThread(fixture);
+    const session = adapter.sessions[0];
+    if (!session) throw new Error("Fake Pi Session was not opened");
+    const settingsUpdates = (): JsonObject[] =>
+      fixture.collector.messages.filter((message) => message.method === "thread/settings/updated");
+
+    // The Harness enters Plan mode on its own, the way Claude's EnterPlanMode does.
+    await session.execute({
+      type: "permissionMode.select",
+      permissionModeId: harnessPermissionModeIdSchema.parse("plan"),
+    });
+    const notified = await fixture.collector.waitFor(
+      (message) => message.method === "thread/settings/updated",
+    );
+    expect(notified).toMatchObject({
+      params: {
+        threadId,
+        threadSettings: {
+          cwd: "/synthetic",
+          modelProvider: "codexhost",
+          collaborationMode: { mode: "plan", settings: {} },
+        },
+      },
+    });
+    const threadSettings = (notified.params as JsonObject).threadSettings as JsonObject;
+    expect(typeof threadSettings.model).toBe("string");
+    expect((threadSettings.collaborationMode as JsonObject).settings).toMatchObject({
+      model: threadSettings.model,
+    });
+
+    // The Desktop now shows Plan on. Turning it off on the next Turn must leave Plan mode,
+    // which only works when the Host compared against the mode the Harness really had.
+    writeRequest(fixture.desktopInput, {
+      id: 2,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: [{ type: "text", text: "synthetic" }],
+        collaborationMode: { mode: "default", settings: {} },
+      },
+    });
+    const response = await fixture.collector.waitFor((message) => requestId(message, 2));
+    const turnId = ((response.result as JsonObject).turn as JsonObject).id;
+    expect(session.state.effectivePermissionModeId).toBe("default");
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/started", turnId as string),
+    );
+    session.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", turnId as string),
+    );
+
+    // A Host-driven selection is recorded before the Session reports it: no second notification.
+    expect(settingsUpdates()).toHaveLength(1);
+    await stopFixture(fixture);
+  });
+
   it("reverts the latest completed Turn of a paginated External Thread", async () => {
     const adapter = rollbackCapableAdapter();
     const fixture = createFixture({ externalAdapters: new Map([["pi", adapter]]) });
