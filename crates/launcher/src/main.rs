@@ -34,7 +34,7 @@ use codexhost_platform::{
     spawn_supervised,
 };
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-use codexhost_platform::{DesktopSession, launch_desktop_session};
+use codexhost_platform::launch_desktop_session;
 use compatibility::{MAX_CONTROLLER_READINESS_LINE_BYTES, parse_controller_readiness_line};
 use desktop_attachment::{
     LauncherOwnership, RuntimeControl, acquire_launcher_ownership, allocate_runtime_control,

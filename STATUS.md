@@ -135,3 +135,15 @@ Kept deliberately, although the carve looked like it could take them:
   `CODEXHOST_HARNESS_BROKER_DIR`, `app-server --listen unix://` listener, WebSocket over the unix
   socket, `initialize` + `initialized`, and `model/list` returning 10 entries of which 5 are
   `codexhost/claude-code-native@claude-model-v1.*`.
+- 2026-09-22: merged `native-reasoning` and `subagent-status` onto `carve` (branch `integrate`, then
+  fast-forwarded `main`). Two textual conflicts (carve had removed session import and delegated
+  Turns) plus one silent semantic conflict: carve dropped the `createHash` import that
+  `subagent-status` reuses for `traceRef`; restored. Removed the leftover unused `DesktopSession`
+  import in the launcher. tsc clean; vitest 1116 passed / 5 skipped; Rust 158 passed. Live in the
+  debug Desktop on a clone of the carve instance state: carve Threads resume, a text Turn, a
+  reasoning-heavy Turn rendered as the native Reasoning Item while running and collapsed after,
+  a Bash Turn with the native approval card, a Subagent Thread opened while running reported
+  `running` (`thread/read` at `childStatus: active`, stop button in the child composer) and idle
+  after completion, Model and effort survive `debug:restart`, `config.toml` carries no route id
+  (`int-*.png`). Not re-verified live in this run: the cross-harness toast and effort submenu
+  (the picker popover kept opening on the effort slider under CDP); last verified on `carve`.
