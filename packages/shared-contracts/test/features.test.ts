@@ -14,8 +14,10 @@ import {
   readFeatureSettings,
   readFeatureSettingsSync,
   readFeatures,
+  readIdleReleaseSettings,
   readMemorySyncResult,
   writeFeatureSetting,
+  writeIdleReleaseMinutes,
   writeMemorySyncResult,
 } from "../src/features-file.js";
 import { tempDir } from "../../../tests/helpers/temp-dir.js";
@@ -55,6 +57,22 @@ describe("feature settings", () => {
     expect(await readdir(path.dirname(featuresFilePath(environment)))).toEqual(["features.json"]);
     await expect(featureEnabled("idleRelease", environment)).resolves.toBe(true);
     await expect(featureEnabled("computerUse", environment)).resolves.toBe(false);
+  });
+
+  it("writes the idle release choice as the switch and its timeout", async () => {
+    await writeIdleReleaseMinutes(15, environment);
+    await expect(readIdleReleaseSettings(environment)).resolves.toEqual({
+      enabled: true,
+      timeoutMinutes: 15,
+    });
+    await writeIdleReleaseMinutes(0, environment);
+    await expect(readIdleReleaseSettings(environment)).resolves.toEqual({
+      enabled: false,
+      timeoutMinutes: 15,
+    });
+    expect(featureSettingsSchema.parse({ idleReleaseTimeoutMinutes: 3 })).toMatchObject({
+      idleReleaseTimeoutMinutes: 30,
+    });
   });
 
   it("resolves every feature from the file alone, in the status order", () => {

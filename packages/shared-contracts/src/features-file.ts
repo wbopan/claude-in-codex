@@ -10,6 +10,7 @@ import {
   FEATURES_FILE,
   MEMORY_SYNC_RESULT_FILE,
   featureSettingsSchema,
+  idleReleaseSettings,
   memorySyncResultSchema,
   resolveFeatures,
   type FeatureId,
@@ -17,6 +18,7 @@ import {
   type FeatureState,
   type MemorySyncResult,
 } from "./features.js";
+import type { IdleReleaseSettings } from "./idle-release.js";
 
 export function featuresFilePath(environment: NodeJS.ProcessEnv = process.env): string {
   return path.join(dataDirectory(environment), FEATURES_FILE);
@@ -70,6 +72,12 @@ export async function featureEnabled(
   return (await readFeatureSettings(environment))[id];
 }
 
+export async function readIdleReleaseSettings(
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<IdleReleaseSettings> {
+  return idleReleaseSettings(await readFeatureSettings(environment));
+}
+
 async function writeAtomically(file: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
@@ -88,6 +96,23 @@ export async function writeFeatureSetting(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<FeatureSettings> {
   const settings = { ...(await readFeatureSettings(environment)), [id]: enabled };
+  await writeAtomically(featuresFilePath(environment), settings);
+  return settings;
+}
+
+/**
+ * Writes the idle release choice: 0 turns the switch off and keeps the stored timeout, any other
+ * number of minutes turns it on with that timeout.
+ */
+export async function writeIdleReleaseMinutes(
+  minutes: number,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<FeatureSettings> {
+  const stored = await readFeatureSettings(environment);
+  const settings =
+    minutes === 0
+      ? { ...stored, idleRelease: false }
+      : { ...stored, idleRelease: true, idleReleaseTimeoutMinutes: minutes };
   await writeAtomically(featuresFilePath(environment), settings);
   return settings;
 }

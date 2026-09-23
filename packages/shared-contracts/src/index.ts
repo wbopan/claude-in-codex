@@ -15,6 +15,8 @@ export {
   MEMORY_SYNC_RESULT_FILE,
   featureIdSchema,
   featureSettingsSchema,
+  idleReleaseMinutesSchema,
+  idleReleaseSettings,
   memorySyncResultSchema,
   resolveFeatures,
   type FeatureId,

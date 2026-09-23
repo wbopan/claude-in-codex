@@ -2,8 +2,10 @@ import os from "node:os";
 import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import {
+  idleReleaseSettings,
   resolveFeatures,
   type FeatureId,
+  type FeatureSettings,
   type FeatureState,
 } from "@claude-in-codex/shared-contracts";
 import {
@@ -11,6 +13,7 @@ import {
   readFeatureSettingsSync,
   readMemorySyncResult,
   writeFeatureSetting,
+  writeIdleReleaseMinutes,
 } from "@claude-in-codex/shared-contracts/features-file";
 import type { DesktopToolServerStatus } from "../official-desktop-tools.js";
 import type { HotAttachSession } from "./session.js";
@@ -18,6 +21,16 @@ import type { HotAttachSession } from "./session.js";
 export interface FeatureReport extends FeatureState {
   /** A short sentence for the Dashboard when an enabled feature is not working. */
   problem: string | null;
+  /** Idle release only: the minutes idle before release, kept while the switch is off. */
+  timeoutMinutes?: number;
+}
+
+function reports(settings: FeatureSettings, problem: (state: FeatureState) => string | null) {
+  return resolveFeatures(settings).map((state) => ({
+    ...state,
+    problem: problem(state),
+    ...(state.id === "idleRelease" ? { timeoutMinutes: settings.idleReleaseTimeoutMinutes } : {}),
+  }));
 }
 
 /** Listing the official servers opens an ephemeral native Thread; do it at most this often. */
@@ -116,10 +129,7 @@ export class FeatureHealth {
       log?: (message: string) => void;
     },
   ) {
-    this.#reports = resolveFeatures(readFeatureSettingsSync(options.environment)).map((state) => ({
-      ...state,
-      problem: null,
-    }));
+    this.#reports = reports(readFeatureSettingsSync(options.environment), () => null);
   }
 
   status(): FeatureReport[] {
@@ -129,8 +139,8 @@ export class FeatureHealth {
   /** `deep` lists the official servers now, ignoring the cache. */
   async refresh(session: HotAttachSession | undefined, deep = false): Promise<void> {
     const environment = this.options.environment;
-    const states = resolveFeatures(await readFeatureSettings(environment));
-    const enabled = (id: FeatureId) => states.find((state) => state.id === id)?.enabled === true;
+    const settings = await readFeatureSettings(environment);
+    const enabled = (id: FeatureId) => settings[id];
     const attached = session?.attached === true;
     if (!attached || this.#servers?.session !== session) this.#servers = undefined;
     if (attached && (enabled("codexAppTools") || enabled("computerUse"))) {
@@ -160,20 +170,25 @@ export class FeatureHealth {
           : null,
       idleRelease: async () => null,
     };
-    this.#reports = await Promise.all(
-      states.map(async (state) => ({
-        ...state,
-        problem: state.enabled ? await problems[state.id]().catch(() => null) : null,
-      })),
-    );
+    const found = new Map<FeatureId, string | null>();
+    for (const state of resolveFeatures(settings))
+      found.set(state.id, state.enabled ? await problems[state.id]().catch(() => null) : null);
+    this.#reports = reports(settings, (state) => found.get(state.id) ?? null);
   }
 
   /** Writes the switch and applies what can change without a new Claude Session. */
   async set(id: FeatureId, enabled: boolean, session: HotAttachSession | undefined): Promise<void> {
-    await writeFeatureSetting(id, enabled, this.options.environment);
-    if (id === "idleRelease") session?.host.setIdleReleaseEnabled(enabled);
+    const settings = await writeFeatureSetting(id, enabled, this.options.environment);
+    if (id === "idleRelease") session?.host.applyIdleRelease(idleReleaseSettings(settings));
     // A server switched back on gets a fresh listing instead of a stale problem.
     if ((id === "codexAppTools" || id === "computerUse") && enabled) this.#servers = undefined;
+    await this.refresh(session);
+  }
+
+  /** Writes the idle release choice (0 is never) and applies it to the live Host. */
+  async setIdleRelease(minutes: number, session: HotAttachSession | undefined): Promise<void> {
+    const settings = await writeIdleReleaseMinutes(minutes, this.options.environment);
+    session?.host.applyIdleRelease(idleReleaseSettings(settings));
     await this.refresh(session);
   }
 

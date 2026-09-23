@@ -1,5 +1,9 @@
 import { createInterface } from "node:readline";
-import { DATA_DIRECTORY_ENV, featureIdSchema } from "@claude-in-codex/shared-contracts";
+import {
+  DATA_DIRECTORY_ENV,
+  featureIdSchema,
+  idleReleaseMinutesSchema,
+} from "@claude-in-codex/shared-contracts";
 import { HotAttachController, defaultMenuBarEnvironment } from "./controller.js";
 import { migrateLegacyDataDirectory } from "./legacy-data.js";
 
@@ -60,6 +64,7 @@ export async function runMenuBarHost(
         command: string;
         feature?: unknown;
         enabled?: unknown;
+        minutes?: unknown;
       };
       try {
         switch (request.command) {
@@ -86,9 +91,12 @@ export async function runMenuBarHost(
             await controller.setFeature(feature.data, request.enabled);
             break;
           }
-          case "check-features":
-            await controller.checkFeatures();
+          case "set-idle-release": {
+            const minutes = idleReleaseMinutesSchema.safeParse(request.minutes);
+            if (!minutes.success) throw new Error("Invalid idle release minutes");
+            await controller.setIdleRelease(minutes.data);
             break;
+          }
           case "quit":
             await quit();
             break;

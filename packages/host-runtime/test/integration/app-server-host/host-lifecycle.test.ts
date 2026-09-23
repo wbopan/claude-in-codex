@@ -70,7 +70,7 @@ describe("AppServerHost idle resource release", () => {
       expect(await fixture.collector.waitFor((message) => requestId(message, 910))).toMatchObject({
         result: [{ threadId, state: "idle", reason: "timeout" }],
       });
-      fixture.host.setIdleReleaseEnabled(false);
+      fixture.host.applyIdleRelease({ enabled: false, timeoutMinutes: 30 });
       writeRequest(fixture.desktopInput, {
         id: 911,
         method: "claude-in-codex/sessions/loaded/list",

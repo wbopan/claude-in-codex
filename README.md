@@ -29,19 +29,19 @@ App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 
 **概览**
 
-- 组件：Codex App、Claude Code CLI、Claude in Codex 三张卡片，各带图标、版本和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。
+- 组件：Codex App、Claude Code CLI、Claude in Codex 三张卡片，各带图标和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。图标都是不带底色的图形：Codex 云朵从 Codex App 自带的图标中取出，Claude Code CLI 用 Clawd 像素图，Claude in Codex 用 Claude 云朵。
 - 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），与 Codex App 用量菜单共用 90 秒缓存。
 - Claude Code Session：每个 Session 一行，显示标题和当前活动（思考、运行命令、等待批准等）及已运行时长，悬停可见所在目录。不显示提示词、命令或输出内容。
 
-Claude Code CLI 版本、进程数和用量在接入后读取。
+Claude Code CLI 进程数和用量在接入后读取。
 
 **功能**
 
-可选功能的开关，保存在数据目录的 `features.json`。某个功能出问题时，它的说明换成一行橙色提示；「深度检查…」立即重新检查所有功能。
+可选功能的开关，保存在数据目录的 `features.json`。某个功能出问题时，它的说明换成一行橙色提示。
 
 - 工具：Codex App 工具（让 Claude 新建、管理 Codex thread 并发消息）、Computer & Browser Use。
 - 记忆：Codex 记忆注入（把 Codex 的记忆摘要附加到 Claude 的 system prompt）、Claude Code 记忆同步（把 Claude 的自动记忆同步到 Codex 的记忆）。
-- Session：闲置释放（闲置的 Session 释放 Claude 进程，发消息时再恢复），默认关闭。
+- Session：闲置释放不是开关，而是一个时长选择：永不，或闲置多少分钟后释放 Claude 进程（发消息时再恢复），默认永不。文件里存为开关 `idleRelease` 加超时 `idleReleaseTimeoutMinutes`。
 
 工具和记忆注入从下一个 Session 开始生效，其余立即生效。功能是否开启只由 `features.json` 决定，不读环境变量。
 

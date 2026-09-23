@@ -14,9 +14,13 @@ import {
   IDLE_RELEASE_SETTINGS_METHOD,
   LOADED_SESSIONS_METHOD,
   idleReleaseSettingsSchema,
+  type IdleReleaseSettings,
   type HarnessAccountSnapshot,
 } from "@claude-in-codex/shared-contracts";
-import { featureEnabled } from "@claude-in-codex/shared-contracts/features-file";
+import {
+  featureEnabled,
+  readIdleReleaseSettings,
+} from "@claude-in-codex/shared-contracts/features-file";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
@@ -786,14 +790,13 @@ export class AppServerHost {
   }
 
   /**
-   * Apply the `idleRelease` switch, keeping the configured timeout. The settings RPC stays an
-   * in-memory override for this Host and does not write the switch.
+   * Apply the stored idle release switch and timeout. The settings RPC stays an in-memory
+   * override for this Host and does not write them.
    */
-  setIdleReleaseEnabled(enabled: boolean): void {
+  applyIdleRelease(settings: IdleReleaseSettings): void {
     // A Host whose Desktop input ended has disabled idle release for good.
     if (this.#closeRequested || this.#desktopInputEnded) return;
-    const idleRelease = this.#externalRuntime.idleRelease;
-    idleRelease.configure({ ...idleRelease.settings(), enabled });
+    this.#externalRuntime.idleRelease.configure(settings);
   }
 
   /** The exposed official MCP servers as the native app-server reports them now. */
@@ -847,10 +850,10 @@ export class AppServerHost {
       await this.#closeOfficialRuntime();
       return this.#closeRequested ? 0 : 1;
     }
-    // Desktop input is not read yet, so the settings RPC cannot race the stored switch.
+    // Desktop input is not read yet, so the settings RPC cannot race the stored settings.
     try {
-      this.setIdleReleaseEnabled(
-        await featureEnabled("idleRelease", this.#options.environment ?? process.env),
+      this.applyIdleRelease(
+        await readIdleReleaseSettings(this.#options.environment ?? process.env),
       );
     } catch (error) {
       this.#diagnose(`Idle release could not be configured: ${errorMessage(error)}`);

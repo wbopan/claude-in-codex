@@ -310,16 +310,77 @@ final class UsageBar: NSView {
     }
 }
 
-/// The Claude cloud in Claude orange with white pixel eyes, on Claude Code's dark tile.
-func claudeCodeImage(size: CGFloat) -> NSImage {
+/// Claude orange, the fill of every Claude glyph on the Dashboard.
+let claudeOrange = rgb(0xD97757)
+
+/// Claude Code's Clawd, the CLI's pixel mascot, in Claude orange with no tile: body, arms and legs on a
+/// 16 by 10 pixel grid (y down), the eyes cut out.
+func clawdImage(size: CGFloat) -> NSImage {
+    let cells = [(2, 0, 12, 8), (0, 4, 2, 2), (14, 4, 2, 2), (3, 8, 1, 2), (5, 8, 1, 2), (10, 8, 1, 2), (12, 8, 1, 2)]
+    let eyes = [(4, 2, 1, 2), (11, 2, 1, 2)]
+    return NSImage(size: NSSize(width: size, height: size * 10 / 16), flipped: true) { rect in
+        let unit = rect.width / 16
+        let path = NSBezierPath()
+        for (x, y, w, h) in cells + eyes {
+            path.append(NSBezierPath(rect: NSRect(x: CGFloat(x) * unit, y: CGFloat(y) * unit, width: CGFloat(w) * unit, height: CGFloat(h) * unit)))
+        }
+        path.windingRule = .evenOdd; claudeOrange.setFill(); path.fill()
+        return true
+    }
+}
+
+/// The Claude cloud in Claude orange with no tile, the eyes cut out. The cloud is a fuller shape than the
+/// Codex cloud, so it sits inset from the box to read as the same size.
+func claudeCloudImage(size: CGFloat) -> NSImage {
     NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-        rgb(0x1F1E1D).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: rect.width / 4, yRadius: rect.width / 4).fill()
-        inMarkGrid(rect.insetBy(dx: rect.width / 7, dy: rect.width / 7)) {
-            rgb(0xD97757).setFill(); cloudPath().fill()
-            NSColor.white.setFill(); cloudEyes.forEach { NSBezierPath(rect: $0).fill() }
+        inMarkGrid(rect.insetBy(dx: size / 16, dy: size / 16)) {
+            let cloud = cloudPath()
+            cloudEyes.forEach { cloud.append(NSBezierPath(rect: $0)) }
+            cloud.windingRule = .evenOdd; claudeOrange.setFill(); cloud.fill()
         }
         return true
+    }
+}
+
+/// The App's icon drawn into a bitmap of known layout: 8-bit RGBA rows, premultiplied.
+private func rgbaBitmap(_ path: String) -> NSBitmapImageRep? {
+    guard let image = NSImage(contentsOfFile: path), let source = image.representations.first else { return nil }
+    let width = source.pixelsWide, height = source.pixelsHigh
+    guard width > 0, height > 0, let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+                                                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                                                bytesPerRow: width * 4, bitsPerPixel: 32) else { return nil }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+    image.draw(in: NSRect(x: 0, y: 0, width: width, height: height), from: .zero, operation: .copy, fraction: 1)
+    NSGraphicsContext.restoreGraphicsState()
+    return bitmap
+}
+
+/// The Codex cloud lifted off its tile. The App ships its icon rendered on a light and on a dark tile; the
+/// opaque pixels the two share are the cloud, the rest is tile and shadow. Nil when the App lacks either render.
+func codexCloudImage(appPath: String) -> NSImage? {
+    let resources = appPath + "/Contents/Resources/"
+    guard let light = rgbaBitmap(resources + "icon-codex-light.png"), let dark = rgbaBitmap(resources + "icon-codex-dark-color.png"),
+          light.pixelsWide == dark.pixelsWide, light.pixelsHigh == dark.pixelsHigh,
+          let lightData = light.bitmapData, let darkData = dark.bitmapData else { return nil }
+    let width = light.pixelsWide, height = light.pixelsHigh
+    var minX = width, minY = height, maxX = -1, maxY = -1
+    for y in 0..<height {
+        for x in 0..<width {
+            let i = y * light.bytesPerRow + x * 4
+            let shared = lightData[i + 3] == 255 && (0..<4).allSatisfy { abs(Int(lightData[i + $0]) - Int(darkData[i + $0])) <= 8 }
+            if shared {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            } else {
+                for c in 0..<4 { lightData[i + c] = 0 }
+            }
+        }
+    }
+    guard maxX >= minX, maxY >= minY else { return nil }
+    let cloud = NSImage(size: NSSize(width: width, height: height)); cloud.addRepresentation(light)
+    let crop = NSRect(x: minX, y: height - 1 - maxY, width: maxX - minX + 1, height: maxY - minY + 1)
+    return NSImage(size: crop.size, flipped: false) { rect in
+        cloud.draw(in: rect, from: crop, operation: .sourceOver, fraction: 1); return true
     }
 }
 
@@ -340,7 +401,7 @@ let featureGroups: [(title: String, features: [(id: String, title: String, detai
              ("computerUse", "Computer & Browser Use", "让 Claude 操作本机 App 和浏览器")]),
     ("记忆", [("codexMemory", "Codex 记忆注入", "把 Codex 的记忆摘要附加到 Claude 的 system prompt"),
              ("claudeMemorySync", "Claude Code 记忆同步", "把 Claude 的自动记忆同步到 Codex 的记忆")]),
-    ("Session", [("idleRelease", "闲置释放", "闲置的 Session 释放 Claude 进程，发消息时再恢复")]),
+    ("Session", [("idleRelease", "闲置释放", "闲置超过所选时间的 Session 释放 Claude 进程，发消息时再恢复")]),
 ]
 
 /// A switch for a grouped row, sent to target when flipped.
@@ -357,22 +418,46 @@ func titled(_ title: String, note: NSTextField) -> NSStackView {
     return text
 }
 
-/// One row on the 功能 pane. The description gives way to a problem the Host reports.
+/// The idle release choices: never, then how long a Session sits idle before release, tagged in minutes.
+let idleReleaseChoices = [(0, "永不"), (5, "5 分钟"), (15, "15 分钟"), (30, "30 分钟"), (60, "1 小时"), (240, "4 小时")]
+
+/// A popup of the idle release choices, sent to target when one is picked.
+func idleReleasePopup(_ target: AnyObject, _ action: Selector) -> NSPopUpButton {
+    let popup = NSPopUpButton(); popup.target = target; popup.action = action
+    for (minutes, title) in idleReleaseChoices { popup.addItem(withTitle: title); popup.lastItem?.tag = minutes }
+    popup.setContentHuggingPriority(.required, for: .horizontal)
+    return popup
+}
+
+/// Selects the reported choice; a timeout set outside the list gets its own item.
+func selectIdleRelease(_ popup: NSPopUpButton, _ feature: [String: Any]?) {
+    let minutes = feature?["enabled"] as? Bool == true ? feature?["timeoutMinutes"] as? Int ?? 0 : 0
+    if popup.indexOfItem(withTag: minutes) < 0 {
+        let index = popup.itemArray.firstIndex { $0.tag > minutes } ?? popup.numberOfItems
+        popup.insertItem(withTitle: minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes) 分钟", at: index)
+        popup.item(at: index)?.tag = minutes
+    }
+    popup.selectItem(withTag: minutes)
+}
+
+/// One row on the 功能 pane: a switch, or for idle release the popup of never and durations. The
+/// description gives way to a problem the Host reports.
 final class FeatureRow {
-    let toggle: NSSwitch
+    let control: NSControl
     let view: NSStackView
     private let note: NSTextField
     private let detail: String
-    init(id: String, title: String, detail: String, target: AnyObject, action: Selector) {
-        self.detail = detail
+    private let reflect: (NSControl, [String: Any]?) -> Void
+    init(id: String, title: String, detail: String, control: NSControl, reflect: @escaping (NSControl, [String: Any]?) -> Void) {
+        self.detail = detail; self.control = control; self.reflect = reflect
         note = label(detail, size: 11, color: .secondaryLabelColor)
-        toggle = rowSwitch(target, action); toggle.identifier = NSUserInterfaceItemIdentifier(id)
-        view = hstack([titled(title, note: note), toggle], spacing: 12)
+        control.identifier = NSUserInterfaceItemIdentifier(id)
+        view = hstack([titled(title, note: note), control], spacing: 12)
     }
-    /// Without a status entry (a Host that predates features, or none running) the switch is inert.
+    /// Without a status entry (a Host that predates features, or none running) the control is inert.
     func show(_ feature: [String: Any]?) {
-        toggle.isEnabled = feature != nil
-        toggle.state = feature?["enabled"] as? Bool == true ? .on : .off
+        control.isEnabled = feature != nil
+        reflect(control, feature)
         if let problem = feature?["problem"] as? String, !problem.isEmpty {
             note.stringValue = problem; note.textColor = Palette.warnInk
         } else {
@@ -382,18 +467,30 @@ final class FeatureRow {
     }
 }
 
-/// One Dashboard component card: icon and health pill on top, name and version below.
+/// A glyph fitted to glyphSize and centered in a box, so every card's icon reads as one size.
+func framed(_ glyph: NSImage, box: CGFloat = 36, glyphSize: CGFloat = 26) -> NSImage {
+    NSImage(size: NSSize(width: box, height: box), flipped: false) { rect in
+        let scale = glyphSize / max(glyph.size.width, glyph.size.height)
+        let width = glyph.size.width * scale, height = glyph.size.height * scale
+        glyph.draw(in: NSRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height),
+                   from: .zero, operation: .sourceOver, fraction: 1)
+        return true
+    }
+}
+
+/// One Dashboard component card: icon and health pill on top, name below. Every icon is a bare glyph
+/// with no tile, framed at the same size.
 final class ComponentCard {
     let view = FillView(Palette.group, radius: 12)
     let pill = Pill()
-    let version = tabular(label("—", size: 11, color: .secondaryLabelColor))
     let icon = NSImageView()
+    func show(glyph: NSImage) { icon.image = framed(glyph) }
     init(name: String) {
         icon.imageScaling = .scaleProportionallyUpOrDown
         pin(icon, width: 36, height: 36)
         let top = hstack([icon, spacer(), pill]); top.alignment = .top
         let nameLabel = label(name, weight: .semibold)
-        let content = vstack([top, vstack([nameLabel, version], spacing: 2)], spacing: 12)
+        let content = vstack([top, nameLabel], spacing: 12)
         content.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(content)
         NSLayoutConstraint.activate([
@@ -697,7 +794,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         guard let id = sender.identifier?.rawValue else { return }
         send("set-feature", ["feature": id, "enabled": sender.state == .on])
     }
-    @objc private func checkFeatures() { send("check-features") }
+    @objc private func chooseIdleRelease(_ sender: NSPopUpButton) { send("set-idle-release", ["minutes": sender.selectedTag()]) }
 
     // MARK: Main window
 
@@ -785,9 +882,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         error.textColor = .systemRed; error.font = .systemFont(ofSize: 12); errorLabel = error
 
         let app = ComponentCard(name: "Codex App"), cli = ComponentCard(name: "Claude Code CLI"), host = ComponentCard(name: appName)
-        cli.icon.image = claudeCodeImage(size: 36)
-        host.icon.image = NSApp.applicationIconImage
-        host.version.stringValue = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        cli.show(glyph: clawdImage(size: 36))
+        host.show(glyph: claudeCloudImage(size: 36))
         appCard = app; cliCard = cli; hostCard = host
         let cards = NSStackView(views: [app.view, cli.view, host.view])
         cards.orientation = .horizontal; cards.distribution = .fillEqually; cards.spacing = 10; cards.alignment = .top
@@ -800,17 +896,21 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
 
     private func featuresPane() -> NSView {
-        let check = NSButton(title: "深度检查…", target: self, action: #selector(checkFeatures))
-        check.controlSize = .small
-        check.toolTip = "立即重新检查每个功能；检查 Computer Use 时 macOS 可能请求权限"
-        let sections = featureGroups.enumerated().map { index, entry -> NSView in
+        let sections = featureGroups.map { entry -> NSView in
             let rows = entry.features.map { feature -> (NSView, CGFloat?) in
-                let row = FeatureRow(id: feature.id, title: feature.title, detail: feature.detail,
-                                     target: self, action: #selector(toggleFeature(_:)))
+                let row = feature.id == "idleRelease"
+                    ? FeatureRow(id: feature.id, title: feature.title, detail: feature.detail,
+                                 control: idleReleasePopup(self, #selector(chooseIdleRelease(_:)))) { control, feature in
+                        (control as? NSPopUpButton).map { selectIdleRelease($0, feature) }
+                    }
+                    : FeatureRow(id: feature.id, title: feature.title, detail: feature.detail,
+                                 control: rowSwitch(self, #selector(toggleFeature(_:)))) { control, feature in
+                        (control as? NSSwitch)?.state = feature?["enabled"] as? Bool == true ? .on : .off
+                    }
                 featureRows[feature.id] = row
                 return (row.view, 56)
             }
-            return section(entry.title, accessory: index == 0 ? check : nil, content: group(rows))
+            return section(entry.title, content: group(rows))
         }
         return paneStack(sections)
     }
@@ -922,22 +1022,13 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let error = state["error"] as? String ?? ""
         errorLabel?.stringValue = error; errorLabel?.isHidden = error.isEmpty
 
-        if let icon = appCard?.icon, icon.image == nil {
-            // The bundled Codex icon is full-bleed; the system masks it only where it draws app icons.
-            if let codex = NSImage(contentsOfFile: appPath + "/Contents/Resources/app.icns") {
-                icon.image = codex; icon.wantsLayer = true
-                icon.layer?.cornerRadius = 8; icon.layer?.cornerCurve = .continuous; icon.layer?.masksToBounds = true
-            } else {
-                icon.image = NSWorkspace.shared.icon(forFile: appPath)
-            }
+        if let card = appCard, card.icon.image == nil {
+            card.show(glyph: codexCloudImage(appPath: appPath) ?? NSWorkspace.shared.icon(forFile: appPath))
         }
-        appCard?.version.stringValue = state["appVersion"] as? String ?? "未安装"
         let appRunning = state["appRunning"] as? Bool == true
         appCard?.pill.show(appRunning ? "运行中" : "未运行", tone: appRunning ? "ok" : "off")
 
         let claude = (state["harnesses"] as? [[String: Any]] ?? []).first { $0["harnessId"] as? String == "claude-code" }
-        cliCard?.version.stringValue = claude?["version"] as? String ?? "—"
-        cliCard?.version.toolTip = (claude?["executable"] as? String).map(displayPath)
         let processes = state["claudeProcesses"] as? Int ?? 0
         if let claude, claude["executable"] == nil || claude["executable"] is NSNull {
             cliCard?.pill.show("未安装", tone: "warn")

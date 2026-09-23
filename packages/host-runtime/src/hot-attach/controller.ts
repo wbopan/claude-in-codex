@@ -148,9 +148,9 @@ export class HotAttachController {
     await this.#features.set(id, enabled, this.#session);
     this.#changed();
   }
-  /** Re-runs every feature check now, including the official server listing while attached. */
-  async checkFeatures(): Promise<void> {
-    await this.#features.refresh(this.#session, true);
+  /** Writes the idle release choice, 0 for never, and applies it where it can change live. */
+  async setIdleRelease(minutes: number): Promise<void> {
+    await this.#features.setIdleRelease(minutes, this.#session);
     this.#changed();
   }
   /** Re-reads what the Dashboard shows outside the live attachment. Cheap except the CLI. */

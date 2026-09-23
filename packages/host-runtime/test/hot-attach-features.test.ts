@@ -27,13 +27,13 @@ beforeEach(async () => {
 
 function session(servers: Record<string, DesktopToolServerStatus>) {
   const desktopToolServers = vi.fn(async () => new Map(Object.entries(servers)));
-  const setIdleReleaseEnabled = vi.fn();
+  const applyIdleRelease = vi.fn();
   const value = {
     attached: true,
     hello: { codexHome },
-    host: { desktopToolServers, setIdleReleaseEnabled },
+    host: { desktopToolServers, applyIdleRelease },
   } as unknown as HotAttachSession;
-  return { value, desktopToolServers, setIdleReleaseEnabled };
+  return { value, desktopToolServers, applyIdleRelease };
 }
 
 const problems = (health: FeatureHealth) =>
@@ -138,13 +138,37 @@ describe("feature problems", () => {
     const health = new FeatureHealth({ environment });
     const attached = session({});
     await health.set("idleRelease", true, attached.value);
-    expect(attached.setIdleReleaseEnabled).toHaveBeenCalledWith(true);
+    expect(attached.applyIdleRelease).toHaveBeenCalledWith({ enabled: true, timeoutMinutes: 30 });
     await health.set("computerUse", false, attached.value);
     expect(health.status().find((feature) => feature.id === "computerUse")).toEqual({
       id: "computerUse",
       enabled: false,
       problem: null,
     });
+  });
+
+  it("stores the idle release choice as the switch plus its timeout", async () => {
+    const health = new FeatureHealth({ environment });
+    const attached = session({});
+    const idleRelease = () => health.status().find((feature) => feature.id === "idleRelease");
+    expect(idleRelease()).toEqual({
+      id: "idleRelease",
+      enabled: false,
+      problem: null,
+      timeoutMinutes: 30,
+    });
+    await health.setIdleRelease(15, attached.value);
+    expect(attached.applyIdleRelease).toHaveBeenLastCalledWith({
+      enabled: true,
+      timeoutMinutes: 15,
+    });
+    expect(idleRelease()).toMatchObject({ enabled: true, timeoutMinutes: 15 });
+    await health.setIdleRelease(0, attached.value);
+    expect(attached.applyIdleRelease).toHaveBeenLastCalledWith({
+      enabled: false,
+      timeoutMinutes: 15,
+    });
+    expect(idleRelease()).toMatchObject({ enabled: false, timeoutMinutes: 15 });
   });
 });
 
@@ -160,7 +184,7 @@ describe("menu bar controller features", () => {
       { id: "computerUse", enabled: true, problem: null },
       { id: "codexMemory", enabled: true, problem: null },
       { id: "claudeMemorySync", enabled: true, problem: null },
-      { id: "idleRelease", enabled: false, problem: null },
+      { id: "idleRelease", enabled: false, problem: null, timeoutMinutes: 30 },
     ]);
     await controller.setFeature("idleRelease", true);
     await controller.setFeature("codexAppTools", false);
