@@ -7,7 +7,7 @@
 App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 
 1. 正常打开 `/Applications/ChatGPT.app`，然后打开 Claude in Codex。
-2. 菜单栏的括号图标中间变成实心圆，表示已接入。原生模型选择器会增加本机 Claude 模型。
+2. 菜单栏的云朵图标变成实心并睁开眼睛，表示已接入。原生模型选择器会增加本机 Claude 模型。
 3. 选择「断开（等待任务完成）」或「退出 Claude in Codex」，等待正在执行的外部任务和后台任务完成。等待期间可以取消断开，也可以明确选择停止外部任务。
 4. Codex App 和 GPT 任务继续运行。重新打开 Host 或选择「接入 Codex App」即可再次接入。
 
@@ -19,7 +19,7 @@ App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 
 ## 菜单与 Dashboard
 
-图标由两个开放括号和连接点组成，适配系统明暗主题。空心点表示未接入，实心点表示已接入，省略号表示接入或排空中，感叹号表示错误。
+图标是 Claude 云朵，适配系统明暗主题，用眼睛表示状态：描边云朵加闭眼表示未接入，实心云朵加睁眼表示已接入，三个点表示接入或排空中，感叹号表示错误。
 
 下拉菜单只放简要状态：接入状态、运行中的任务数、各额度窗口的剩余量（小进度条，悬停可见百分比和重置时间），以及接入/断开、Dashboard、设置、关于和退出。
 
@@ -56,7 +56,7 @@ open '/Applications/Claude in Codex.app'
 
 `npm run app:install` 先构建到 `.dev/app/Claude in Codex.app`，再替换 `/Applications` 中的 App。正在运行的 App 不会被覆盖：先从菜单退出（等待任务完成），再安装。只构建不安装用 `npm run app:build`。
 
-也可以用 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标、进行本地 ad-hoc 签名并检查签名。
+也可以用 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标（装有 Xcode 时用 `actool` 编译 `apps/macos/icon/Claude.icon`，否则用预渲染 PNG 生成 icns）、进行本地 ad-hoc 签名并检查签名。
 
 仓库内的开发产物（构建、工具链、验收记录）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
 
