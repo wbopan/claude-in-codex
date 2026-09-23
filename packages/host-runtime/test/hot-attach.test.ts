@@ -1,13 +1,26 @@
 import { EventEmitter } from "node:events";
 import vm from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { installDesktopAgent } from "../src/hot-attach/desktop-agent.js";
 import { BorrowedDesktopBackend } from "../src/hot-attach/borrowed-backend.js";
 
+/** A JSON frame the agent wrote; tests read only the fields they know it carries. */
+interface Frame {
+  type?: string;
+  channel?: string;
+  id?: unknown;
+  method?: string;
+  body?: string;
+  params?: unknown;
+  result?: unknown;
+  message?: { id?: unknown; result?: { codexHome?: string } };
+}
+
 function fixture() {
-  const wire: Record<string, any>[] = [],
-    native: Record<string, any>[] = [],
-    desktop: Record<string, any>[] = [];
+  const wire: Frame[] = [],
+    native: Frame[] = [],
+    desktop: Frame[] = [],
+    routed: unknown[] = [];
   class Socket extends EventEmitter {
     destroyed = false;
     writableLength = 0;
@@ -36,14 +49,15 @@ function fixture() {
         native.push(JSON.parse(text));
       },
     };
-    routeResponse(_response: any) {
+    routeResponse(response: unknown) {
+      routed.push(response);
       return "native-response";
     }
-    routeIncomingMessage(message: any) {
+    routeIncomingMessage(message: Frame) {
       desktop.push(message);
       return "native-route";
     }
-    async sendAppServerRequest(method: string, params: any) {
+    async sendAppServerRequest(method: string, params: unknown) {
       this.connection.send(JSON.stringify({ id: "native-cleanup", method, params }));
     }
     listModels() {}
@@ -56,15 +70,14 @@ function fixture() {
   const connection = new Connection();
   const timers: (() => void)[] = [];
   let now = 0;
+  const nativeFetch: (input: string) => Promise<Response> = async () =>
+    new Response('{"rate_limit":{"allowed":true}}', {
+      headers: { "content-type": "application/json" },
+    });
   const electron = {
     app: { getVersion: () => "26.915.31945" },
     webContents: { getAllWebContents: () => [] },
-    net: {
-      fetch: async () =>
-        new Response('{"rate_limit":{"allowed":true}}', {
-          headers: { "content-type": "application/json" },
-        }),
-    },
+    net: { fetch: nativeFetch },
   };
   const context = vm.createContext({
     Buffer,
@@ -109,6 +122,7 @@ function fixture() {
     wire,
     native,
     desktop,
+    routed,
     connection,
     receive,
     context,
@@ -157,15 +171,17 @@ describe("memory-only Desktop bridge", () => {
       message: { id: "init", method: "initialize" },
     });
     expect(f.native).toEqual([]);
-    expect(f.wire.at(-1)?.message.result.codexHome).toBe("/fixture/codex");
+    expect(f.routed).toEqual([{ id: "old", result: {} }]);
+    expect(f.wire.at(-1)?.message?.result?.codexHome).toBe("/fixture/codex");
     f.receive({ type: "open", channel: "tools" });
     for (const channel of ["primary", "tools"])
       f.receive({ type: "native", channel, message: { id: 1, method: "model/list", params: {} } });
-    expect(f.native[0]!.id).not.toBe(f.native[1]!.id);
+    expect(f.native).toHaveLength(2);
+    expect(f.native[0]?.id).not.toBe(f.native[1]?.id);
     f.native.forEach((request) =>
       f.connection.routeIncomingMessage({ id: request.id, result: { data: [] } }),
     );
-    expect(f.wire.slice(-2).map((m) => [m.channel, m.message.id])).toEqual([
+    expect(f.wire.slice(-2).map((m) => [m.channel, m.message?.id])).toEqual([
       ["primary", 1],
       ["tools", 1],
     ]);
@@ -195,8 +211,9 @@ describe("memory-only Desktop bridge", () => {
       channel: "tools",
       message: { id: "start", method: "thread/start", params: { ephemeral: true } },
     });
+    expect(f.native).toHaveLength(1);
     f.connection.routeIncomingMessage({
-      id: f.native[0]!.id,
+      id: f.native[0]?.id,
       result: { thread: { id: "context" } },
     });
     f.connection.routeIncomingMessage({
@@ -238,13 +255,14 @@ describe("memory-only Desktop bridge", () => {
   });
   it("extends only the exact usage response and leaves auth and unrelated responses on the native transport", async () => {
     const f = fixture();
-    const nativeResponse = await f.electron.net.fetch(
-      "https://chatgpt.com/backend-api/me" as never,
-    );
+    const nativeResponse = await f.electron.net.fetch("https://chatgpt.com/backend-api/me");
     expect(await nativeResponse.json()).toEqual({ rate_limit: { allowed: true } });
-    const response = f.electron.net.fetch("https://chatgpt.com/backend-api/wham/usage" as never);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const request = f.wire.find((m) => m.type === "usage")!;
+    const response = f.electron.net.fetch("https://chatgpt.com/backend-api/wham/usage");
+    const request = await vi.waitFor(() => {
+      const frame = f.wire.find((m) => m.type === "usage");
+      if (!frame) throw new Error("The agent has not forwarded the usage body yet");
+      return frame;
+    });
     expect(request.body).toContain("rate_limit");
     f.receive({ type: "usage", id: request.id, body: '{"ambient_usage":{"default":{}}}' });
     expect(await (await response).json()).toEqual({ ambient_usage: { default: {} } });
@@ -258,11 +276,13 @@ it("closing borrowed virtual clients never owns or signals the official process"
   await backend.start();
   const client = await backend.connect();
   expect(client.stopProcess).toBeUndefined();
-  const channel = wire[0]!.channel as string;
+  const channel = wire[0]?.channel;
+  if (typeof channel !== "string") throw new Error("The backend did not open a channel");
   const received: string[] = [];
   client.stdout.on("data", (value) => received.push(value.toString()));
   backend.receive(channel, { id: "a", result: {} });
-  expect(JSON.parse(received[0]!)).toEqual({ id: "a", result: {} });
+  expect(received).toHaveLength(1);
+  expect(JSON.parse(received[0] ?? "")).toEqual({ id: "a", result: {} });
   await backend.stop();
   expect(await backend.closed).toEqual({ code: 0, signal: null });
   expect(wire.map((value) => value.type)).toEqual(["open", "close"]);

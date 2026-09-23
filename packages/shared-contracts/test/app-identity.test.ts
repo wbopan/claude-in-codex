@@ -4,6 +4,7 @@ import {
   adoptLegacyEnvironment,
   decodeHarnessPluginRoute,
   encodeHarnessPluginRoute,
+  harnessIdSchema,
   isAppEnvironmentVariable,
   normalizeRouteId,
 } from "../src/index.js";
@@ -27,7 +28,7 @@ describe("names kept from before the rename", () => {
   });
 
   it("decodes a plugin route stored under the legacy prefix", () => {
-    const current = encodeHarnessPluginRoute({ harnessId: "sample-agent" });
+    const current = encodeHarnessPluginRoute({ harnessId: harnessIdSchema.parse("sample-agent") });
     const legacy = current.replace("claude-in-codex/", "codexhost/");
     expect(decodeHarnessPluginRoute(legacy)).toEqual({ harnessId: "sample-agent" });
   });

@@ -1,16 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 import { HarnessLaunchSettingsStore } from "../src/harness-launch-settings.js";
 
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "launch-settings-"));
-  roots.push(root);
+  const root = await tempDir("launch-settings-");
   const environment = { CLAUDE_IN_CODEX_DATA_DIR: root };
   const file = path.join(root, "custom entry.cjs");
   await writeFile(file, "// fixture");

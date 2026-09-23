@@ -1,9 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { withUserShellEnvironment } from "../src/user-shell-environment.js";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 const marker = "startup output\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\0";
 
@@ -11,25 +11,21 @@ describe("User shell environment", () => {
   it.skipIf(process.platform === "win32")(
     "keeps the event loop responsive while a shell starts",
     async () => {
-      const directory = await mkdtemp(path.join(tmpdir(), "claude-in-codex-shell-async-"));
-      try {
-        const shell = path.join(directory, "zsh");
-        await writeFile(
-          shell,
-          "#!/bin/sh\n/bin/sleep 0.2\nprintf '\\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\\0FROM_SHELL=yes\\0'\n",
-          { mode: 0o700 },
-        );
-        let settled = false;
-        const pending = withUserShellEnvironment({ HOME: directory, SHELL: shell });
-        void pending.then(() => {
-          settled = true;
-        });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        expect(settled).toBe(false);
-        expect(await pending).toMatchObject({ FROM_SHELL: "yes" });
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
+      const directory = await tempDir("claude-in-codex-shell-async-");
+      const shell = path.join(directory, "zsh");
+      await writeFile(
+        shell,
+        "#!/bin/sh\n/bin/sleep 0.2\nprintf '\\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\\0FROM_SHELL=yes\\0'\n",
+        { mode: 0o700 },
+      );
+      let settled = false;
+      const pending = withUserShellEnvironment({ HOME: directory, SHELL: shell });
+      void pending.then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      expect(await pending).toMatchObject({ FROM_SHELL: "yes" });
     },
   );
 

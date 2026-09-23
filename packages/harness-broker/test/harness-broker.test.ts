@@ -1,11 +1,10 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import net, { type Server, type Socket } from "node:net";
-import os from "node:os";
 import path from "node:path";
 
 import { randomUUID } from "node:crypto";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   HarnessOutputChannel,
@@ -28,8 +27,10 @@ import {
   HARNESS_BROKER_MAX_PENDING_REQUESTS,
   startHarnessBrokerServer,
 } from "../src/index.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
-const roots: string[] = [];
+// Broker sockets live inside these temporary directories, so their prefixes stay short: macOS
+// limits a Unix socket path to 103 bytes and its temporary directory already takes 56.
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve = (): void => undefined;
@@ -39,14 +40,9 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
   return { promise, resolve };
 }
 
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
 describe("macOS Aqua Harness broker", () => {
   it("routes a single Subagent stop to its parent and rejects another Harness", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "cx-stop-agent-"));
-    roots.push(root);
+    const root = await tempDir("cx-stop-agent-");
     const descriptorPath = path.join(root, "broker.json");
     const adapter = Object.assign(new FakeHarnessAdapter(harnessIdSchema.parse("claude-code")), {
       subagents: {
@@ -67,7 +63,7 @@ describe("macOS Aqua Harness broker", () => {
       parent: {
         harnessId: harnessIdSchema.parse("claude-code"),
         nativeSessionId: randomUUID(),
-        formatVersion: 1,
+        formatVersion: 1 as const,
       },
       nativeSubagentId: "child-1",
       cwd: "/synthetic",
@@ -90,8 +86,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("discovers a newly started broker and reconnects on demand after its generation changes", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "cx-broker-restart-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-restart-");
     const descriptorPath = path.join(root, "broker.json");
     const socketPath =
       process.platform === "win32"
@@ -107,7 +102,8 @@ describe("macOS Aqua Harness broker", () => {
     try {
       expect((await client.inspect()).status).toBe("ready");
       await server.close();
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      // Settles only once the client has seen its connection drop, so the restart below is new.
+      expect((await client.inspect()).status).toBe("unavailable");
       server = await startHarnessBrokerServer({
         descriptorPath,
         socketPath,
@@ -122,8 +118,7 @@ describe("macOS Aqua Harness broker", () => {
   it.each(["codebuddy", "workbuddy", "cursor-cli"])(
     "isolates %s identity and forwards only opted-in delegation environment",
     async (id) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-broker-multi-"));
-      roots.push(root);
+      const root = await tempDir("cx-broker-multi-");
       const descriptorPath = path.join(root, "broker.json");
       const socketPath =
         process.platform === "win32"
@@ -190,8 +185,7 @@ describe("macOS Aqua Harness broker", () => {
   it.skipIf(process.platform === "win32")(
     "refuses to replace a non-socket entry at the broker socket path",
     async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-      roots.push(root);
+      const root = await tempDir("cx-broker-");
       const descriptorPath = path.join(root, "broker-v1.json");
       const socketPath = path.join(root, "broker.sock");
       await writeFile(socketPath, "user-owned-content", "utf8");
@@ -206,8 +200,7 @@ describe("macOS Aqua Harness broker", () => {
   );
 
   it("round-trips inspect, open, execute, streamed output, and close", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
@@ -292,8 +285,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("isolates accepted socket errors without stopping the broker", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
@@ -354,8 +346,7 @@ describe("macOS Aqua Harness broker", () => {
       (descriptor: Record<string, unknown>) => ({ ...descriptor, generation: randomUUID() }),
     ],
   ])("fails closed for a descriptor with the wrong %s", async (_field, mutate) => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
@@ -384,8 +375,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("fail-closes before processing a packed frame batch beyond the server queue cap", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
@@ -427,8 +417,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("rejects a second writer before opening the same native Session", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
@@ -460,8 +449,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("reserves a known native writer before awaiting the native open", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const otherCwd = path.join(root, "other-cwd");
     await mkdir(otherCwd);
     const descriptorPath = path.join(root, "broker-v1.json");
@@ -509,8 +497,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("fail-closes delayed create writes until the bootstrap turn claims native identity", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const otherCwd = path.join(root, "other-cwd");
     await mkdir(otherCwd);
     const descriptorPath = path.join(root, "broker-v1.json");
@@ -642,8 +629,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("drops delayed output from the retired generation without closing its replacement", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
@@ -744,8 +730,7 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("reopens once after a terminal authentication failure and restores selection", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
-    roots.push(root);
+    const root = await tempDir("cx-broker-");
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"

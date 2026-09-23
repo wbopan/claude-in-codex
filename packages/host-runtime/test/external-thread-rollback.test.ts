@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import type { HarnessAdapter, HostThreadSnapshot } from "@claude-in-codex/harness-adapter";
 import { FakeHarnessAdapter, FakeHarnessSession } from "@claude-in-codex/harness-adapter/testing";
 import { MappingStore } from "@claude-in-codex/mapping-store";
@@ -15,6 +11,8 @@ import {
   nativeTurnRefSchema,
 } from "@claude-in-codex/shared-contracts";
 import { describe, expect, it, vi } from "vitest";
+
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { executeExternalThreadRollback } from "../src/external-thread-rollback.js";
@@ -50,7 +48,7 @@ function snapshot(sessionId: string, count: number): HostThreadSnapshot {
 
 describe.each(["last-Turn", "Fork-derived"] as const)("%s rollback preparation", (kind) => {
   it("rejects a candidate if the Runtime record changes while native open is pending", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-rollback-cas-"));
+    const directory = await tempDir("claude-in-codex-rollback-cas-");
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     const adapter = new FakeHarnessAdapter(harnessId);
@@ -164,7 +162,6 @@ describe.each(["last-Turn", "Fork-derived"] as const)("%s rollback preparation",
       await Promise.all(runtime.values().map((thread) => thread.session.close()));
       runtime.clear();
       await repository.close();
-      await rm(directory, { recursive: true, force: true });
     }
   });
 });

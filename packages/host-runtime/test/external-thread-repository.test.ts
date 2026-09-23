@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import type { HostThreadSnapshot } from "@claude-in-codex/harness-adapter";
 import { MappingStore, type StoredTurnMappingV1 } from "@claude-in-codex/mapping-store";
 import {
@@ -12,11 +8,11 @@ import {
   nativeSessionRefSchema,
   nativeTurnRefSchema,
 } from "@claude-in-codex/shared-contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ExternalThreadRepository } from "../src/external-thread-repository.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
-const temporaryDirectories: string[] = [];
 const harnessId = harnessIdSchema.parse("claude-code");
 const hostThreadId = hostThreadIdSchema.parse("thread-1");
 const nativeSessionRef = nativeSessionRefSchema.parse({
@@ -24,12 +20,6 @@ const nativeSessionRef = nativeSessionRefSchema.parse({
   nativeSessionId: "native-session-1",
   formatVersion: 1,
 });
-
-async function temporaryStoreDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-repository-"));
-  temporaryDirectories.push(directory);
-  return directory;
-}
 
 function snapshotTurnForSession(
   sessionRef: typeof nativeSessionRef,
@@ -59,17 +49,9 @@ function mapping(hostKey: string, nativeKey: string): StoredTurnMappingV1 {
   };
 }
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
-
 describe("ExternalThreadRepository", () => {
   it("reuses legacy child identities and deduplicates overlapping native child materialization", async () => {
-    const directory = await temporaryStoreDirectory();
+    const directory = await tempDir("claude-in-codex-repository-");
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     await repository.initialize();
@@ -124,7 +106,7 @@ describe("ExternalThreadRepository", () => {
   });
 
   it("rehydrates native Subagent history with stable Host children and sender identity", async () => {
-    const directory = await temporaryStoreDirectory();
+    const directory = await tempDir("claude-in-codex-repository-");
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     await repository.initialize();
@@ -194,7 +176,7 @@ describe("ExternalThreadRepository", () => {
   });
 
   it("commits a last-Turn replacement with retained Host Turn identity", async () => {
-    const directory = await temporaryStoreDirectory();
+    const directory = await tempDir("claude-in-codex-repository-");
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     await repository.initialize();
@@ -236,7 +218,7 @@ describe("ExternalThreadRepository", () => {
   });
 
   it("commits a last-Turn replacement that keeps the same Native Session identity", async () => {
-    const directory = await temporaryStoreDirectory();
+    const directory = await tempDir("claude-in-codex-repository-");
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     await repository.initialize();
@@ -273,7 +255,7 @@ describe("ExternalThreadRepository", () => {
   });
 
   it("converges across consecutive cold alignments with middle-inserted Native Turns", async () => {
-    const directory = await temporaryStoreDirectory();
+    const directory = await tempDir("claude-in-codex-repository-");
     const firstStore = new MappingStore({ directory, instanceId: "first" });
     const firstRepository = new ExternalThreadRepository(firstStore);
     await firstRepository.initialize();
@@ -321,7 +303,7 @@ describe("ExternalThreadRepository", () => {
   });
 
   it("adopts Native Snapshot order when persisted mappings conflict", async () => {
-    const directory = await temporaryStoreDirectory();
+    const directory = await tempDir("claude-in-codex-repository-");
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     await repository.initialize();

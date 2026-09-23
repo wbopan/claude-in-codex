@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -10,6 +9,8 @@ import {
   nativeTurnRefSchema,
 } from "@claude-in-codex/shared-contracts";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { MappingStore } from "../src/index.js";
 
@@ -30,20 +31,19 @@ const forkSource = {
   hostThreadId: hostThreadIdSchema.parse("parent"),
   hostTurnId: hostTurnIdSchema.parse("parent-turn-3"),
 };
-const resources: Array<{ directory: string; store: MappingStore }> = [];
+const stores: MappingStore[] = [];
 
 afterEach(async () => {
-  for (const { directory, store } of resources.splice(0)) {
+  for (const store of stores.splice(0)) {
     await store.close();
-    await rm(directory, { recursive: true, force: true });
   }
 });
 
 describe.each(["last-Turn", "Fork-derived"] as const)("%s replacement expectation", (kind) => {
   async function setup() {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-replacement-"));
+    const directory = await tempDir("claude-in-codex-replacement-");
     const store = new MappingStore({ directory });
-    resources.push({ directory, store });
+    stores.push(store);
     await store.initialize();
     await store.createProvisional({
       hostThreadId,

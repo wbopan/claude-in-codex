@@ -1,8 +1,7 @@
-import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, symlink } from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
@@ -10,15 +9,10 @@ import {
 
 import { forkClaudeSession } from "../src/claude-fork.js";
 import { ClaudePendingSessions } from "../src/pending-session.js";
-
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 async function fixture() {
-  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "claude-fork-cwd-")));
-  roots.push(root);
+  const root = await tempDir("claude-fork-cwd-");
   const directory = path.join(root, "renamed-project");
   const alias = path.join(root, "original-project");
   await mkdir(directory);

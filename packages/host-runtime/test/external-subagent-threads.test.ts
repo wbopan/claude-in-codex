@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import type { HostThreadSnapshot, HostTurnSnapshot } from "@claude-in-codex/harness-adapter";
 import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
 import { MappingStore } from "@claude-in-codex/mapping-store";
@@ -19,8 +15,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { listExternalThreadMetadata } from "../src/external-thread-list.js";
 import { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
-const directories: string[] = [];
 const harnessId = harnessIdSchema.parse("antigravity");
 const parentId = hostThreadIdSchema.parse("parent");
 const sourceRef = nativeSessionRefSchema.parse({
@@ -62,8 +58,7 @@ function turn(ref: NativeSessionRef, key: string, children: string[] = []): Host
 }
 
 async function fixture() {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "external-subagents-"));
-  directories.push(directory);
+  const directory = await tempDir("external-subagents-");
   const store = new MappingStore({ directory });
   const repository = new ExternalThreadRepository(store);
   await repository.initialize();
@@ -84,11 +79,8 @@ async function fixture() {
   return { directory, input, store, repository, parent };
 }
 
-afterEach(async () => {
+afterEach(() => {
   vi.restoreAllMocks();
-  await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
-  );
 });
 
 describe("External native child identity", () => {

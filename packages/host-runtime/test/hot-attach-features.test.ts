@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 import { HotAttachController } from "../src/hot-attach/controller.js";
 import { FeatureHealth, codexPluginEnabled } from "../src/hot-attach/features.js";
 import type { HotAttachSession } from "../src/hot-attach/session.js";
@@ -16,16 +16,13 @@ let codexHome: string;
 let dataDirectory: string;
 let environment: NodeJS.ProcessEnv;
 beforeEach(async () => {
-  directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-feature-health-"));
+  directory = await tempDir("claude-in-codex-feature-health-");
   codexHome = path.join(directory, "codex");
   await mkdir(path.join(codexHome, "memories"), { recursive: true });
   await writeFile(path.join(codexHome, "memories", "memory_summary.md"), "Likes tea.\n");
   await writeFile(path.join(codexHome, "config.toml"), PLUGIN_ON);
   dataDirectory = path.join(directory, "data");
   environment = { CLAUDE_IN_CODEX_DATA_DIR: dataDirectory, CODEX_HOME: codexHome };
-});
-afterEach(async () => {
-  await rm(directory, { recursive: true, force: true });
 });
 
 function session(servers: Record<string, DesktopToolServerStatus>) {

@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -12,8 +11,9 @@ import {
   type HostThreadId,
   type NativeSessionRef,
 } from "@claude-in-codex/shared-contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 import {
   MappingStore,
   packageMetadata,
@@ -23,12 +23,8 @@ import {
   type StoredTurnMappingV1,
 } from "../src/index.js";
 
-const temporaryDirectories: string[] = [];
-
 async function temporaryStoreDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-mapping-store-"));
-  temporaryDirectories.push(directory);
-  return directory;
+  return tempDir("claude-in-codex-mapping-store-");
 }
 
 const harnessId = harnessIdSchema.parse("pi");
@@ -97,14 +93,6 @@ async function createProvisional(store: MappingStore, value: string): Promise<Ho
   });
   return hostThreadId;
 }
-
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
 
 describe("mapping-store package", () => {
   it("participates in the shared contract", () => {

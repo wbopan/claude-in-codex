@@ -1,8 +1,7 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_FEATURE_SETTINGS,
@@ -19,15 +18,13 @@ import {
   writeFeatureSetting,
   writeMemorySyncResult,
 } from "../src/features-file.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 let directory: string;
 let environment: NodeJS.ProcessEnv;
 beforeEach(async () => {
-  directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-features-"));
+  directory = await tempDir("claude-in-codex-features-");
   environment = { CLAUDE_IN_CODEX_DATA_DIR: path.join(directory, "data") };
-});
-afterEach(async () => {
-  await rm(directory, { recursive: true, force: true });
 });
 
 describe("feature settings", () => {
