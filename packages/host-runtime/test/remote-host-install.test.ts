@@ -39,8 +39,9 @@ import {
 } from "../src/remote-host-install.js";
 import { platformDataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 
+// The tests install with `platform: "darwin"`, so expect the macOS folder on any runner.
 const defaultInstallRoot = (home: string): string =>
-  path.join(platformDataDirectory({ HOME: home }), "remote");
+  path.join(platformDataDirectory({ HOME: home }, "darwin"), "remote");
 
 async function executable(filePath: string): Promise<string> {
   await writeFile(filePath, "fixture\n", "utf8");
