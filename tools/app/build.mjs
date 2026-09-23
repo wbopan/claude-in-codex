@@ -56,6 +56,26 @@ async function sourceDigest() {
   }
   return hash.digest("hex");
 }
+// The first Developer ID Application identity, else the first Apple Development one.
+// CLAUDE_IN_CODEX_SIGNING_IDENTITY picks another by name or SHA-1 when several teams are present.
+function signingIdentity() {
+  const identities = [
+    ...execFileSync("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], {
+      encoding: "utf8",
+    }).matchAll(/^\s*\d+\) ([0-9A-F]{40}) "([^"]+)"$/gm),
+  ].map(([, hash, name]) => ({ hash, name }));
+  const wanted = process.env.CLAUDE_IN_CODEX_SIGNING_IDENTITY;
+  if (wanted) {
+    const chosen = identities.find(({ hash, name }) => hash === wanted || name === wanted);
+    if (!chosen) throw new Error(`No valid code signing identity matches ${wanted}`);
+    return chosen;
+  }
+  return (
+    identities.find(({ name }) => name.startsWith("Developer ID Application:")) ??
+    identities.find(({ name }) => name.startsWith("Apple Development:")) ??
+    null
+  );
+}
 const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 const digest = await sourceDigest();
 await mkdir(path.dirname(publishedApp), { recursive: true });
@@ -211,9 +231,32 @@ ${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMi
       2,
     ),
   );
-  execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", app], {
-    stdio: "inherit",
-  });
+  // Inner code first, then the bundle, both under the hardened runtime. A certificate identity
+  // makes the designated requirement name the team rather than one build's cdhash, so privacy
+  // grants such as Accessibility survive rebuilds; an ad hoc build loses them on every rebuild.
+  const identity = signingIdentity();
+  if (!identity)
+    console.warn(
+      "No Developer ID Application or Apple Development certificate in the keychain; signing ad hoc, so macOS privacy grants reset on every rebuild",
+    );
+  const sign = (target, entitlements) =>
+    execFileSync(
+      "/usr/bin/codesign",
+      [
+        "--force",
+        "--options",
+        "runtime",
+        ...(identity?.name.startsWith("Developer ID Application:") ? ["--timestamp"] : []),
+        "--entitlements",
+        path.join(root, "apps/macos/entitlements", entitlements),
+        "--sign",
+        identity?.hash ?? "-",
+        target,
+      ],
+      { stdio: "inherit" },
+    );
+  sign(path.join(resources, "runtime/node"), "node.plist");
+  sign(app, "app.plist");
   execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
   const latestProcesses = execFileSync("/bin/ps", ["-axo", "comm="], { encoding: "utf8" }).split(
     "\n",
