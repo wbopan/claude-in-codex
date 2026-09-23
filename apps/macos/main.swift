@@ -445,6 +445,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let running = earlierInstance() { handOff(to: running); return }
         NSApp.setActivationPolicy(.accessory)
+        // The About panel is AppKit's own window, so every close is watched rather than only the Dashboard's.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async { self?.leaveDockIfIdle() }
+        }
         if runningLegacyApp() != nil { waitForLegacyApp(); return }
         finishLaunching()
     }
@@ -842,6 +846,17 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         return paneStack([section("启动", content: launchBox), section("位置", content: group([(app, 56), (data, 56), (logs, 56)]))])
     }
 
+    /// The App lives in the menu bar (LSUIElement) and joins the Dock only while it has a window open,
+    /// so the icon appears with the window and leaves with it.
+    private func comeForward() {
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    private func leaveDockIfIdle() {
+        let open = NSApp.windows.contains { $0.styleMask.contains(.titled) && ($0.isVisible || $0.isMiniaturized) }
+        if !open, NSApp.activationPolicy() == .regular { NSApp.setActivationPolicy(.accessory) }
+    }
+
     @objc private func showDashboard() { showWindow(pane) }
     @objc private func showFeatures() { showWindow(.features) }
     @objc private func showSettings() { showWindow(.settings) }
@@ -864,7 +879,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         } else {
             showPane(pane)
         }
-        dashboard?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        comeForward(); dashboard?.makeKeyAndOrderFront(nil)
         send("status")
         dashboardTimer?.invalidate()
         // Elapsed times tick locally; the Host is asked again only every few seconds.
@@ -1034,7 +1049,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             options[.credits] = NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
                 .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph])
         }
-        NSApp.activate(ignoringOtherApps: true)
+        comeForward()
         NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
