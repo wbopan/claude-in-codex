@@ -1,13 +1,5 @@
+# Everything in .gitignore is ignored too (Prettier reads it by default).
 **/*.md
 **/*.wxs
-.pi/
-reference/
-node_modules/
-target/
-**/dist/
-build/
-coverage/
-playwright-report/
-test-results/
 package-lock.json
 Cargo.lock
