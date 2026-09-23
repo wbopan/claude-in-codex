@@ -1,9 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-
-/** Set to `0` to keep the Codex memory summary out of Claude Sessions. */
-export const CODEX_MEMORY_ENV = "CLAUDE_IN_CODEX_CODEX_MEMORY";
+import { featureEnabled } from "@claude-in-codex/shared-contracts/features-file";
 
 /** Skysight keeps the summary small; the cap only guards against a runaway file. */
 const MAX_SUMMARY_BYTES = 64 * 1024;
@@ -23,14 +21,14 @@ export function codexMemorySummaryPath(environment: NodeJS.ProcessEnv): string {
  * Reads the Codex memory summary as a system-prompt append for a Claude Session.
  *
  * Claude Threads never pass through codex-core, so its native memory injection does not
- * reach them; this is the Host-side equivalent. Returns `undefined` when the feature is
- * opted out, the file is missing, unreadable, or empty, so a Session starts without memory
- * rather than failing.
+ * reach them; this is the Host-side equivalent. Returns `undefined` when the `codexMemory`
+ * switch in `features.json` is off, the file is missing, unreadable, or empty,
+ * so a Session starts without memory rather than failing.
  */
 export async function readCodexMemoryAppend(
   environment: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
-  if (environment[CODEX_MEMORY_ENV]?.trim() === "0") return undefined;
+  if (!(await featureEnabled("codexMemory", environment))) return undefined;
   const file = codexMemorySummaryPath(environment);
   let summary: string;
   try {

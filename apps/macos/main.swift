@@ -27,7 +27,7 @@ let defaultDesktopApp = environment["CLAUDE_IN_CODEX_DESKTOP_APP"] ?? "/Applicat
 /// Launch preferences saved in UserDefaults; a matching environment variable overrides one for development.
 enum LaunchPreference: String, CaseIterable {
     case autoAttach = "AutoAttachAtLaunch", showDashboard = "ShowDashboardAtLaunch"
-    var title: String { self == .autoAttach ? "启动时自动接入 Codex App" : "启动时打开 Dashboard" }
+    var title: String { self == .autoAttach ? "启动时自动接入 Codex App" : "启动时打开此窗口" }
     var variables: [String] { self == .autoAttach ? ["CLAUDE_IN_CODEX_AUTO_ATTACH"] : ["CLAUDE_IN_CODEX_SHOW_DASHBOARD", "CLAUDE_IN_CODEX_SHOW_STATUS_WINDOW"] }
     var override: String? { variables.first { environment[$0] != nil } }
     var enabled: Bool {
@@ -119,9 +119,7 @@ func renderAssets(_ directory: String) throws {
 // MARK: Text and formatting
 
 let phaseLabels = ["detached": "未接入", "attaching": "正在接入…", "attached": "已接入 Codex App",
-                   "draining": "等待任务完成后断开…", "detaching": "正在断开…", "error": "接入未完成"]
-let shortPhaseLabels = ["detached": "未接入", "attaching": "正在接入", "attached": "已接入",
-                        "draining": "等待任务完成后断开", "detaching": "正在断开", "error": "未接入"]
+                   "draining": "等待 Session 完成后断开…", "detaching": "正在断开…", "error": "接入未完成"]
 
 func windowName(_ window: String?) -> String {
     guard let window else { return "" }
@@ -325,11 +323,63 @@ func claudeCodeImage(size: CGFloat) -> NSImage {
     }
 }
 
-final class FlippedView: NSView { override var isFlipped: Bool { true } }
-
 extension NSToolbarItem.Identifier {
-    static let links = NSToolbarItem.Identifier("links")
+    static let panes = NSToolbarItem.Identifier("panes")
     static let action = NSToolbarItem.Identifier("action")
+}
+
+/// The main window's panes, in the order of the toolbar's segmented control.
+enum Pane: Int, CaseIterable {
+    case overview, features, settings
+    var title: String { ["概览", "功能", "设置"][rawValue] }
+}
+
+/// The Host's optional features as the 功能 pane groups them; ids match the Host's status.features.
+let featureGroups: [(title: String, features: [(id: String, title: String, detail: String)])] = [
+    ("工具", [("codexAppTools", "Codex App 工具", "让 Claude 新建、管理 Codex thread 并发消息"),
+             ("computerUse", "Computer & Browser Use", "让 Claude 操作本机 App 和浏览器")]),
+    ("记忆", [("codexMemory", "Codex 记忆注入", "把 Codex 的记忆摘要附加到 Claude 的 system prompt"),
+             ("claudeMemorySync", "Claude Code 记忆同步", "把 Claude 的自动记忆同步到 Codex 的记忆")]),
+    ("Session", [("idleRelease", "闲置释放", "闲置的 Session 释放 Claude 进程，发消息时再恢复")]),
+]
+
+/// A switch for a grouped row, sent to target when flipped.
+func rowSwitch(_ target: AnyObject, _ action: Selector) -> NSSwitch {
+    let toggle = NSSwitch(); toggle.target = target; toggle.action = action
+    toggle.setContentHuggingPriority(.required, for: .horizontal)
+    return toggle
+}
+
+/// A row's leading text: the title over a one-line note.
+func titled(_ title: String, note: NSTextField) -> NSStackView {
+    let text = vstack([label(title), note], spacing: 3)
+    text.setContentHuggingPriority(.init(1), for: .horizontal)
+    return text
+}
+
+/// One row on the 功能 pane. The description gives way to a problem the Host reports.
+final class FeatureRow {
+    let toggle: NSSwitch
+    let view: NSStackView
+    private let note: NSTextField
+    private let detail: String
+    init(id: String, title: String, detail: String, target: AnyObject, action: Selector) {
+        self.detail = detail
+        note = label(detail, size: 11, color: .secondaryLabelColor)
+        toggle = rowSwitch(target, action); toggle.identifier = NSUserInterfaceItemIdentifier(id)
+        view = hstack([titled(title, note: note), toggle], spacing: 12)
+    }
+    /// Without a status entry (a Host that predates features, or none running) the switch is inert.
+    func show(_ feature: [String: Any]?) {
+        toggle.isEnabled = feature != nil
+        toggle.state = feature?["enabled"] as? Bool == true ? .on : .off
+        if let problem = feature?["problem"] as? String, !problem.isEmpty {
+            note.stringValue = problem; note.textColor = Palette.warnInk
+        } else {
+            note.stringValue = detail; note.textColor = .secondaryLabelColor
+        }
+        note.toolTip = note.stringValue
+    }
 }
 
 /// One Dashboard component card: icon and health pill on top, name and version below.
@@ -372,20 +422,24 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private var menuOpen = false
     private var stdoutPipe: Pipe?
     private var stdinPipe: Pipe?
+    /// The main window: status, features and settings, one pane at a time.
     private var dashboard: NSWindow?
     private var dashboardTimer: Timer?
+    private var pane = Pane.overview
+    private var panes: [Pane: NSView] = [:]
+    private var paneControl: NSSegmentedControl?
     private var actionItem: NSToolbarItem?
     private var errorLabel: NSTextField?
     private var appCard: ComponentCard?
     private var cliCard: ComponentCard?
     private var hostCard: ComponentCard?
-    private var usageSummary: NSTextField?
     private var usageList: NSStackView?
     private var taskSummary: NSTextField?
     private var taskList: NSStackView?
-    private var settings: NSWindow?
-    private var loginToggle: NSButton?
-    private var loginApproval: NSStackView?
+    private var featureRows: [String: FeatureRow] = [:]
+    private var loginToggle: NSSwitch?
+    private var loginApproval: [NSView] = []
+    private var loginRowHeight: NSLayoutConstraint?
     private var appPathLabel: NSTextField?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -442,6 +496,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         updateMenu(); startHost(autoAttach: LaunchPreference.autoAttach.enabled)
         if LaunchPreference.showDashboard.enabled { showDashboard() }
         // Development: open these windows at launch for UI checks.
+        if environment["CLAUDE_IN_CODEX_SHOW_FEATURES"] == "1" { showFeatures() }
         if environment["CLAUDE_IN_CODEX_SHOW_SETTINGS"] == "1" { showSettings() }
         if environment["CLAUDE_IN_CODEX_SHOW_ABOUT"] == "1" { showAbout() }
     }
@@ -518,8 +573,9 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             if message["type"] as? String == "status" { state = message; updateMenu() }
         }
     }
-    private func send(_ command: String) {
-        guard let control, let data = try? JSONSerialization.data(withJSONObject: ["id": UUID().uuidString, "command": command]) else { return }
+    private func send(_ command: String, _ fields: [String: Any] = [:]) {
+        let frame = fields.merging(["id": UUID().uuidString, "command": command]) { $1 }
+        guard let control, let data = try? JSONSerialization.data(withJSONObject: frame) else { return }
         do { try control.write(contentsOf: data + Data([10])) }
         catch { state = ["phase": "error", "error": error.localizedDescription]; updateMenu() }
     }
@@ -529,8 +585,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private var tasks: [[String: Any]] { state["tasks"] as? [[String: Any]] ?? [] }
     private var activeTasks: [[String: Any]] { tasks.filter { $0["status"] as? String != "idle" } }
     private var meters: [[String: Any]] { state["usage"] as? [[String: Any]] ?? [] }
-    private var runningText: String {
-        activeTasks.isEmpty ? "没有运行中的任务" : "\(activeTasks.count) 个任务运行中"
+    private var features: [String: [String: Any]] {
+        var byId: [String: [String: Any]] = [:]
+        for feature in state["features"] as? [[String: Any]] ?? [] { if let id = feature["id"] as? String { byId[id] = feature } }
+        return byId
     }
 
     // MARK: Menu
@@ -549,19 +607,17 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let entry = NSMenuItem(); entry.view = row
         return entry
     }
-    /// The read-only status block; a custom view keeps its colors instead of the disabled dimming.
+    /// The status line doubles as the way into the main window; an error rides along as its subtitle.
     private func statusMenuItem() -> NSMenuItem {
-        let lines: [NSView] = [label(phaseLabels[phase] ?? phase, weight: .semibold)]
-            + (connected ? [label(runningText, color: .secondaryLabelColor)] : [])
-            + ((state["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }.map { error in
-                let line = label(error, color: .secondaryLabelColor); line.toolTip = error
-                return [line]
-            } ?? [])
-        let block = vstack(lines, spacing: 2)
-        block.edgeInsets = NSEdgeInsets(top: 4, left: 16, bottom: 5, right: 18)
-        block.frame = NSRect(x: 0, y: 0, width: 240, height: block.fittingSize.height)
-        block.widthAnchor.constraint(equalToConstant: 240).isActive = true
-        let entry = NSMenuItem(); entry.view = block
+        let title = phaseLabels[phase] ?? phase
+        let entry = NSMenuItem(title: title, action: #selector(showDashboard), keyEquivalent: "o")
+        entry.target = self
+        entry.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)])
+        if let error = state["error"] as? String, !error.isEmpty {
+            if #available(macOS 14.4, *) { entry.subtitle = error }
+            entry.toolTip = error
+        }
         return entry
     }
     private func usageMenuItems() -> [NSMenuItem] {
@@ -600,15 +656,13 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let usage = usageMenuItems()
         if !usage.isEmpty { menu.addItem(.separator()); usage.forEach(menu.addItem) }
         menu.addItem(.separator())
-        if phase == "attached" { item("断开（等待任务完成）", #selector(disconnect)) }
+        if phase == "attached" { item("断开", #selector(disconnect)) }
         else if phase == "draining" {
             item("取消断开", #selector(cancelDisconnect))
-            item("停止外部任务并断开…", #selector(stopAndDisconnect))
+            item("停止 Session 并断开…", #selector(stopAndDisconnect))
         } else { item("接入 Codex App", #selector(connect), enabled: phase == "detached" || phase == "error") }
-        item("Dashboard…", #selector(showDashboard), key: "d")
         item("设置…", #selector(showSettings), key: ",")
         menu.addItem(.separator())
-        item("关于 \(appName)", #selector(showAbout))
         item(quitting ? "正在退出…" : "退出 \(appName)", #selector(quitHost), key: "q", enabled: !quitting)
     }
     func menuWillOpen(_ menu: NSMenu) { menuOpen = false; updateMenu(); menuOpen = true; send("status") }
@@ -620,8 +674,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     @objc private func disconnect() { send("detach") }
     @objc private func cancelDisconnect() { quitting = false; send("cancel-drain") }
     @objc private func stopAndDisconnect() {
-        let alert = NSAlert(); alert.messageText = "停止外部任务并断开？"
-        alert.informativeText = "正在运行的 Claude 任务会被中断，已保存的历史会保留。Codex App 和 GPT 任务会继续运行。"
+        let alert = NSAlert(); alert.messageText = "停止 Session 并断开？"
+        alert.informativeText = "正在运行的 Claude Code Session 会被中断，已保存的历史会保留。Codex App 和 GPT 任务会继续运行。"
         alert.addButton(withTitle: "停止并断开"); alert.addButton(withTitle: "继续等待")
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn { send("stop-and-detach") }
@@ -633,28 +687,29 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         default: connect()
         }
     }
-    @objc private func linkAction(_ sender: NSToolbarItemGroup) {
-        if sender.selectedIndex == 0 { openDesktop() } else { openLogs() }
-    }
     private var appPath: String { state["appPath"] as? String ?? defaultDesktopApp }
-    @objc private func openDesktop() {
-        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: appPath), configuration: NSWorkspace.OpenConfiguration())
-    }
     @objc private func openLogs() { NSWorkspace.shared.open(logFile) }
+    @objc private func toggleFeature(_ sender: NSSwitch) {
+        guard let id = sender.identifier?.rawValue else { return }
+        send("set-feature", ["feature": id, "enabled": sender.state == .on])
+    }
+    @objc private func checkFeatures() { send("check-features") }
 
-    // MARK: Dashboard
+    // MARK: Main window
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, .links, .action] }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, .links, .action] }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, .panes, .flexibleSpace, .action] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, .panes, .action] }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch identifier {
-        case .links:
-            let images = ["arrow.up.forward.app", "doc.text"].map { NSImage(systemSymbolName: $0, accessibilityDescription: nil)! }
-            let group = NSToolbarItemGroup(itemIdentifier: identifier, images: images, selectionMode: .momentary,
-                                           labels: ["打开 Codex App", "查看诊断日志"], target: self, action: #selector(linkAction(_:)))
-            group.subitems[0].toolTip = "打开 Codex App"; group.subitems[1].toolTip = "查看诊断日志"
-            return group
+        case .panes:
+            let control = NSSegmentedControl(labels: Pane.allCases.map(\.title), trackingMode: .selectOne,
+                                             target: self, action: #selector(pickPane(_:)))
+            control.selectedSegment = pane.rawValue
+            paneControl = control
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.view = control; item.label = "页面"
+            return item
         case .action:
             let item = NSToolbarItem(itemIdentifier: identifier)
             item.isBordered = true; item.autovalidates = false
@@ -666,10 +721,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
     }
 
-    private func section(_ title: String, summary: NSTextField?, content: NSView) -> NSView {
+    private func section(_ title: String, accessory: NSView? = nil, content: NSView) -> NSView {
         let heading = label(title, weight: .semibold)
         heading.setContentHuggingPriority(.init(1), for: .horizontal)
-        let header = hstack(summary.map { [heading, $0] } ?? [heading])
+        let header = hstack(accessory.map { [heading, $0] } ?? [heading])
         header.alignment = .firstBaseline
         header.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
         let stack = vstack([header, content], spacing: 6)
@@ -691,7 +746,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         ])
         return (box, rows)
     }
-    private func setRows(_ list: NSStackView, _ rows: [NSView]) {
+    /// Fills list with rows; height pins each row, or nil leaves rows that pin their own.
+    private func setRows(_ list: NSStackView, _ rows: [NSView], height: CGFloat? = 36) {
         list.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for (index, row) in rows.enumerated() {
             if index > 0 {
@@ -699,56 +755,114 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
                 list.addArrangedSubview(line)
                 line.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
             }
-            pin(row, height: 36)
+            if let height { pin(row, height: height) }
             list.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
         }
     }
+    /// A grouped panel holding rows fixed once, each at its own height; nil leaves a row to pin itself.
+    private func group(_ rows: [(NSView, CGFloat?)]) -> FillView {
+        let (box, list) = panel()
+        setRows(list, rows.map { row, height in pin(row, height: height) }, height: nil)
+        return box
+    }
     private func noteRow(_ text: String) -> NSView { hstack([label(text, color: .secondaryLabelColor)]) }
+    /// A pane's sections stacked at the window's width; the window takes its height from it.
+    private func paneStack(_ sections: [NSView]) -> NSStackView {
+        let stack = vstack(sections, spacing: 20)
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 20, bottom: 20, right: 20)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        for view in sections { view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true }
+        return stack
+    }
 
-    @objc private func showDashboard() {
+    private func overviewPane() -> NSView {
+        let error = NSTextField(wrappingLabelWithString: "")
+        error.textColor = .systemRed; error.font = .systemFont(ofSize: 12); errorLabel = error
+
+        let app = ComponentCard(name: "Codex App"), cli = ComponentCard(name: "Claude Code CLI"), host = ComponentCard(name: appName)
+        cli.icon.image = claudeCodeImage(size: 36)
+        host.icon.image = NSApp.applicationIconImage
+        host.version.stringValue = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        appCard = app; cliCard = cli; hostCard = host
+        let cards = NSStackView(views: [app.view, cli.view, host.view])
+        cards.orientation = .horizontal; cards.distribution = .fillEqually; cards.spacing = 10; cards.alignment = .top
+
+        let (usageBox, usageRows) = panel(); usageList = usageRows
+        let taskSummary = label("", size: 11, color: .secondaryLabelColor); self.taskSummary = taskSummary
+        let (taskBox, taskRows) = panel(); taskList = taskRows
+        return paneStack([error, section("组件", content: cards), section("用量", content: usageBox),
+                          section("Claude Code Session", accessory: taskSummary, content: taskBox)])
+    }
+
+    private func featuresPane() -> NSView {
+        let check = NSButton(title: "深度检查…", target: self, action: #selector(checkFeatures))
+        check.controlSize = .small
+        check.toolTip = "立即重新检查每个功能；检查 Computer Use 时 macOS 可能请求权限"
+        let sections = featureGroups.enumerated().map { index, entry -> NSView in
+            let rows = entry.features.map { feature -> (NSView, CGFloat?) in
+                let row = FeatureRow(id: feature.id, title: feature.title, detail: feature.detail,
+                                     target: self, action: #selector(toggleFeature(_:)))
+                featureRows[feature.id] = row
+                return (row.view, 56)
+            }
+            return section(entry.title, accessory: index == 0 ? check : nil, content: group(rows))
+        }
+        return paneStack(sections)
+    }
+
+    private func settingsPane() -> NSView {
+        let login = rowSwitch(self, #selector(toggleLogin(_:)))
+        let approvalNote = label("需要在“系统设置 › 通用 › 登录项”中允许", size: 11, color: Palette.warnInk)
+        let approve = NSButton(title: "打开登录项设置…", target: self, action: #selector(openLoginItems)); approve.controlSize = .small
+        loginToggle = login; loginApproval = [approvalNote, approve]
+        let loginRow = pin(hstack([titled("登录时启动", note: approvalNote), approve, login], spacing: 12))
+        // The login row alone changes height, growing when approval is pending.
+        loginRowHeight = loginRow.heightAnchor.constraint(equalToConstant: 40); loginRowHeight?.isActive = true
+        var launch: [(NSView, CGFloat?)] = [(loginRow, nil)]
+        for preference in LaunchPreference.allCases {
+            let toggle = rowSwitch(self, #selector(togglePreference(_:)))
+            toggle.identifier = NSUserInterfaceItemIdentifier(preference.rawValue)
+            toggle.state = preference.enabled ? .on : .off
+            guard let variable = preference.override else {
+                let title = label(preference.title); title.setContentHuggingPriority(.init(1), for: .horizontal)
+                launch.append((hstack([title, toggle], spacing: 12), 40))
+                continue
+            }
+            toggle.isEnabled = false
+            let note = label("当前由环境变量 \(variable) 决定", size: 11, color: .secondaryLabelColor)
+            launch.append((hstack([titled(preference.title, note: note), toggle], spacing: 12), 56))
+        }
+        let launchBox = group(launch)
+
+        let (app, appField) = pathRow("Codex App", appPath, [("在 Finder 中显示", #selector(revealDesktop))])
+        appPathLabel = appField
+        let (data, _) = pathRow("数据", dataDirectory.path, [("在 Finder 中显示", #selector(revealData))])
+        let (logs, _) = pathRow("诊断日志", logFile.path, [("打开", #selector(openLogs)), ("在 Finder 中显示", #selector(revealLogs))])
+        return paneStack([section("启动", content: launchBox), section("位置", content: group([(app, 56), (data, 56), (logs, 56)]))])
+    }
+
+    @objc private func showDashboard() { showWindow(pane) }
+    @objc private func showFeatures() { showWindow(.features) }
+    @objc private func showSettings() { showWindow(.settings) }
+    @objc private func pickPane(_ sender: NSSegmentedControl) { Pane(rawValue: sender.selectedSegment).map(showPane) }
+
+    private func showWindow(_ pane: Pane) {
         if dashboard == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 560),
                                   styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = appName; window.isReleasedWhenClosed = false; window.delegate = self
-            let toolbar = NSToolbar(identifier: "dashboard")
+            let toolbar = NSToolbar(identifier: "main")
             toolbar.delegate = self; toolbar.displayMode = .iconOnly; toolbar.allowsUserCustomization = false
+            toolbar.centeredItemIdentifiers = [.panes]
             window.toolbar = toolbar; window.toolbarStyle = .unified
-
-            let error = NSTextField(wrappingLabelWithString: "")
-            error.textColor = .systemRed; error.font = .systemFont(ofSize: 12); errorLabel = error
-
-            let app = ComponentCard(name: "Codex App"), cli = ComponentCard(name: "Claude Code CLI"), host = ComponentCard(name: appName)
-            cli.icon.image = claudeCodeImage(size: 36)
-            host.icon.image = NSApp.applicationIconImage
-            host.version.stringValue = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
-            appCard = app; cliCard = cli; hostCard = host
-            let cards = NSStackView(views: [app.view, cli.view, host.view])
-            cards.orientation = .horizontal; cards.distribution = .fillEqually; cards.spacing = 10; cards.alignment = .top
-
-            let usageSummary = label("", size: 11, color: .secondaryLabelColor); self.usageSummary = usageSummary
-            let (usageBox, usageRows) = panel(); usageList = usageRows
-            let taskSummary = label("", size: 11, color: .secondaryLabelColor); self.taskSummary = taskSummary
-            let (taskBox, taskRows) = panel(); taskList = taskRows
-
-            let stack = vstack([error, section("组件", summary: nil, content: cards),
-                                section("用量", summary: usageSummary, content: usageBox),
-                                section("外部任务", summary: taskSummary, content: taskBox)], spacing: 20)
-            stack.edgeInsets = NSEdgeInsets(top: 8, left: 20, bottom: 20, right: 20)
-            stack.translatesAutoresizingMaskIntoConstraints = false
-            for view in stack.arrangedSubviews { view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true }
-            let content = window.contentView!
-            content.addSubview(stack)
-            // The window takes its height from the content, growing with the task list.
-            NSLayoutConstraint.activate([
-                stack.topAnchor.constraint(equalTo: content.topAnchor),
-                stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-                stack.widthAnchor.constraint(equalToConstant: 640),
-            ])
+            panes = [.overview: overviewPane(), .features: featuresPane(), .settings: settingsPane()]
             dashboard = window
+            showPane(pane)
             updateDashboard()
             window.center()
+        } else {
+            showPane(pane)
         }
         dashboard?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         send("status")
@@ -761,14 +875,30 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
         updateMenu()
     }
+    /// Puts pane in the window, which then takes the pane's height.
+    private func showPane(_ pane: Pane) {
+        self.pane = pane; paneControl?.selectedSegment = pane.rawValue
+        guard let content = dashboard?.contentView, let view = panes[pane] else { return }
+        if view.superview !== content {
+            content.subviews.forEach { $0.removeFromSuperview() }
+            content.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.topAnchor.constraint(equalTo: content.topAnchor),
+                view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+                view.widthAnchor.constraint(equalToConstant: 640),
+            ])
+        }
+        if pane == .settings { refreshLoginItem() }
+        fitDashboard()
+    }
     func windowWillClose(_ notification: Notification) {
         guard notification.object as? NSWindow === dashboard else { return }
         dashboardTimer?.invalidate(); dashboardTimer = nil
     }
 
     private func updateDashboard() {
-        guard let dashboard, let taskList, let usageList else { return }
-        dashboard.subtitle = connected ? "\(shortPhaseLabels[phase] ?? phase) · \(runningText)" : shortPhaseLabels[phase] ?? phase
+        guard dashboard != nil, let taskList, let usageList else { return }
         if let actionItem {
             actionItem.title = ["attached": "断开", "draining": "取消断开", "attaching": "接入中", "detaching": "断开中"][phase] ?? "接入"
             actionItem.isEnabled = phase != "attaching" && phase != "detaching"
@@ -804,7 +934,6 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let (hostText, hostTone) = hostPill[phase] ?? ("未接入", "warn")
         hostCard?.pill.show(hostText, tone: hostTone)
 
-        usageSummary?.stringValue = parseDate(state["usageObservedAt"]).map { "更新于 " + dateText("HH:mm", $0) } ?? ""
         if meters.isEmpty {
             setRows(usageList, [noteRow(connected ? "正在读取 Codex 和 Claude Code 的剩余额度…"
                                                   : "接入 Codex App 后显示 Codex 和 Claude Code 的剩余额度。")])
@@ -818,17 +947,20 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
 
         let running = activeTasks.count
-        taskSummary?.stringValue = tasks.isEmpty ? "" : "\(running) 个运行中 · 共 \(tasks.count) 个会话"
+        taskSummary?.stringValue = tasks.isEmpty ? "" : "\(running) 个运行中 · 共 \(tasks.count) 个 Session"
         if tasks.isEmpty {
-            setRows(taskList, [noteRow(connected ? "当前没有外部任务。在 Codex App 里选择 Claude 模型即可开始。"
-                                                 : "接入 Codex App 后，这里会列出每个 Claude 会话所在的项目和正在做的事。")])
+            setRows(taskList, [noteRow(connected ? "当前没有 Claude Code Session。在 Codex App 里选择 Claude 模型即可开始。"
+                                                 : "接入 Codex App 后，这里会列出每个 Claude Code Session 和它正在做的事。")])
         } else {
             let order = ["running": 0, "background": 1, "idle": 2]
             let sorted = tasks.sorted { (order[$0["status"] as? String ?? ""] ?? 3) < (order[$1["status"] as? String ?? ""] ?? 3) }
             var rows = sorted.prefix(12).map(taskRow)
-            if sorted.count > 12 { rows.append(noteRow("另外 \(sorted.count - 12) 个会话")) }
+            if sorted.count > 12 { rows.append(noteRow("另外 \(sorted.count - 12) 个 Session")) }
             setRows(taskList, rows)
         }
+
+        let reported = features
+        for (id, row) in featureRows { row.show(reported[id]) }
         fitDashboard()
     }
 
@@ -859,8 +991,9 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.heightAnchor.constraint(equalToConstant: 4).isActive = true
         bar.setContentHuggingPriority(.init(1), for: .horizontal)
-        let value = pin(tabular(label("剩余 \(left)%", color: left <= lowRemaining ? .systemOrange : .labelColor)), width: 64)
+        let value = pin(tabular(label("\(left)%", color: left <= lowRemaining ? .systemOrange : .labelColor)), width: 48)
         (value as? NSTextField)?.alignment = .right
+        value.toolTip = "剩余 \(left)%"
         return hstack([productLabel, windowLabel, bar, value, resetLabel])
     }
 
@@ -868,12 +1001,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let status = task["status"] as? String ?? "idle"
         let activity = task["activity"] as? [String: Any]
         let cwd = task["cwd"] as? String ?? ""
-        let project = URL(fileURLWithPath: cwd).lastPathComponent
-        var title = task["title"] as? String ?? "未命名会话"
+        var title = task["title"] as? String ?? "未命名 Session"
         if task["subagent"] as? Bool == true { title = "子代理 · " + title }
         let titleLabel = label(title)
         titleLabel.setContentHuggingPriority(.init(1), for: .horizontal)
-        let projectLabel = pin(label(project.isEmpty ? "—" : project, color: .secondaryLabelColor), width: 136)
         var statusText: String
         switch status {
         case "running":
@@ -885,7 +1016,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let statusLabel = tabular(label(statusText, color: status == "idle" ? .tertiaryLabelColor : .secondaryLabelColor))
         statusLabel.alignment = .right
         pin(statusLabel, width: 104)
-        let row = hstack([titleLabel, projectLabel, statusLabel])
+        let row = hstack([titleLabel, statusLabel])
         row.toolTip = [displayPath(cwd), task["model"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
         return row
     }
@@ -911,87 +1042,41 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private func showPath(_ field: NSTextField, _ path: String) {
         field.stringValue = displayPath(path); field.toolTip = path
     }
-    private func pathRow(_ path: String, _ buttons: [(String, Selector)]) -> (NSStackView, NSTextField) {
-        let field = label("", color: .secondaryLabelColor)
+    /// A 位置 row: the name over its path, with the row's buttons on the trailing side.
+    private func pathRow(_ title: String, _ path: String, _ buttons: [(String, Selector)]) -> (NSStackView, NSTextField) {
+        let field = label("", size: 11, color: .secondaryLabelColor)
         field.lineBreakMode = .byTruncatingMiddle; field.isSelectable = true; showPath(field, path)
         let actions = buttons.map { title, action -> NSView in
             let button = NSButton(title: title, target: self, action: action); button.controlSize = .small
             return button
         }
-        return (vstack([field, hstack(actions, spacing: 8)], spacing: 6), field)
+        return (hstack([titled(title, note: field)] + actions, spacing: 8), field)
     }
 
-    @objc private func showSettings() {
-        if settings == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 320),
-                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "设置"; window.isReleasedWhenClosed = false; window.delegate = self
-
-            let login = NSButton(checkboxWithTitle: "登录时启动", target: self, action: #selector(toggleLogin(_:)))
-            let approve = NSButton(title: "打开登录项设置…", target: self, action: #selector(openLoginItems)); approve.controlSize = .small
-            let approval = vstack([label("需要在“系统设置 › 通用 › 登录项”中允许 \(appName)。", size: 11, color: .secondaryLabelColor), approve], spacing: 6)
-            loginToggle = login; loginApproval = approval
-            let options = LaunchPreference.allCases.map { preference -> NSView in
-                let box = NSButton(checkboxWithTitle: preference.title, target: self, action: #selector(togglePreference(_:)))
-                box.identifier = NSUserInterfaceItemIdentifier(preference.rawValue)
-                box.state = preference.enabled ? .on : .off
-                guard let variable = preference.override else { return box }
-                box.isEnabled = false
-                return vstack([box, label("当前由环境变量 \(variable) 决定", size: 11, color: .secondaryLabelColor)], spacing: 2)
-            }
-            let launch = vstack([login, approval] + options, spacing: 8)
-
-            let (app, appField) = pathRow(appPath, [("在 Finder 中显示", #selector(revealDesktop))])
-            appPathLabel = appField
-            let (data, _) = pathRow(dataDirectory.path, [("在 Finder 中显示", #selector(revealData))])
-            let (logs, _) = pathRow(logFile.path, [("打开日志", #selector(openLogs)), ("在 Finder 中显示", #selector(revealLogs))])
-
-            let rows: [(String, NSView)] = [("启动：", launch), ("Codex App：", app), ("数据目录：", data), ("日志：", logs)]
-            let grid = NSGridView(views: rows.map { title, content in [label(title), content] })
-            grid.rowSpacing = 18; grid.columnSpacing = 10; grid.rowAlignment = .firstBaseline
-            grid.column(at: 0).xPlacement = .trailing
-            grid.column(at: 1).width = 380
-            grid.translatesAutoresizingMaskIntoConstraints = false
-            let content = window.contentView!
-            content.addSubview(grid)
-            NSLayoutConstraint.activate([
-                grid.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-                grid.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
-                grid.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-                grid.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            ])
-            settings = window
-            refreshLoginItem()
-            window.center()
-        }
-        settings?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-    }
-    /// Re-read whenever Settings comes forward, since approval happens in System Settings.
+    /// Re-read whenever the window comes forward on 设置, since approval happens in System Settings.
     func windowDidBecomeKey(_ notification: Notification) {
-        if notification.object as? NSWindow === settings { refreshLoginItem() }
+        if notification.object as? NSWindow === dashboard, pane == .settings { refreshLoginItem() }
     }
     private func refreshLoginItem() {
         let status = SMAppService.mainApp.status
         loginToggle?.state = status == .enabled || status == .requiresApproval ? .on : .off
-        loginApproval?.isHidden = status != .requiresApproval
-        // Fit the window to the rows now shown, keeping its top edge in place.
-        guard let settings, let content = settings.contentView else { return }
-        var frame = settings.frameRect(forContentRect: NSRect(origin: .zero, size: content.fittingSize))
-        frame.origin = NSPoint(x: settings.frame.minX, y: settings.frame.maxY - frame.height)
-        settings.setFrame(frame, display: true)
+        let approval = status == .requiresApproval
+        loginApproval.forEach { $0.isHidden = !approval }
+        loginRowHeight?.constant = approval ? 56 : 40
+        fitDashboard()
     }
-    @objc private func toggleLogin(_ sender: NSButton) {
+    @objc private func toggleLogin(_ sender: NSSwitch) {
         do {
             if sender.state == .on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
             let alert = NSAlert(); alert.messageText = sender.state == .on ? "无法添加登录项" : "无法移除登录项"
             alert.informativeText = error.localizedDescription
-            if let settings { alert.beginSheetModal(for: settings) } else { alert.runModal() }
+            if let dashboard { alert.beginSheetModal(for: dashboard) } else { alert.runModal() }
         }
         refreshLoginItem()
     }
     @objc private func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
-    @objc private func togglePreference(_ sender: NSButton) {
+    @objc private func togglePreference(_ sender: NSSwitch) {
         guard let key = sender.identifier?.rawValue else { return }
         UserDefaults.standard.set(sender.state == .on, forKey: key)
     }

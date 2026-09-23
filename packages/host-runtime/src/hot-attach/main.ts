@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { DATA_DIRECTORY_ENV } from "@claude-in-codex/shared-contracts";
+import { DATA_DIRECTORY_ENV, featureIdSchema } from "@claude-in-codex/shared-contracts";
 import { HotAttachController, defaultMenuBarEnvironment } from "./controller.js";
 import { migrateLegacyDataDirectory } from "./legacy-data.js";
 
@@ -55,7 +55,12 @@ export async function runMenuBarHost(
   };
   input.on("line", (line) => {
     void (async () => {
-      const request = JSON.parse(line) as { id?: string; command: string };
+      const request = JSON.parse(line) as {
+        id?: string;
+        command: string;
+        feature?: unknown;
+        enabled?: unknown;
+      };
       try {
         switch (request.command) {
           case "attach":
@@ -73,6 +78,16 @@ export async function runMenuBarHost(
             break;
           case "status":
             await controller.refresh();
+            break;
+          case "set-feature": {
+            const feature = featureIdSchema.safeParse(request.feature);
+            if (!feature.success || typeof request.enabled !== "boolean")
+              throw new Error("Invalid feature switch");
+            await controller.setFeature(feature.data, request.enabled);
+            break;
+          }
+          case "check-features":
+            await controller.checkFeatures();
             break;
           case "quit":
             await quit();

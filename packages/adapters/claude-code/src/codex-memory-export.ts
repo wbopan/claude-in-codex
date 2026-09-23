@@ -2,7 +2,7 @@ import path from "node:path";
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import { claudeProjectMemoryDirectory } from "./claude-transcript.js";
-import { CODEX_MEMORY_ENV, codexMemoriesDirectory } from "./codex-memory.js";
+import { codexMemoriesDirectory } from "./codex-memory.js";
 
 /** Memory extension name under `<CODEX_HOME>/memories/extensions/`; read by Skysight's consolidator. */
 export const CODEX_MEMORY_EXTENSION = "claude_code";
@@ -117,7 +117,6 @@ export async function exportClaudeMemoryToCodex(
   input: ClaudeMemoryExportInput,
 ): Promise<ClaudeMemoryExportResult> {
   const none: ClaudeMemoryExportResult = { directory: null, written: [], removed: [] };
-  if (input.environment[CODEX_MEMORY_ENV]?.trim() === "0") return none;
   if (!(await isDirectory(codexMemoriesDirectory(input.environment)))) return none;
 
   const cwd = path.resolve(input.cwd);

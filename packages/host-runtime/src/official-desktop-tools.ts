@@ -17,6 +17,18 @@ const EXPOSED_SERVERS: ReadonlyMap<string, ReadonlySet<string> | null> = new Map
 ]);
 const CUA_SERVER = "cua_repl";
 const CUA_CLEANUP_TIMEOUT_MS = 5_000;
+/** The feature switch that exposes each official server. */
+export const DESKTOP_TOOL_FEATURES = {
+  codexAppTools: "codex_app",
+  computerUse: CUA_SERVER,
+} as const;
+
+/** One exposed official server as the native app-server reports it; used for problem reports. */
+export interface DesktopToolServerStatus {
+  /** Tool names, or null when the server reported no catalogue. */
+  tools: string[] | null;
+  error: string | null;
+}
 
 export type DesktopTurnEnd = "Stop" | "Interrupt";
 
@@ -35,6 +47,8 @@ interface DesktopToolOptions {
   elicit?(threadId: string, turnId: string, params: JsonObject): Promise<JsonObject>;
   /** Sanitized acceptance trace: names and outcomes only, never arguments or results. */
   trace?(event: JsonObject): void;
+  /** Servers the feature switches allow, read when a Harness Session lists its tools. */
+  enabledServers?(): Promise<ReadonlySet<string>>;
 }
 
 export class OfficialDesktopTools {
@@ -53,10 +67,45 @@ export class OfficialDesktopTools {
       return session.forThread(threadId);
     };
     return {
-      list: () => tools().list(),
+      // A switched-off server is left out of the next Harness Session; one already running
+      // keeps the tools it started with.
+      list: async () => {
+        const enabled = await this.options.enabledServers?.();
+        if (enabled?.size === 0) return [];
+        const catalog = await tools().list();
+        return enabled ? catalog.filter((tool) => enabled.has(tool.namespace)) : catalog;
+      },
       call: (input) => tools().call(input),
       close: () => session?.close(),
     };
+  }
+  /**
+   * List the exposed official servers in a fresh ephemeral context, ignoring the switches. A
+   * server missing from the result was not reported by the native app-server.
+   */
+  async inspect(): Promise<Map<string, DesktopToolServerStatus>> {
+    const session = new OfficialDesktopToolSession(
+      this.options,
+      "claude-in-codex:inspect",
+      () => {},
+    );
+    try {
+      const servers = new Map<string, DesktopToolServerStatus>();
+      for (const server of await session.servers()) {
+        if (typeof server.name !== "string" || !EXPOSED_SERVERS.has(server.name)) continue;
+        servers.set(server.name, {
+          tools: object(server.tools)
+            ? Object.values(server.tools).flatMap((definition) =>
+                object(definition) && typeof definition.name === "string" ? [definition.name] : [],
+              )
+            : null,
+          error: typeof server.toolsError === "string" ? server.toolsError : null,
+        });
+      }
+      return servers;
+    } finally {
+      session.close();
+    }
   }
   /** Release Desktop resources (Computer Use, browser) a finished Turn may still hold. */
   turnEnded(threadId: string, turnId: string, event: DesktopTurnEnd): void {
@@ -105,7 +154,8 @@ class OfficialDesktopToolSession {
     return response.result;
   }
 
-  async #load(): Promise<readonly HarnessClientTool[]> {
+  /** Open the ephemeral official context and read every server's status, all pages. */
+  async servers(): Promise<JsonObject[]> {
     if (this.#closed) return [];
     const client = this.options.scope.attach(async ({ value }) => {
       if (this.#calls.handle(value)) return;
@@ -132,8 +182,7 @@ class OfficialDesktopToolSession {
     if (!object(started.thread) || typeof started.thread.id !== "string")
       throw new Error("Official MCP context was not created");
     this.#context = started.thread.id;
-    const tools: HarnessClientTool[] = [];
-    const seen: string[] = [];
+    const servers: JsonObject[] = [];
     let cursor: string | undefined;
     do {
       const status = await this.#request("mcpServerStatus/list", {
@@ -142,30 +191,38 @@ class OfficialDesktopToolSession {
         ...(cursor ? { cursor } : {}),
       });
       if (!Array.isArray(status.data)) throw new Error("Invalid official MCP catalogue");
-      for (const server of status.data) {
-        if (!object(server) || typeof server.name !== "string") continue;
-        seen.push(server.name);
-        const exposed = EXPOSED_SERVERS.get(server.name);
-        if (exposed === undefined) continue;
-        // One unavailable server must not hide the other.
-        if (typeof server.toolsError === "string" || !object(server.tools)) {
-          this.options.diagnose(
-            `Desktop MCP '${server.name}' is unavailable` +
-              (typeof server.toolsError === "string" ? `: ${server.toolsError}` : ""),
-          );
-          continue;
-        }
-        const namespace = server.name;
-        for (const definition of Object.values(server.tools))
-          if (
-            object(definition) &&
-            typeof definition.name === "string" &&
-            (exposed === null || exposed.has(definition.name))
-          )
-            tools.push({ namespace, definition });
-      }
+      servers.push(...status.data.filter(object));
       cursor = typeof status.nextCursor === "string" ? status.nextCursor : undefined;
     } while (cursor);
+    return servers;
+  }
+
+  async #load(): Promise<readonly HarnessClientTool[]> {
+    if (this.#closed) return [];
+    const tools: HarnessClientTool[] = [];
+    const seen: string[] = [];
+    for (const server of await this.servers()) {
+      if (typeof server.name !== "string") continue;
+      seen.push(server.name);
+      const exposed = EXPOSED_SERVERS.get(server.name);
+      if (exposed === undefined) continue;
+      // One unavailable server must not hide the other.
+      if (typeof server.toolsError === "string" || !object(server.tools)) {
+        this.options.diagnose(
+          `Desktop MCP '${server.name}' is unavailable` +
+            (typeof server.toolsError === "string" ? `: ${server.toolsError}` : ""),
+        );
+        continue;
+      }
+      const namespace = server.name;
+      for (const definition of Object.values(server.tools))
+        if (
+          object(definition) &&
+          typeof definition.name === "string" &&
+          (exposed === null || exposed.has(definition.name))
+        )
+          tools.push({ namespace, definition });
+    }
     this.options.trace?.({
       event: "desktop-tools/catalogue",
       officialServers: seen,

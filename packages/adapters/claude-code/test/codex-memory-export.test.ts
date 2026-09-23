@@ -4,7 +4,6 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { CODEX_MEMORY_ENV } from "../src/codex-memory.js";
 import {
   CODEX_MEMORY_EXTENSION_INSTRUCTIONS,
   codexMemoryExtensionDirectory,
@@ -103,7 +102,7 @@ describe("Claude memory export to Codex", () => {
     }
   });
 
-  it("does nothing without source memories, without a Codex memories directory, or when opted out", async () => {
+  it("does nothing without source memories, without a Codex memories directory", async () => {
     const f = await fixture();
     try {
       const none = { directory: null, written: [], removed: [] };
@@ -113,12 +112,6 @@ describe("Claude memory export to Codex", () => {
       await expect(stat(path.join(f.codexHome, "memories/extensions"))).rejects.toThrow();
 
       await writeFile(path.join(f.memory, "a.md"), note("a", "A"));
-      await expect(
-        exportClaudeMemoryToCodex({
-          cwd: f.cwd,
-          environment: { ...f.environment, [CODEX_MEMORY_ENV]: "0" },
-        }),
-      ).resolves.toEqual(none);
       await rm(path.join(f.codexHome, "memories"), { recursive: true });
       await expect(
         exportClaudeMemoryToCodex({ cwd: f.cwd, environment: f.environment }),

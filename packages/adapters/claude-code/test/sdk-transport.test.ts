@@ -2731,6 +2731,7 @@ describe("Claude SDK official Desktop MCP", () => {
       try {
         const f = fixture(mode, "default", harnessThinkingOptionIdSchema.parse("auto"), {
           CODEX_HOME: codexHome,
+          CLAUDE_IN_CODEX_DATA_DIR: codexHome,
           PATH: process.env.PATH ?? "",
         });
         await f.transport.start();
@@ -2746,6 +2747,28 @@ describe("Claude SDK official Desktop MCP", () => {
       }
     },
   );
+
+  it("leaves the Codex memory summary out of a Session started with the switch off", async () => {
+    const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-memory-off-"));
+    await mkdir(path.join(codexHome, "memories"), { recursive: true });
+    await writeFile(path.join(codexHome, "memories", "memory_summary.md"), "Prefers tea.\n");
+    await writeFile(path.join(codexHome, "features.json"), JSON.stringify({ codexMemory: false }));
+    try {
+      const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
+        CODEX_HOME: codexHome,
+        CLAUDE_IN_CODEX_DATA_DIR: codexHome,
+        PATH: process.env.PATH ?? "",
+      });
+      await f.transport.start();
+      expect(f.queryInput().options?.systemPrompt).toEqual({
+        type: "preset",
+        preset: "claude_code",
+      });
+      await f.transport.close();
+    } finally {
+      await rm(codexHome, { recursive: true, force: true });
+    }
+  });
 
   it("always requests the Claude Code preset system prompt, without an append when no summary exists", async () => {
     const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-no-memory-"));

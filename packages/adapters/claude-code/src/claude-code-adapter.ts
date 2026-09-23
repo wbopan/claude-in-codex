@@ -71,7 +71,7 @@ import {
 } from "@claude-in-codex/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
-import { exportClaudeMemoryToCodex } from "./codex-memory-export.js";
+import { syncClaudeMemoryToCodex } from "./claude-memory-sync.js";
 import { traceClaude, traceRef } from "./debug-trace.js";
 import {
   ClaudeCodeExecutableError,
@@ -2454,7 +2454,8 @@ class ClaudeHarnessSession implements HarnessSession {
   /**
    * Mirrors this Session's Claude memory directory into Codex's memory extension. Runs at most
    * one export at a time and coalesces requests that arrive meanwhile; never rejects, so callers
-   * can fire and forget. Failures are traced: memory sync must not affect the Turn.
+   * can fire and forget. Failures are traced: memory sync must not affect the Turn. The
+   * production export checks the `claudeMemorySync` switch on every run and records its result.
    */
   #syncMemoryToCodex(): Promise<void> {
     if (!this.#exportMemory) return Promise.resolve();
@@ -2724,7 +2725,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         });
         return transcript ?? [];
       },
-      exportMemory: exportClaudeMemoryToCodex,
+      exportMemory: (input) => syncClaudeMemoryToCodex(input),
     };
   }
 

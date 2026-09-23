@@ -8,7 +8,7 @@ App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 
 1. 正常打开 `/Applications/ChatGPT.app`，然后打开 Claude in Codex。
 2. 菜单栏的云朵图标变成实心并睁开眼睛，表示已接入。原生模型选择器会增加本机 Claude 模型。
-3. 选择「断开（等待任务完成）」或「退出 Claude in Codex」，等待正在执行的外部任务和后台任务完成。等待期间可以取消断开，也可以明确选择停止外部任务。
+3. 选择「断开」或「退出 Claude in Codex」，等待正在执行的 Claude Code Session 和后台任务完成。等待期间可以取消断开，也可以明确选择停止 Session。
 4. Codex App 和 GPT 任务继续运行。重新打开 Host 或选择「接入 Codex App」即可再次接入。
 
 目前支持 macOS 14+，已验证官方 Desktop **26.915.31945**、**26.917.51856**。接入前只校验 OpenAI 签名，并在运行时检查内部连接结构；结构对不上时停止接入并显示原因。Host 使用已安装、已登录的 Claude Code。打包后的 App 自带 Node 和插件。
@@ -17,30 +17,40 @@ App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 
 本项目原名 Codex Host。如果旧版 Codex Host.app 还在运行，Claude in Codex 启动时会提示先退出它，并在它退出后自动继续启动；两者不会同时接入同一个 Codex App。
 
-## 菜单与 Dashboard
+## 菜单与主窗口
 
 图标是 Claude 云朵，适配系统明暗主题，用眼睛表示状态：描边云朵加闭眼表示未接入，实心云朵加睁眼表示已接入，三个点表示接入或排空中，感叹号表示错误。
 
-下拉菜单只放简要状态：接入状态、运行中的任务数、各额度窗口的剩余量（小进度条，悬停可见百分比和重置时间），以及接入/断开、Dashboard、设置、关于和退出。
+下拉菜单只放简要状态：第一行是接入状态，点它（⌘O）打开主窗口；然后是各额度窗口的剩余量（小进度条，悬停可见百分比和重置时间），以及接入/断开、设置（⌘,）和退出。
 
-同一时间只运行一个 Host。再次打开 Claude in Codex.app（包括其他路径下的副本）时，新实例不会启动 Host，而是让已运行的实例打开 Dashboard 后退出；在 Finder 中重新打开正在运行的 App 同样会打开 Dashboard。
+同一时间只运行一个 Host。再次打开 Claude in Codex.app（包括其他路径下的副本）时，新实例不会启动 Host，而是让已运行的实例打开主窗口后退出；在 Finder 中重新打开正在运行的 App 同样会打开主窗口。
 
-Dashboard 的标题栏右侧有打开 Codex App、查看诊断日志和接入/断开按钮，内容分三块：
+主窗口标题栏中间是「概览 / 功能 / 设置」切换，右侧是接入/断开按钮。
+
+**概览**
 
 - 组件：Codex App、Claude Code CLI、Claude in Codex 三张卡片，各带图标、版本和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。
 - 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），与 Codex App 用量菜单共用 90 秒缓存。
-- 外部任务：每个会话一行，显示标题、所在项目和当前活动（思考、运行命令、等待批准等）及已运行时长，不显示提示词、命令或输出内容。
+- Claude Code Session：每个 Session 一行，显示标题和当前活动（思考、运行命令、等待批准等）及已运行时长，悬停可见所在目录。不显示提示词、命令或输出内容。
 
 Claude Code CLI 版本、进程数和用量在接入后读取。
 
-## 设置与关于
+**功能**
 
-在菜单或 Dashboard 中按 ⌘, 打开设置：
+可选功能的开关，保存在数据目录的 `features.json`。某个功能出问题时，它的说明换成一行橙色提示；「深度检查…」立即重新检查所有功能。
 
-- 登录时启动：通过系统登录项注册 App。如果系统要求批准，设置中会提示并提供「打开登录项设置…」。
+- 工具：Codex App 工具（让 Claude 新建、管理 Codex thread 并发消息）、Computer & Browser Use。
+- 记忆：Codex 记忆注入（把 Codex 的记忆摘要附加到 Claude 的 system prompt）、Claude Code 记忆同步（把 Claude 的自动记忆同步到 Codex 的记忆）。
+- Session：闲置释放（闲置的 Session 释放 Claude 进程，发消息时再恢复），默认关闭。
+
+工具和记忆注入从下一个 Session 开始生效，其余立即生效。功能是否开启只由 `features.json` 决定，不读环境变量。
+
+**设置**
+
+- 登录时启动：通过系统登录项注册 App。如果系统要求批准，这一行会提示并提供「打开登录项设置…」。
 - 启动时自动接入 Codex App：默认开启。关闭后启动 Host 但保持未接入，需要时从菜单选择「接入 Codex App」。
-- 启动时打开 Dashboard：默认关闭。
-- Codex App、数据目录和日志的位置，可以在 Finder 中显示或直接打开日志。
+- 启动时打开此窗口：默认关闭。
+- Codex App、数据目录和诊断日志的位置，可以在 Finder 中显示或直接打开日志。
 
 「关于 Claude in Codex」显示版本号，以及构建时写入的 Git 修订和构建时间。
 
@@ -60,7 +70,7 @@ open '/Applications/Claude in Codex.app'
 
 仓库内的开发产物（构建、工具链、验收记录）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
 
-开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](docs/menubar-migration.md)。`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定测试副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_SETTINGS=1`、`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 在启动时打开设置或关于窗口。普通使用不需要这些环境变量。
+开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](docs/menubar-migration.md)。`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定测试副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_FEATURES=1`、`CLAUDE_IN_CODEX_SHOW_SETTINGS=1` 在启动时打开主窗口的功能或设置页，`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 打开关于窗口。普通使用不需要这些环境变量。
 
 已有 Claude in Codex 在运行时，同一 bundle identifier 的新构建会直接交给它并退出。要和正在使用的 Host 并排测试界面，构建一个独立标识的副本，并关闭自动接入：
 
@@ -73,7 +83,7 @@ open --env CLAUDE_IN_CODEX_AUTO_ATTACH=0 --env CLAUDE_IN_CODEX_DATA_DIR="$PWD/.d
 
 ## 数据与远程连接
 
-模型偏好、线程映射、标题和归档记录保存在 `~/Library/Application Support/Claude in Codex/`，日志写到 `~/Library/Logs/Claude in Codex/host.log`，设置窗口里都可以打开。Claude 的正文和认证仍由原生 Claude Code 管理。接入读取 Desktop 实际使用的 `CODEX_HOME`，保留已有 Codex 记忆导出和注入路径。
+模型偏好、线程映射、标题和归档记录保存在 `~/Library/Application Support/Claude in Codex/`，日志写到 `~/Library/Logs/Claude in Codex/host.log`，主窗口的设置页里都可以打开。Claude 的正文和认证仍由原生 Claude Code 管理。接入读取 Desktop 实际使用的 `CODEX_HOME`，保留已有 Codex 记忆导出和注入路径。
 
 从 Codex Host 升级时，第一次接入会把 `~/.codexhost` 中的数据移到上述位置，旧日志改名为 `codexhost-*.log` 放进日志目录，旧 launcher 留下的 `desktop-proxy` 被删除；全部移走后删除 `~/.codexhost`。旧 Host 仍持有线程映射时不会迁移，而是显示错误，退出旧 Host 后重新接入即可。旧线程中的 `codexhost/…` 模型标识、旧的 `CODEXHOST_*` 环境变量和旧的 `codexhost/…` 管理方法都继续有效。
 

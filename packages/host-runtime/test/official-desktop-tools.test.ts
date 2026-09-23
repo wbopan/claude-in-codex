@@ -14,7 +14,12 @@ const definition = {
   _meta: { official: true },
 };
 const cuaTool = (name: string) => ({ name, description: name, inputSchema: { type: "object" } });
-function fixture(options: { elicit?: (params: JsonObject) => Promise<JsonObject> } = {}) {
+function fixture(
+  options: {
+    elicit?: (params: JsonObject) => Promise<JsonObject>;
+    enabledServers?: () => Promise<ReadonlySet<string>>;
+  } = {},
+) {
   const sent: JsonObject[] = [];
   let cua = false;
   const contexts: JsonObject[] = [];
@@ -80,6 +85,7 @@ function fixture(options: { elicit?: (params: JsonObject) => Promise<JsonObject>
     ...(options.elicit
       ? { elicit: (_thread: string, _turn: string, params: JsonObject) => options.elicit!(params) }
       : {}),
+    ...(options.enabledServers ? { enabledServers: options.enabledServers } : {}),
   });
   const signal = new AbortController();
   const input = {
@@ -106,6 +112,41 @@ function fixture(options: { elicit?: (params: JsonObject) => Promise<JsonObject>
     },
   };
 }
+
+describe("official Desktop MCP feature switches", () => {
+  it("leaves a switched-off server out of the next listing", async () => {
+    let enabled: ReadonlySet<string> = new Set(["cua_repl"]);
+    const f = fixture({ enabledServers: async () => enabled });
+    f.withCua();
+    const listed = await f.service.forThread("actual-thread").list();
+    expect(listed.map((tool) => `${tool.namespace}.${String(tool.definition.name)}`)).toEqual([
+      "cua_repl.js",
+      "cua_repl.js_reset",
+    ]);
+    enabled = new Set(["codex_app", "cua_repl"]);
+    const both = await f.service.forThread("next-thread").list();
+    expect(new Set(both.map((tool) => tool.namespace))).toEqual(new Set(["codex_app", "cua_repl"]));
+  });
+
+  it("does not open an official context when every server is switched off", async () => {
+    const f = fixture({ enabledServers: async () => new Set() });
+    await expect(f.service.forThread("actual-thread").list()).resolves.toEqual([]);
+    expect(f.clients).toHaveLength(0);
+  });
+
+  it("inspects the exposed servers in a closed ephemeral context, ignoring the switches", async () => {
+    const f = fixture({ enabledServers: async () => new Set() });
+    f.withCua();
+    f.discoveryFailure();
+    const servers = await f.service.inspect();
+    expect(Object.fromEntries(servers)).toEqual({
+      codex_app: { tools: ["read_thread"], error: "Codex app tools pipe closed" },
+      cua_repl: { tools: ["js", "js_reset", "turn_ended"], error: null },
+    });
+    expect(f.clients).toHaveLength(1);
+    expect(f.clients[0]?.close).toHaveBeenCalled();
+  });
+});
 
 describe("official Desktop MCP reuse", () => {
   it("discovers the official schema and lets native MCP own its context identity", async () => {

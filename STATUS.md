@@ -33,6 +33,26 @@ stock CLI), and the npm `@codexhost/cli` package again builds from this checkout
 (`npm run release:npm`). Probe fixture helpers moved to `tools/probes/fixture-instance.mjs`.
 The launcher-era entries below are historical.
 
+## Feature switches (2026-09-23)
+
+The menu bar App switches five features. They live only in `features.json` in the data folder,
+edited from the App (`packages/shared-contracts/src/features.ts`, `features-file.ts`); no
+environment variable turns a feature on or off. A missing file or key means the default. The
+Dashboard shows no health figures, only a short `problem` sentence for an enabled feature
+(`packages/host-runtime/src/hot-attach/features.ts`); `check-features` re-runs every check at once.
+
+| id                 | What it does                                                          | A change takes effect                 |
+| ------------------ | --------------------------------------------------------------------- | ------------------------------------- |
+| `codexAppTools`    | Exposes the official `codex_app` MCP server to Claude                 | Next Claude Session                   |
+| `computerUse`      | Exposes `cua_repl` (`js`, `js_reset`); needs the Codex plugin enabled | Next Claude Session                   |
+| `codexMemory`      | Appends `memory_summary.md` to Claude's system prompt                 | Next Claude Session                   |
+| `claudeMemorySync` | Mirrors Claude auto-memory into Codex's `claude_code` extension       | Next sync (Turn end or Session close) |
+| `idleRelease`      | Idle Sessions release their Claude process and resume on demand      | Immediately, and at every Host start  |
+
+The `claude-in-codex/settings/idle-release/set` RPC remains an in-memory override for one Host
+and does not write the switch. Each memory sync writes its result to `claude-memory-sync.json`
+beside `features.json`; a failure is also logged to the Host's stderr.
+
 ## MenuBar hot attachment (2026-09-22)
 
 Implemented in the independent `codex/menubar-hot-attach` worktree, based on `8681959`.
@@ -80,9 +100,8 @@ Verified live in the independent debug Desktop on 2026-09-21 unless noted.
       rollback; same-Harness Sonnet -> Haiku works (`F-*`).
 - [x] R1. Tool calls, native approval cards, command rendering, streaming (`R1-tools-*.png`).
 - [x] G. Claude called `codex_app.list_threads` through the Host (`G-*`). This relies on the
-      native parent topology, which is the macOS default (`CODEXHOST_NATIVE_APP_TOOLS=0` opts
-      out). Verified with no variable set: the official `codex` is Desktop's direct child and
-      the catalogue lists 44 codex_app tools plus cua_repl js/js_reset (`N-*`).
+      native parent topology, which was the launcher's macOS default. Verified with no variable
+      set: the official `codex` is Desktop's direct child and the catalogue lists 44 codex_app tools plus cua_repl js/js_reset (`N-*`).
 - [x] H. Claude called `cua_repl.js` in-Host with no Python bridge: `cua.getState()`, then the
       in-app browser opened example.com, read "Example Domain", closed the tab
       (`H-cua-repl-trace.jsonl`, `H-result.txt`). One elicitation was forwarded to the owning task.
@@ -203,8 +222,7 @@ Kept deliberately, although the carve looked like it could take them:
   from the app-server `account/read` response (zod: https + origin-only). The Host publishes its
   loopback proxy there only when the launcher pinned the proxy certificate for Chromium
   (`--user-data-dir` + `--ignore-certificate-errors-spki-list`, handshake via
-  `CODEXHOST_DESKTOP_PROXY_SPKI`). `CODEXHOST_DESKTOP_PROXY=0` is the kill switch for both
-  processes. The live `/wham/usage` body carries `additional_rate_limits: null` (not `[]`),
+  `CODEXHOST_DESKTOP_PROXY_SPKI`). The proxy and its kill switch left with the launcher. The live `/wham/usage` body carries `additional_rate_limits: null` (not `[]`),
   a 7-day `primary_window` with `reset_after_seconds`, and `model_usage` keyed by slug.
 - A stale `codex_desktop` stdio MCP server in `~/.claude.json` (the retired Python bridge from
   `codexhost-claude-bridge`) still starts its own `codex app-server --listen stdio://` per
