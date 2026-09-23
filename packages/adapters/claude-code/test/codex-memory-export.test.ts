@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,7 +11,8 @@ import {
 } from "../src/codex-memory-export.js";
 
 async function fixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-memory-export-"));
+  // Canonical like Claude Code's own project keys: macOS tmpdir sits behind /var -> /private/var.
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-memory-export-")));
   const claudeHome = path.join(root, "claude");
   const codexHome = path.join(root, "codex");
   const cwd = path.join(root, "work", "my project");
@@ -130,6 +131,23 @@ describe("Claude memory export to Codex", () => {
       await writeFile(path.join(f.memory, "real.md"), note("real", "Real."));
       const result = await exportClaudeMemoryToCodex({ cwd: f.cwd, environment: f.environment });
       expect(result.written).toEqual(["instructions.md", "scope.json", "real.md"]);
+    } finally {
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a symlinked cwd to the project key Claude Code saved under", async () => {
+    const f = await fixture();
+    try {
+      await writeFile(path.join(f.memory, "rule.md"), note("rule", "Blind attacks only."));
+      const alias = path.join(f.root, "work", "old name");
+      await symlink(f.cwd, alias);
+      const result = await exportClaudeMemoryToCodex({ cwd: alias, environment: f.environment });
+      expect(result.directory).toBe(f.mirror);
+      expect(result.written).toEqual(["instructions.md", "scope.json", "rule.md"]);
+      expect(JSON.parse(await readFile(path.join(f.mirror, "scope.json"), "utf8"))).toEqual({
+        cwd: f.cwd,
+      });
     } finally {
       await rm(f.root, { recursive: true, force: true });
     }

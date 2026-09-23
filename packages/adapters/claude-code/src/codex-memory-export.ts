@@ -1,5 +1,5 @@
 import path from "node:path";
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 
 import { claudeProjectMemoryDirectory } from "./claude-transcript.js";
 import { codexMemoriesDirectory } from "./codex-memory.js";
@@ -63,6 +63,19 @@ export function codexMemoryExtensionDirectory(environment: NodeJS.ProcessEnv): s
   return path.join(codexMemoriesDirectory(environment), "extensions", CODEX_MEMORY_EXTENSION);
 }
 
+/**
+ * Claude Code keys its project directory by the canonical cwd, so a Thread opened through a
+ * symlink (for example a renamed project kept under its old path) saves memories under the
+ * target's key. Resolve the same way; fall back to the lexical path when it no longer exists.
+ */
+async function canonicalCwd(cwd: string): Promise<string> {
+  try {
+    return await realpath(cwd);
+  } catch {
+    return path.resolve(cwd);
+  }
+}
+
 async function isDirectory(file: string): Promise<boolean> {
   try {
     return (await lstat(file)).isDirectory();
@@ -119,7 +132,7 @@ export async function exportClaudeMemoryToCodex(
   const none: ClaudeMemoryExportResult = { directory: null, written: [], removed: [] };
   if (!(await isDirectory(codexMemoriesDirectory(input.environment)))) return none;
 
-  const cwd = path.resolve(input.cwd);
+  const cwd = await canonicalCwd(input.cwd);
   const source = claudeProjectMemoryDirectory(cwd, input.environment);
   const extension = codexMemoryExtensionDirectory(input.environment);
   const directory = path.join(extension, "resources", projectKey(cwd));
