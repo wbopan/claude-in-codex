@@ -1,9 +1,11 @@
+import { execFile } from "node:child_process";
 import path from "node:path";
 
 import {
   resolveHarnessExecutable,
   targetPath,
   VERSION_MANAGER_ROOTS,
+  withNodeRuntimeOnPath,
   type HarnessDiscoveryDependencies,
   type HarnessDiscoverySpec,
 } from "@codexhost/harness-discovery";
@@ -76,4 +78,28 @@ export function resolveClaudeCodeExecutable(
   return targetPath(platform).isAbsolute(resolution.executable)
     ? resolution.executable
     : path.resolve(resolution.executable);
+}
+
+/** Reads `claude --version`, e.g. "2.1.279" from "2.1.279 (Claude Code)". Null on any failure. */
+export function readClaudeCodeVersion(
+  executable: string,
+  environment: NodeJS.ProcessEnv,
+  timeoutMs = 5_000,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      executable,
+      ["--version"],
+      {
+        env: withNodeRuntimeOnPath({ ...environment }),
+        timeout: timeoutMs,
+        maxBuffer: 64 * 1024,
+        encoding: "utf8",
+      },
+      (error, stdout) => {
+        const line = error ? "" : (stdout.trim().split("\n")[0] ?? "");
+        resolve(line.replace(/\s*\(Claude Code\)$/u, "").trim() || null);
+      },
+    );
+  });
 }

@@ -1,4 +1,4 @@
-import type { HarnessClientTools } from "@codexhost/harness-adapter";
+import type { HarnessClientTools, HarnessInstallation } from "@codexhost/harness-adapter";
 import { randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -73,7 +73,11 @@ import {
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
 import { exportClaudeMemoryToCodex } from "./codex-memory-export.js";
 import { traceClaude, traceRef } from "./debug-trace.js";
-import { ClaudeCodeExecutableError, resolveClaudeCodeExecutable } from "./command.js";
+import {
+  ClaudeCodeExecutableError,
+  readClaudeCodeVersion,
+  resolveClaudeCodeExecutable,
+} from "./command.js";
 import { ClaudePendingSessions, isPendingClaudeSession } from "./pending-session.js";
 import { forkClaudeSession } from "./claude-fork.js";
 import { mapClaudeSnapshot, mapClaudeSubagentSnapshot } from "./claude-history.js";
@@ -2640,9 +2644,14 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   #closePromise: Promise<void> | null = null;
   #latestPlanLimit: ClaudePlanLimitEvent | null = null;
   #accountInspection: Promise<HarnessAccountSnapshot | null> | null = null;
+  readonly #command: string | undefined;
+  readonly #environment: NodeJS.ProcessEnv;
+  #installation: { key: string; value: Promise<HarnessInstallation | null> } | null = null;
 
   constructor(options: ClaudeCodeAdapterOptions = {}, dependencies?: ClaudeAdapterDependencies) {
     const environment = options.environment ?? process.env;
+    this.#command = options.command;
+    this.#environment = environment;
     this.#pendingSessions = new ClaudePendingSessions(environment);
     this.#closeTimeoutMs = options.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
     this.#cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
@@ -2752,6 +2761,31 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       }
     });
     return inspection;
+  }
+
+  describeInstallation(): Promise<HarnessInstallation | null> {
+    let executable: string, key: string;
+    try {
+      executable = resolveClaudeCodeExecutable({
+        ...(this.#command ? { command: this.#command } : {}),
+        environment: this.#environment,
+      });
+      const target = realpathSync(executable);
+      key = `${target}\0${statSync(target).mtimeMs}`;
+    } catch {
+      this.#installation = null;
+      return Promise.resolve(null);
+    }
+    // Spawning the CLI costs a Node start; re-read it only after the binary changes.
+    if (this.#installation?.key !== key)
+      this.#installation = {
+        key,
+        value: readClaudeCodeVersion(executable, this.#environment).then((version) => ({
+          executable,
+          version,
+        })),
+      };
+    return this.#installation.value;
   }
 
   inspectAccount(): Promise<HarnessAccountSnapshot | null> {

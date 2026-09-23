@@ -7,6 +7,7 @@ import path from "node:path";
 import { CdpClient } from "@codexhost/desktop-control";
 import { installDesktopAgent, refreshDesktopQueries } from "./desktop-agent.js";
 import { HotAttachSession, type DesktopHello } from "./session.js";
+import { accountUsageMeters, type UsageMeter } from "./usage-meters.js";
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 async function within<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
@@ -54,6 +55,27 @@ function inspectorOwners(): number[] {
   }
 }
 
+/**
+ * Claude CLI processes this Host started: its direct children whose program is the Claude
+ * executable, so tools those sessions run and unrelated `claude` shells are not counted.
+ */
+export function hostClaudeProcesses(executables: readonly string[], parent = process.pid): number {
+  const names = new Set(executables.flatMap((file) => [file, path.basename(file)]));
+  names.add("claude");
+  return execFileSync("/bin/ps", ["-axo", "ppid=,args="], { encoding: "utf8" })
+    .split("\n")
+    .filter((line) => {
+      const [, ppid, program = "", script = ""] =
+        line.trim().match(/^(\d+)\s+(\S+)(?:\s+(\S+))?/) ?? [];
+      if (Number(ppid) !== parent) return false;
+      return (
+        names.has(program) ||
+        names.has(path.basename(program)) ||
+        /@anthropic-ai\/claude-code\/cli\.[cm]?js$/.test(script)
+      );
+    }).length;
+}
+
 export class HotAttachController {
   #session: HotAttachSession | undefined;
   #server: Server | undefined;
@@ -74,18 +96,98 @@ export class HotAttachController {
     },
   ) {}
 
+  #installedAppVersion: string | null = null;
+  #appRunning = false;
+  #harnesses: { harnessId: string; executable: string | null; version: string | null }[] = [];
+  #harnessesReadAt = 0;
+  #claudeProcesses = 0;
+  #harnessUsage: { meters: UsageMeter[]; observedAt: string } | null = null;
+  #harnessUsageRead: Promise<void> | undefined;
+
   status() {
+    const state = this.#session?.state();
     return {
       phase: this.#phase,
       error: this.#error,
       appPath: this.options.appPath,
+      appRunning: this.#session ? true : this.#appRunning,
       pid: this.#target?.pid ?? null,
       backendPid: this.#session?.hello.backendPid ?? null,
-      appVersion: this.#session?.hello.appVersion ?? null,
-      activeExternal: this.#session?.state().activeExternal.length ?? 0,
-      backgroundTasks: this.#session?.state().backgroundTasks ?? 0,
-      busy: this.#session?.state().busy ?? false,
+      appVersion: this.#session?.hello.appVersion ?? this.#installedAppVersion,
+      activeExternal: state?.activeExternal.length ?? 0,
+      backgroundTasks: state?.backgroundTasks ?? 0,
+      busy: state?.busy ?? false,
+      tasks: this.#session?.host.externalTasks() ?? [],
+      harnesses: this.#harnesses,
+      claudeProcesses: this.#session ? this.#claudeProcesses : 0,
+      usage: this.#session
+        ? [...(this.#session.codexUsage?.meters ?? []), ...(this.#harnessUsage?.meters ?? [])]
+        : [],
+      usageObservedAt: this.#session
+        ? ([this.#session.codexUsage?.observedAt, this.#harnessUsage?.observedAt]
+            .filter((value): value is string => typeof value === "string")
+            .sort()
+            .at(-1) ?? null)
+        : null,
     };
+  }
+  /** Re-reads what the Dashboard shows outside the live attachment. Cheap except the CLI. */
+  async refresh(): Promise<void> {
+    try {
+      this.#installedAppVersion = execFileSync(
+        "/usr/libexec/PlistBuddy",
+        [
+          "-c",
+          "Print :CFBundleShortVersionString",
+          path.join(this.options.appPath, "Contents/Info.plist"),
+        ],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      ).trim();
+    } catch {
+      this.#installedAppVersion = null;
+    }
+    try {
+      this.#appRunning = desktopProcesses(this.options.appPath).length > 0;
+    } catch {
+      this.#appRunning = false;
+    }
+    const session = this.#session;
+    if (session?.attached && Date.now() - this.#harnessesReadAt > 30_000) {
+      this.#harnessesReadAt = Date.now();
+      this.#harnesses = await session.host.harnessInstallations().catch(() => this.#harnesses);
+    }
+    try {
+      this.#claudeProcesses = session
+        ? hostClaudeProcesses(
+            this.#harnesses.flatMap((harness) =>
+              harness.harnessId === "claude-code" && harness.executable ? [harness.executable] : [],
+            ),
+          )
+        : 0;
+    } catch {
+      this.#claudeProcesses = 0;
+    }
+    if (!session) this.#harnessUsage = null;
+    // Account inspection can spawn the CLI; it runs beside the status reply, never in front of it.
+    else if (session.attached) this.#harnessUsageRead ??= this.#readHarnessUsage(session);
+    this.#changed();
+  }
+  async #readHarnessUsage(session: HotAttachSession): Promise<void> {
+    try {
+      const accounts = await session.host.harnessAccounts();
+      if (this.#session !== session) return;
+      const meters = accounts.flatMap(({ harnessId, account }) =>
+        account ? accountUsageMeters(harnessId, account.credits) : [],
+      );
+      this.#harnessUsage = meters.length
+        ? { meters, observedAt: new Date().toISOString() }
+        : this.#harnessUsage;
+      this.#changed();
+    } catch {
+      // Usage is informational; the next refresh tries again.
+    } finally {
+      this.#harnessUsageRead = undefined;
+    }
   }
   #changed(): void {
     this.options.changed?.();
@@ -115,8 +217,8 @@ export class HotAttachController {
       if (targets.length !== 1)
         throw new Error(
           targets.length
-            ? "Multiple Desktop instances match; choose one explicitly"
-            : "Open the original Desktop first",
+            ? "Multiple Codex App instances are running; keep only one open"
+            : "Open the Codex App first",
         );
       const target = targets[0]!;
       this.#target = target;
@@ -136,7 +238,7 @@ export class HotAttachController {
           { stdio: "ignore" },
         );
       } catch {
-        throw new Error("Desktop is not the original OpenAI-signed App");
+        throw new Error("This Codex App is not signed by OpenAI");
       }
       const owners = inspectorOwners();
       if (owners.some((pid) => pid !== target.pid))
@@ -177,7 +279,7 @@ export class HotAttachController {
       if (identity.pid !== target.pid) throw new Error("Inspector PID does not match Desktop");
       if (identity.cliPath)
         throw new Error(
-          "This Desktop is using the legacy launcher. Quit it and open the original App normally before attaching.",
+          "This Codex App was started by the legacy launcher. Quit it and open it normally before attaching.",
         );
       if (identity.attached) throw new Error("Another Host is already attached");
       const token = randomBytes(32).toString("hex");
@@ -270,6 +372,8 @@ export class HotAttachController {
       );
       await within(session.ready.promise, 20_000, "Host startup timed out");
       this.#phase = "attached";
+      this.#harnessesReadAt = 0;
+      void this.refresh().catch(() => {});
     } catch (error) {
       if (cdp && agentToken)
         await cdp
@@ -374,6 +478,7 @@ export class HotAttachController {
   async #cleanup(): Promise<void> {
     const session = this.#session;
     this.#session = undefined;
+    this.#harnessUsage = null;
     try {
       await session?.close();
     } finally {

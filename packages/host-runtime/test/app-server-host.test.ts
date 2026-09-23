@@ -6962,6 +6962,40 @@ describe("AppServerHost External Thread message queue", () => {
 });
 
 describe("hot attachment admission", () => {
+  it("lists live External Threads with their project and activity for the Dashboard", async () => {
+    const f = createFixture();
+    try {
+      const threadId = await startPiThread(f);
+      expect(f.host.externalTasks()).toEqual([
+        expect.objectContaining({
+          threadId,
+          harnessId: "pi",
+          cwd: "/synthetic",
+          subagent: false,
+          status: "idle",
+          activity: null,
+          backgroundTasks: 0,
+        }),
+      ]);
+      await startPiTurn(f, threadId, 950);
+      await vi.waitFor(() =>
+        expect(f.host.externalTasks()[0]).toMatchObject({
+          status: "running",
+          activity: { kind: expect.any(String), startedAtMs: expect.any(Number) },
+        }),
+      );
+      f.adapter.sessions[0]!.succeedTurn();
+      await vi.waitFor(() => expect(f.host.externalTasks()[0]?.status).toBe("idle"));
+      await expect(f.host.harnessInstallations()).resolves.toEqual([
+        { harnessId: "pi", executable: null, version: null },
+      ]);
+    } finally {
+      f.host.close();
+      await f.running;
+      rmSync(f.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("drains native background work after a foreground turn and reopens admission on cancel", async () => {
     const f = createFixture();
     try {

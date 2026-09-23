@@ -41,6 +41,23 @@ export type ProjectableHostEvent =
   | InteractionClosedEvent
   | TurnCompletedEvent;
 
+/** What a running Turn is doing, without any prompt, command, or output content. */
+export interface CodexTurnActivity {
+  startedAtMs: number;
+  kind:
+    | "starting"
+    | "thinking"
+    | "responding"
+    | "command"
+    | "tool"
+    | "editing"
+    | "subagent"
+    | "compacting"
+    | "approval"
+    | "question";
+  toolName?: string;
+}
+
 export interface CodexTurnProjection {
   messages: JsonObject[];
   completedTurn?: JsonObject;
@@ -715,6 +732,36 @@ export class CodexTurnProjector {
       durationMs: null,
       itemsView: "full",
     };
+  }
+
+  activity(): CodexTurnActivity {
+    const startedAtMs = this.#startedAtMs;
+    const interactions = [...this.#interactions.values()];
+    if (interactions.some(({ type }) => type === "approval"))
+      return { startedAtMs, kind: "approval" };
+    if (interactions.some(({ type }) => type === "question"))
+      return { startedAtMs, kind: "question" };
+    if (!this.#started) return { startedAtMs, kind: "starting" };
+    const current = [...this.#items.values()].findLast(({ outcome }) => outcome === null)?.item;
+    switch (current?.type) {
+      case "agentMessage":
+        return { startedAtMs, kind: "responding" };
+      case "commandExecution":
+        return { startedAtMs, kind: "command" };
+      case "fileChange":
+        return { startedAtMs, kind: "editing" };
+      case "subagentDelegation":
+        return { startedAtMs, kind: "subagent" };
+      case "contextCompaction":
+        return { startedAtMs, kind: "compacting" };
+      case "toolExecution":
+        return isFileMutatingTool(current.toolName)
+          ? { startedAtMs, kind: "editing" }
+          : { startedAtMs, kind: "tool", toolName: current.toolName };
+      default:
+        // Between Items the Harness is waiting on the model.
+        return { startedAtMs, kind: "thinking" };
+    }
   }
 
   project(event: ProjectableHostEvent, emittedAtMs = Date.now()): CodexTurnProjection {
