@@ -167,27 +167,34 @@ export interface ClaudePlanLimitEvent {
   sevenDay?: ClaudePlanLimitWindow;
 }
 
-export interface ClaudeAutonomousTurn {
-  nativeTurnKey: string;
-  events: ClaudeTurnEvent[];
-  result: ClaudeTransportTurnResult;
-}
-
 export interface ClaudeIdleTurnHandler {
   onEvent(event: ClaudeTurnEvent): void;
   onTerminal(result: ClaudeTransportTurnResult): void;
 }
 
+/**
+ * Receives a Segment that Claude started on its own, such as the Root
+ * continuation after a background task notification, while it is streaming.
+ * `onStart` fires on the first Root output of the Segment, before that output
+ * is delivered through `onEvent`, so the Session is known to be busy while
+ * Claude still works. A Segment that never produces Root output never starts.
+ * Every `onTerminal` is preceded by `onStart`.
+ */
+export interface ClaudeAutonomousTurnHandler extends ClaudeIdleTurnHandler {
+  onStart(nativeTurnKey: string): void;
+}
+
 export interface ClaudeTurnTransport {
   readonly sessionId: string;
-  setAutonomousTurnHandler(handler: (turn: ClaudeAutonomousTurn) => void): void;
+  setAutonomousTurnHandler(handler: ClaudeAutonomousTurnHandler | null): void;
   setIdleTurnHandler(handler: ClaudeIdleTurnHandler | null): void;
   /**
-   * Receives settlements that have no preceding buffered Subagent lifecycle.
-   * A task-notification Segment may never produce a Terminal, so independent
-   * settlements must not wait for Turn batching. Settlements that depend on a
-   * buffered creation/reactivation stay in that batch to preserve causal order.
-   * Without a Thread handler, settlements remain in the autonomous Turn batch.
+   * Receives Thread-level events (Subagent settlements and transcript changes)
+   * that arrive while no Turn is open and no autonomous Segment has started.
+   * A task-notification Segment may never produce Root output or a Terminal,
+   * so these must not wait for one. Once a Segment has started, every event
+   * flows through the autonomous handler in native order instead.
+   * Without a Thread handler, such events open the autonomous Segment.
    */
   setThreadEventHandler(handler: ((event: ClaudeTurnEvent) => void) | null): void;
   setIdleLive(live: boolean): void;

@@ -315,3 +315,19 @@ Kept deliberately, although the carve looked like it could take them:
   answered QUEUED_OK_2 (`Q-9-after.png`). The Desktop only takes the server queue path when
   statsig gate `2120612410` is on (it is) and the app-server version is ≥ `threadQueue:
   0.148.0-alpha.14`.
+- 2026-09-22: "Claude Code returned an invalid Tool lifecycle" after a follow-up during a
+  background-task continuation. Claude launched a Bash task with `run_in_background`; when it
+  finished, Claude Code injected a `<task-notification>` and continued on its own. The transport
+  only handed such a Segment to the adapter as one batch after its `result`, so for three minutes
+  the Host and Desktop saw the Thread idle: the user's follow-up went out as a plain `turn/start`,
+  the adapter accepted it, `runTurn` opened a fresh accumulator and wrote the prompt into the
+  running Segment (Claude Code logged `queue-operation ... absorbed_mid_turn`), and the running
+  Bash tool's `tool_result` then reached an accumulator that had never seen the call
+  (`#protocolConflict` → `transportFailure("protocol")`). Fix: the autonomous Segment now streams
+  live through `ClaudeAutonomousTurnHandler` (`onStart` at the first Root output, then
+  `onEvent`/`onTerminal`); the adapter opens the Turn at `onStart` (`turn.autonomous.started`, so
+  the Host marks the Thread running and the Desktop queues or steers), `turn.start` answers
+  `sessionBusy` meanwhile, and `runTurn` refuses a prompt while a Segment is open as a second
+  guard. A notification Segment that never produces Root output still never opens a Turn.
+  vitest claude-code 316 passed (two regressions added). Not yet re-verified live in the debug
+  Desktop.

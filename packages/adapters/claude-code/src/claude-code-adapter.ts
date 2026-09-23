@@ -104,7 +104,6 @@ import { estimateClaudeRequestCostUsd } from "./usage-estimate.js";
 import type {
   ClaudeAdapterDependencies,
   ClaudeApprovalRequest,
-  ClaudeAutonomousTurn,
   ClaudeInteractionRequest,
   ClaudeInteractionResponse,
   ClaudeLastRequestUsage,
@@ -549,7 +548,6 @@ class ClaudeHarnessSession implements HarnessSession {
   #contextUsageFreshUntilMs = 0;
   #contextUsageCooldownUntilMs = 0;
   #requestUsageBoundary = 0;
-  #autonomousOrdinal = 0;
   #occupancy = new ClaudeBackgroundOccupancy();
   #cancelEscalation: ReturnType<typeof setTimeout> | null = null;
   #continuationQuiescence: ReturnType<typeof setTimeout> | null = null;
@@ -1438,7 +1436,17 @@ class ClaudeHarnessSession implements HarnessSession {
         onPlanLimit: (planLimit) => this.#handlePlanLimit(planLimit),
       });
       this.#transport = transport;
-      transport.setAutonomousTurnHandler((turn) => this.#handleAutonomousTurn(turn));
+      transport.setAutonomousTurnHandler({
+        // A Segment Claude opens on its own (the Root continuation after a
+        // background task) is a Turn from its first output, so the Host sees
+        // the Session busy while Claude still works instead of only once it ends.
+        onStart: (nativeTurnKey) => this.#startAutonomousTurn(nativeTurnKey),
+        onEvent: (event) => this.#handleSessionEvent(event),
+        onTerminal: (result) => {
+          const active = this.#active;
+          if (active) this.#finishResult(active, result);
+        },
+      });
       transport.setThreadEventHandler((event) => {
         // Thread-level events (e.g. a background Subagent settling) are not
         // Turn-scoped and must not be gated on an active Turn.
@@ -1454,23 +1462,7 @@ class ClaudeHarnessSession implements HarnessSession {
         }
       });
       transport.setIdleTurnHandler({
-        onEvent: (event) => {
-          const active = this.#active;
-          if (active) {
-            this.#handleTurnEvent(active, event);
-            return;
-          }
-          if (event.type === "subagent.settled") {
-            this.#settleBackgroundSubagent(
-              event.status,
-              event.nativeSubagentId,
-              event.callId,
-              event.resultSummary,
-            );
-          } else if (event.type === "subagent.transcript.changed") {
-            this.#publishBackgroundTranscriptChange(event.callId);
-          }
-        },
+        onEvent: (event) => this.#handleSessionEvent(event),
         onTerminal: (result) => {
           const active = this.#active;
           if (active) this.#finishResult(active, result);
@@ -1929,21 +1921,39 @@ class ClaudeHarnessSession implements HarnessSession {
     });
   }
 
-  #handleAutonomousTurn(turn: ClaudeAutonomousTurn): void {
-    if (this.#phase !== "open") return;
-    const held = this.#active;
-    if (held?.held) {
-      this.#continueHeldTurn(held, turn);
+  /** An event from a Segment no Turn of ours issued: the active (held) Turn owns it, else the Thread. */
+  #handleSessionEvent(event: ClaudeTurnEvent): void {
+    const active = this.#active;
+    if (active) {
+      this.#handleTurnEvent(active, event);
       return;
     }
+    if (event.type === "subagent.settled") {
+      this.#settleBackgroundSubagent(
+        event.status,
+        event.nativeSubagentId,
+        event.callId,
+        event.resultSummary,
+      );
+    } else if (event.type === "subagent.transcript.changed") {
+      this.#publishBackgroundTranscriptChange(event.callId);
+    }
+  }
+
+  /**
+   * Opens a Turn for a Segment Claude started on its own, as soon as its first
+   * Root output arrives. Its events then flow through the same path as a held
+   * continuation, and `turn.start` is refused as busy until it ends.
+   */
+  #startAutonomousTurn(nativeTurnKey: string): void {
+    if (this.#phase !== "open") return;
+    // A held Turn (or a Turn still settling) already owns this Session's output.
     if (this.#active) return;
-    this.#autonomousOrdinal += 1;
     const turnId = hostTurnIdSchema.parse(this.#randomUUID());
     let resolveCompletion = (): void => undefined;
     const completion = new Promise<void>((resolve) => {
       resolveCompletion = resolve;
     });
-    const nativeTurnKey = turn.nativeTurnKey || `autonomous-${this.#autonomousOrdinal}`;
     const item: HostAgentMessageItem = {
       type: "agentMessage",
       itemId: claudeTranscriptItemId(nativeTurnKey, "agentMessage", 1),
@@ -1996,13 +2006,6 @@ class ClaudeHarnessSession implements HarnessSession {
     this.#event({ type: "turn.autonomous.started", turnId, input: [] });
     this.#event({ type: "turn.started", turnId });
     this.#event({ type: "item.started", turnId, item });
-    for (const event of turn.events) this.#handleTurnEvent(active, event);
-    this.#finishResult(active, turn.result);
-  }
-
-  #continueHeldTurn(active: ActiveTurn, turn: ClaudeAutonomousTurn): void {
-    for (const event of turn.events) this.#handleTurnEvent(active, event);
-    this.#finishResult(active, turn.result);
   }
 
   /** A background Subagent's transcript grew while no Turn owned its delegation. */

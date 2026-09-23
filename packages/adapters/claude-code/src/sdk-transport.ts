@@ -31,7 +31,7 @@ import { claudeThinkingConfiguration, parseClaudeThinkingOptionId } from "./thin
 import type {
   ClaudeApprovalRequest,
   ClaudeApprovalSuggestionScope,
-  ClaudeAutonomousTurn,
+  ClaudeAutonomousTurnHandler,
   ClaudeIdleTurnHandler,
   ClaudeInteractionRequest,
   ClaudeInteractionResponse,
@@ -350,30 +350,6 @@ function allowed(
   };
 }
 
-function canDeliverSettlementImmediately(
-  event: ClaudeTurnEvent,
-  pendingEvents: readonly ClaudeTurnEvent[],
-): boolean {
-  if (event.type !== "subagent.settled") return false;
-  // A notification without a continuation may never produce a Terminal. Deliver
-  // it now unless this batch still owes the child its creation/reactivation.
-  // Otherwise Host would discard the unknown child's terminal state and later
-  // replay its buffered lifecycle as running.
-  return !pendingEvents.some((pending) => {
-    if (
-      pending.type !== "subagent.started" &&
-      pending.type !== "subagent.updated" &&
-      pending.type !== "subagent.completed"
-    ) {
-      return false;
-    }
-    return (
-      (event.callId !== undefined && pending.callId === event.callId) ||
-      pending.nativeSubagentId === event.nativeSubagentId
-    );
-  });
-}
-
 export class ClaudeSdkTransport implements ClaudeTurnTransport {
   readonly sessionId: string;
   readonly #children: ChildProcessWithoutNullStreams[] = [];
@@ -392,12 +368,18 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   readonly #queryFactory: typeof query;
   #thinkingOptionId: HarnessThinkingOptionId;
   #active: ActiveTurn | null = null;
+  /**
+   * A Segment Claude runs while no Turn is open. It starts (and the Session
+   * becomes busy) at its first Root output; Thread-level settlements seen
+   * before that are delivered at once and never open a Segment, since a queued
+   * task notification may produce no continuation and no Terminal at all.
+   */
   #autonomous: {
     accumulator: ClaudeNativeTurnAccumulator;
-    events: ClaudeTurnEvent[];
+    started: boolean;
     nativeTurnKey: string | null;
   } | null = null;
-  #autonomousTurnHandler: ((turn: ClaudeAutonomousTurn) => void) | null = null;
+  #autonomousTurnHandler: ClaudeAutonomousTurnHandler | null = null;
   #idleHandler: ClaudeIdleTurnHandler | null = null;
   #threadEventHandler: ((event: ClaudeTurnEvent) => void) | null = null;
   #idleLive = false;
@@ -436,7 +418,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     this.#thinkingOptionId = parseClaudeThinkingOptionId(options.thinkingOptionId);
   }
 
-  setAutonomousTurnHandler(handler: (turn: ClaudeAutonomousTurn) => void): void {
+  setAutonomousTurnHandler(handler: ClaudeAutonomousTurnHandler | null): void {
     this.#autonomousTurnHandler = handler;
   }
 
@@ -621,6 +603,12 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
       return Promise.reject(new Error("Claude SDK transport is not started"));
     }
     if (this.#active) return Promise.reject(new Error("Claude SDK transport is busy"));
+    // Claude is mid-Segment on its own (for example continuing after a background task
+    // notification). A new prompt now would be absorbed into that Segment, and its
+    // Tool results would reach an accumulator that never saw the Tool calls.
+    if (this.#autonomous?.started) {
+      return Promise.reject(new Error("Claude SDK transport is busy with an autonomous Segment"));
+    }
     const promise = new Promise<ClaudeTransportTurnResult>((resolve, reject) => {
       this.#active = {
         accumulator: this.#newAccumulator(),
@@ -1078,47 +1066,53 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
           }
           continue;
         }
-        if (!this.#autonomousTurnHandler) continue;
+        const handler = this.#autonomousTurnHandler;
+        if (!handler) continue;
         const autonomous =
           this.#autonomous ??
           (this.#autonomous = {
             accumulator: this.#newAccumulator(),
-            events: [],
+            started: false,
             nativeTurnKey: null,
           });
         if (
-          autonomous.nativeTurnKey === null &&
+          !autonomous.started &&
           isRecord(message) &&
           message.type === "user" &&
           (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined) &&
           typeof message.uuid === "string" &&
           message.uuid.length > 0
         ) {
+          // The latest Root prompt Claude injected names the Segment it opens.
           autonomous.nativeTurnKey = message.uuid;
         }
+        const start = (): void => {
+          if (autonomous.started) return;
+          autonomous.started = true;
+          handler.onStart(autonomous.nativeTurnKey ?? `autonomous-${Date.now()}`);
+        };
         const interpreted = autonomous.accumulator.consume(message);
         this.#observeSubagentCalls(interpreted.events);
         for (const event of interpreted.events) {
           if (
+            !autonomous.started &&
             this.#threadEventHandler &&
-            (event.type === "subagent.transcript.changed" ||
-              canDeliverSettlementImmediately(event, autonomous.events))
+            (event.type === "subagent.transcript.changed" || event.type === "subagent.settled")
           ) {
-            // A background Subagent's transcript grows while no Turn is open;
-            // buffering the change until the Segment ends would hide it.
+            // No Segment is open yet: a background Subagent's transcript change or
+            // settlement is Thread-level and must not wait for output that may
+            // never come. Once the Segment has started, every event stays in
+            // order behind the creation it may depend on.
             this.#threadEventHandler(event);
             continue;
           }
-          autonomous.events.push(event);
+          start();
+          handler.onEvent(event);
         }
         if (interpreted.terminal) {
+          start();
           this.#autonomous = null;
-          const nativeTurnKey = autonomous.nativeTurnKey ?? `autonomous-${Date.now()}`;
-          this.#autonomousTurnHandler({
-            nativeTurnKey,
-            events: autonomous.events,
-            result: interpreted.terminal,
-          });
+          handler.onTerminal(interpreted.terminal);
         }
       }
       if (!this.#closePromise) throw new Error("Claude SDK Query ended unexpectedly");
