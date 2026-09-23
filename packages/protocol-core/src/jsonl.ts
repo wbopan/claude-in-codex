@@ -1,6 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 
-import { jsonValueSchema, type JsonValue } from "@codexhost/shared-contracts";
+import { jsonValueSchema, type JsonValue } from "@claude-in-codex/shared-contracts";
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const newline = Buffer.from("\n");

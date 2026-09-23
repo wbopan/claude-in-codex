@@ -1,13 +1,14 @@
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import type {
   DecodedThreadListRequest,
   JsonObject,
   ThreadListExternalAnchor,
   ThreadListSortDirection,
   ThreadListSortKey,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 import { externalThreadValue } from "./external-thread-repository.js";
+import { LEGACY_MODEL_PROVIDER, MODEL_PROVIDER } from "@claude-in-codex/shared-contracts";
 
 export interface ExternalThreadListRuntimeState {
   running: boolean;
@@ -133,7 +134,8 @@ function includesExternalRecord(
   if (
     query.modelProviders !== null &&
     query.modelProviders.length > 0 &&
-    !query.modelProviders.includes("codexhost")
+    !query.modelProviders.includes(MODEL_PROVIDER) &&
+    !query.modelProviders.includes(LEGACY_MODEL_PROVIDER)
   ) {
     return false;
   }

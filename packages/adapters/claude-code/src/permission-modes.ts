@@ -4,7 +4,7 @@ import {
   harnessPermissionModeIdSchema,
   type HarnessPermissionModeCatalog,
   type HarnessPermissionModeId,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { z } from "zod";
 
 export type ClaudePermissionMode = Exclude<PermissionMode, "dontAsk">;

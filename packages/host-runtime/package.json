@@ -1,5 +1,5 @@
 {
-  "name": "@codexhost/host-runtime",
+  "name": "@claude-in-codex/host-runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,12 +17,12 @@
     "build:release": "node scripts/build-release.mjs"
   },
   "dependencies": {
-    "@codexhost/desktop-control": "0.0.0",
-    "@codexhost/harness-adapter": "0.0.0",
-    "@codexhost/harness-broker": "0.0.0",
-    "@codexhost/mapping-store": "0.0.0",
-    "@codexhost/protocol-core": "0.0.0",
-    "@codexhost/shared-contracts": "0.0.0",
+    "@claude-in-codex/desktop-control": "0.0.0",
+    "@claude-in-codex/harness-adapter": "0.0.0",
+    "@claude-in-codex/harness-broker": "0.0.0",
+    "@claude-in-codex/mapping-store": "0.0.0",
+    "@claude-in-codex/protocol-core": "0.0.0",
+    "@claude-in-codex/shared-contracts": "0.0.0",
     "ws": "8.21.3"
   }
 }

@@ -13,6 +13,7 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { buildReleaseHostBundle } from "../../packages/host-runtime/scripts/build-release.mjs";
 import {
   buildPreinstalledHarnessPlugins,
   preinstalledHarnessPluginPaths,
@@ -21,12 +22,12 @@ import { hostReleaseTarget, npmReleaseUsage, releaseTargetForHost } from "./targ
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 
-export const NPM_PACKAGE_NAME = "@codexhost/cli";
+export const NPM_PACKAGE_NAME = "@claude-in-codex/cli";
 export const NPM_PLATFORM_PACKAGE_NAMES = Object.freeze({
-  "macos-arm64": "@codexhost/cli-darwin-arm64",
-  "macos-x64": "@codexhost/cli-darwin-x64",
-  "linux-x64": "@codexhost/cli-linux-x64",
-  "linux-arm64": "@codexhost/cli-linux-arm64",
+  "macos-arm64": "@claude-in-codex/cli-darwin-arm64",
+  "macos-x64": "@claude-in-codex/cli-darwin-x64",
+  "linux-x64": "@claude-in-codex/cli-linux-x64",
+  "linux-arm64": "@claude-in-codex/cli-linux-arm64",
 });
 export const NPM_RUNTIME_PLATFORM_PACKAGES = Object.freeze({
   "darwin-arm64": NPM_PLATFORM_PACKAGE_NAMES["macos-arm64"],
@@ -35,7 +36,7 @@ export const NPM_RUNTIME_PLATFORM_PACKAGES = Object.freeze({
   "linux-arm64": NPM_PLATFORM_PACKAGE_NAMES["linux-arm64"],
 });
 export const NPM_PACKAGE_DESCRIPTION =
-  "Run Pi and Claude Code as first-class external harnesses inside Codex Desktop.";
+  "Remote Host for Codex Desktop: run Claude Code as a first-class external harness on an SSH host.";
 
 export function npmPlatformPackageName(target) {
   const packageName = NPM_PLATFORM_PACKAGE_NAMES[target.id];
@@ -43,13 +44,12 @@ export function npmPlatformPackageName(target) {
   return packageName;
 }
 
+/**
+ * Every third-party package bundled into `app/host-runtime.mjs` or a preinstalled Harness plugin.
+ * The build fails when a bundle audit reports a runtime package missing from this list, so the
+ * notices always cover what the package actually ships.
+ */
 const runtimeLicenses = [
-  {
-    packageName: "@agentclientprotocol/sdk",
-    license: "Apache-2.0",
-    source: "LICENSE",
-    output: "Agent-Client-Protocol-SDK-LICENSE.txt",
-  },
   {
     packageName: "@anthropic-ai/claude-agent-sdk",
     license: "SEE LICENSE IN README.md",
@@ -57,10 +57,10 @@ const runtimeLicenses = [
     output: "Claude-Agent-SDK-LICENSE.md",
   },
   {
-    packageName: "@anthropic-ai/sdk",
+    packageName: "@hono/node-server",
     license: "MIT",
     source: "LICENSE",
-    output: "Anthropic-SDK-LICENSE.txt",
+    output: "hono-node-server-LICENSE.txt",
   },
   {
     packageName: "@modelcontextprotocol/sdk",
@@ -68,35 +68,57 @@ const runtimeLicenses = [
     source: "LICENSE",
     output: "MCP-SDK-LICENSE.txt",
   },
+  { packageName: "ajv", license: "MIT", source: "LICENSE", output: "ajv-LICENSE.txt" },
   {
-    packageName: "@opencode-ai/sdk",
+    packageName: "ajv-formats",
     license: "MIT",
-    source: "scripts/release/licenses/opencode-ai-sdk-1.18.25-MIT.txt",
-    output: "OpenCode-SDK-LICENSE.txt",
+    source: "LICENSE",
+    output: "ajv-formats-LICENSE.txt",
   },
   {
-    packageName: "@qoder-ai/qoder-agent-sdk",
-    license: "SEE LICENSE IN LICENSE",
+    packageName: "content-type",
+    license: "MIT",
     source: "LICENSE",
-    output: "Qoder-Agent-SDK-LICENSE.txt",
-  },
-  {
-    packageName: "@qodercn-ai/qodercn-agent-sdk",
-    license: "SEE LICENSE IN LICENSE",
-    source: "LICENSE",
-    output: "QoderCN-Agent-SDK-LICENSE.txt",
+    output: "content-type-LICENSE.txt",
   },
   { packageName: "diff", license: "BSD-3-Clause", source: "LICENSE", output: "diff-LICENSE.txt" },
-  { packageName: "lucide", license: "ISC", source: "LICENSE", output: "lucide-LICENSE.txt" },
   {
-    packageName: "tailwindcss",
+    packageName: "fast-deep-equal",
     license: "MIT",
     source: "LICENSE",
-    output: "tailwindcss-LICENSE.txt",
+    output: "fast-deep-equal-LICENSE.txt",
+  },
+  {
+    packageName: "fast-uri",
+    license: "BSD-3-Clause",
+    source: "LICENSE",
+    output: "fast-uri-LICENSE.txt",
+  },
+  { packageName: "hono", license: "MIT", source: "LICENSE", output: "hono-LICENSE.txt" },
+  {
+    packageName: "json-schema-traverse",
+    license: "MIT",
+    source: "LICENSE",
+    output: "json-schema-traverse-LICENSE.txt",
   },
   { packageName: "ws", license: "MIT", source: "LICENSE", output: "ws-LICENSE.txt" },
   { packageName: "zod", license: "MIT", source: "LICENSE", output: "zod-LICENSE.txt" },
+  {
+    packageName: "zod-to-json-schema",
+    license: "ISC",
+    source: "LICENSE",
+    output: "zod-to-json-schema-LICENSE.txt",
+  },
 ];
+
+/** Fails when a bundle ships a runtime package whose license is not reviewed above. */
+export function verifyShippedRuntimeLicenses(shippedPackages) {
+  const reviewed = new Set(runtimeLicenses.map((dependency) => dependency.packageName));
+  const unreviewed = [...new Set(shippedPackages)].filter((name) => !reviewed.has(name)).sort();
+  if (unreviewed.length > 0) {
+    throw new Error(`npm package ships runtime packages without notices: ${unreviewed.join(", ")}`);
+  }
+}
 
 export function npmReleaseCommand(
   args,
@@ -124,10 +146,6 @@ export function npmReleaseBuildCommands(
       ...npmReleaseCommand(["run", "build:typescript"], platform, environment, nodePath),
     },
     {
-      label: "Renderer build",
-      ...npmReleaseCommand(["run", "build:renderer"], platform, environment, nodePath),
-    },
-    {
       label: "Rust release build",
       command: "cargo",
       args: [
@@ -137,10 +155,9 @@ export function npmReleaseBuildCommands(
         "--target",
         target.rustTarget,
         "--package",
-        "codexhost-launcher",
-        "--package",
-        "codexhost-shim",
-        "--package",
+        "claude-in-codex-shim",
+        "--bin",
+        "claude-in-codex-shim",
       ],
     },
   ];
@@ -213,25 +230,11 @@ export function expectedNpmPackagePaths(target) {
   return [
     "package.json",
     "README.md",
-    `bin/codexhost${target.executableSuffix}`,
-    `libexec/codexhost-shim${target.executableSuffix}`,
-    "app/desktop-controller.mjs",
+    `libexec/claude-in-codex-shim${target.executableSuffix}`,
     "app/host-runtime.mjs",
-    "app/renderer-extension.js",
     ...preinstalledHarnessPluginPaths(),
-    "licenses/Anthropic-SDK-LICENSE.txt",
-    "licenses/Agent-Client-Protocol-SDK-LICENSE.txt",
-    "licenses/Claude-Agent-SDK-LICENSE.md",
-    "licenses/MCP-SDK-LICENSE.txt",
-    "licenses/OpenCode-SDK-LICENSE.txt",
-    "licenses/Qoder-Agent-SDK-LICENSE.txt",
-    "licenses/QoderCN-Agent-SDK-LICENSE.txt",
+    ...runtimeLicenses.map((dependency) => `licenses/${dependency.output}`),
     "licenses/opencodex-LICENSE.txt",
-    "licenses/diff-LICENSE.txt",
-    "licenses/lucide-LICENSE.txt",
-    "licenses/tailwindcss-LICENSE.txt",
-    "licenses/ws-LICENSE.txt",
-    "licenses/zod-LICENSE.txt",
     "THIRD_PARTY_NOTICES.txt",
   ].sort();
 }
@@ -242,28 +245,13 @@ export function createNpmPackageManifest({ version, target }) {
     version,
     description: NPM_PACKAGE_DESCRIPTION,
     type: "module",
-    files: [
-      "bin/**",
-      "libexec/**",
-      "app/**",
-      "licenses/**",
-      "README.md",
-      "THIRD_PARTY_NOTICES.txt",
-    ],
+    files: ["libexec/**", "app/**", "licenses/**", "README.md", "THIRD_PARTY_NOTICES.txt"],
     engines: {
       node: ">=22",
     },
     os: npmPackageOs(target),
     cpu: npmPackageCpu(target),
-    keywords: ["codex", "codexhost", "claude-code", "agent", "harness"],
-    repository: {
-      type: "git",
-      url: "git+https://github.com/BytePioneer-AI/codex-host.git",
-    },
-    bugs: {
-      url: "https://github.com/BytePioneer-AI/codex-host/issues",
-    },
-    homepage: "https://github.com/BytePioneer-AI/codex-host#readme",
+    keywords: ["codex", "claude-in-codex", "claude-code", "agent", "harness", "ssh"],
     publishConfig: {
       access: "public",
     },
@@ -273,41 +261,18 @@ export function createNpmPackageManifest({ version, target }) {
 export function createNpmBinLauncherSource({ version }) {
   return `#!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 const version = ${JSON.stringify(version)};
 const userArguments = process.argv.slice(2);
-const repositoryUrl = "https://github.com/BytePioneer-AI/codex-host";
-const startupTraceStartedAt = Date.now();
-function startupTrace(stage) {
-  if (process.env.CODEXHOST_STARTUP_TRACE !== "1") return;
-  console.error(
-    "[codexhost startup +" + (Date.now() - startupTraceStartedAt) + "ms] npm: " + stage,
-  );
+
+function fail(message) {
+  console.error(\`claude-in-codex: \${message}\`);
+  process.exit(1);
 }
-function printStarPrompt() {
-  const locale =
-    process.env.LC_ALL ??
-    process.env.LC_MESSAGES ??
-    process.env.LANG ??
-    Intl.DateTimeFormat().resolvedOptions().locale;
-  const prompt = /^zh(?:[_-]|$)/iu.test(locale)
-    ? "⭐ 如果这个项目对你有帮助，请给我们一个 Star ⭐"
-    : "⭐ If this project helps you, please give us a Star ⭐";
-  const useColor =
-    process.stdout.isTTY && process.env.NO_COLOR === undefined && process.env.TERM !== "dumb";
-  if (useColor) {
-    console.log(
-      "\\u001B[33m" + prompt + "\\u001B[0m\\n\\u001B[36m" + repositoryUrl + "\\u001B[0m",
-    );
-    return;
-  }
-  console.log(prompt + "\\n" + repositoryUrl);
-}
+
 if (
   userArguments.length === 1 &&
   (userArguments[0] === "--version" || userArguments[0] === "-v")
@@ -315,10 +280,28 @@ if (
   console.log(version);
   process.exit(0);
 }
-if (userArguments.length === 0 || userArguments[0] === "launch") {
-  printStarPrompt();
+if (
+  userArguments.length === 0 ||
+  userArguments[0] === "--help" ||
+  userArguments[0] === "-h"
+) {
+  console.log(
+    [
+      "usage:",
+      "  claude-in-codex --version",
+      "  claude-in-codex remote install|start|stop|status|uninstall [options]",
+      "  claude-in-codex broker install|status|stop|uninstall [--harness <id>]",
+      "",
+      "Installs and manages the Remote Host that Codex Desktop reaches over SSH on",
+      "this machine. It runs on the current Node.js runtime with the packaged Host",
+      "Runtime and Shim. The local Host is the macOS menu bar app, not this package.",
+    ].join("\\n"),
+  );
+  process.exit(0);
 }
-startupTrace("entry");
+if (userArguments[0] !== "remote" && userArguments[0] !== "broker") {
+  fail(\`unknown command '\${userArguments[0]}'. Run 'claude-in-codex --help' for usage.\`);
+}
 
 const platformPackages = ${JSON.stringify(NPM_RUNTIME_PLATFORM_PACKAGES, null, 2)};
 const platformKey = \`\${process.platform}-\${process.arch}\`;
@@ -334,7 +317,7 @@ try {
   // the entry script, so the sibling platform package drops off the resolution
   // chain. Fall back to the npm global layout derived from the bin symlink.
   packageRoot = null;
-  if (process.platform !== "win32" && process.argv[1]) {
+  if (process.argv[1]) {
     const prefix = path.dirname(path.dirname(path.resolve(process.argv[1])));
     const globalPackage = path.join(
       prefix,
@@ -352,243 +335,61 @@ try {
   }
 }
 
-startupTrace("platform package resolved");
-const executableSuffix = process.platform === "win32" ? ".exe" : "";
-const launcher = path.join(packageRoot, "bin", \`codexhost\${executableSuffix}\`);
-const shim = path.join(packageRoot, "libexec", \`codexhost-shim\${executableSuffix}\`);
+const shim = path.join(packageRoot, "libexec", "claude-in-codex-shim");
 const hostRuntime = path.join(packageRoot, "app", "host-runtime.mjs");
-const desktopController = path.join(packageRoot, "app", "desktop-controller.mjs");
-const rendererExtension = path.join(packageRoot, "app", "renderer-extension.js");
-
-function fail(message) {
-  console.error(\`codexhost: \${message}\`);
-  process.exit(1);
-}
-
 for (const [label, filePath] of [
-  ["launcher", launcher],
   ["shim", shim],
   ["host runtime", hostRuntime],
-  ["desktop controller", desktopController],
-  ["renderer extension", rendererExtension],
 ]) {
   if (!existsSync(filePath)) fail(\`missing \${label}: \${filePath}\`);
 }
 
-function existingFile(filePath) {
-  return typeof filePath === "string" && filePath.length > 0 && existsSync(filePath)
-    ? filePath
-    : undefined;
-}
-function officialNpmCliPath(nodePath) {
-  return process.platform === "win32"
-    ? path.join(path.dirname(nodePath), "node_modules", "npm", "bin", "npm-cli.js")
-    : path.join(
-        path.dirname(path.dirname(nodePath)),
-        "lib",
-        "node_modules",
-        "npm",
-        "bin",
-        "npm-cli.js",
-      );
-}
-function homebrewNpmCliPath(nodePath) {
-  if (process.platform === "win32") return undefined;
-  const segments = nodePath.split(path.sep);
-  const cellarIndex = segments.lastIndexOf("Cellar");
-  if (
-    cellarIndex >= 1 &&
-    segments[cellarIndex + 1] === "node" &&
-    segments.at(-2) === "bin" &&
-    segments.at(-1) === "node"
-  ) {
-    const brewPrefix = segments.slice(0, cellarIndex).join(path.sep);
-    return (
-      existingFile(
-        path.join(brewPrefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-      ) ??
-      existingFile(
-        path.join(
-          path.dirname(path.dirname(nodePath)),
-          "libexec",
-          "lib",
-          "node_modules",
-          "npm",
-          "bin",
-          "npm-cli.js",
-        ),
-      )
-    );
-  }
-  const brewPrefix = process.env.HOMEBREW_PREFIX;
-  if (typeof brewPrefix === "string" && brewPrefix.length > 0) {
-    return existingFile(
-      path.join(brewPrefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-    );
-  }
-  return undefined;
-}
-function pathNpmCliPath() {
-  const pathValue = process.env.PATH;
-  if (typeof pathValue !== "string" || pathValue.length === 0) return undefined;
-  const npmName = process.platform === "win32" ? "npm.cmd" : "npm";
-  for (const directory of pathValue.split(path.delimiter)) {
-    if (!directory) continue;
-    const candidate = path.join(directory, npmName);
-    if (!existsSync(candidate)) continue;
-    try {
-      const resolved = realpathSync(candidate);
-      if (path.basename(resolved) === "npm-cli.js") return resolved;
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-}
-const npmCliPath =
-  existingFile(process.env.npm_execpath) ??
-  existingFile(officialNpmCliPath(process.execPath)) ??
-  homebrewNpmCliPath(process.execPath) ??
-  pathNpmCliPath();
-if (!npmCliPath) fail("could not locate the npm CLI used to update this global installation");
-const updateEnvironment = {
-  ...process.env,
-  CODEXHOST_NPM_NODE_PATH: process.execPath,
-  CODEXHOST_NPM_CLI_PATH: path.resolve(npmCliPath),
-  CODEXHOST_NPM_LAUNCHER_PATH: fileURLToPath(import.meta.url),
-  CODEXHOST_NPM_PACKAGE_ROOT: packageRoot,
-};
-// A managed SSH installation deliberately exports these variables from the
-// remote login profile so stock Codex can enter the remote Host. When this npm
-// command starts the local Desktop on that same machine, replace the remote
-// bootstrap with a local data root. CODEXHOST_CLAUDE_COMMAND is intentionally
-// shared and therefore preserved.
-const remoteSshBootstrapEnvironment = [
-  "CODEX_INSTALL_DIR",
-  "CODEXHOST_DATA_DIR",
-  "CODEXHOST_DEFAULT_AGENT",
-  "CODEXHOST_HOST_NODE_PATH",
-  "CODEXHOST_HOST_RUNTIME_PATH",
-  "CODEXHOST_REMOTE_SSH_MANAGED",
-  "CODEXHOST_STOCK_CODEX_PATH",
-];
-if (updateEnvironment.CODEXHOST_REMOTE_SSH_MANAGED === "1") {
-  for (const name of remoteSshBootstrapEnvironment) delete updateEnvironment[name];
-  updateEnvironment.CODEXHOST_DATA_DIR = path.join(homedir(), ".codexhost");
-}
-
-let launchArguments;
-let remoteArguments = null;
-let brokerArguments = null;
-if (userArguments.length === 0) {
-  launchArguments = ["launch"];
-} else if (userArguments[0] === "launch") {
-  launchArguments = userArguments;
-} else if (userArguments[0] === "inspect") {
-  launchArguments = userArguments;
-} else if (userArguments[0] === "remote") {
-  launchArguments = null;
-  remoteArguments = userArguments.slice(1);
-} else if (userArguments[0] === "broker") {
-  launchArguments = null;
-  brokerArguments = userArguments.slice(1);
-} else if (userArguments[0] === "--help" || userArguments[0] === "-h") {
-  console.log(
-    [
-      "usage:",
-      "  codexhost",
-      "  codexhost --version",
-      "  codexhost inspect",
-      "  codexhost launch [launcher options]",
-      "  codexhost remote install|start|stop|status|uninstall",
-      "  codexhost broker install|status|stop|uninstall",
-      "",
-      "This npm package uses the current Node.js runtime and the packaged",
-      "Rust launcher/shim. Codex Desktop must already be installed.",
-    ].join("\\n"),
-  );
-  process.exit(0);
-} else {
-  fail(
-    \`unknown command '\${userArguments[0]}'. Run 'codexhost --help' for usage.\`,
-  );
-}
-
-if (launchArguments?.[0] === "launch") {
-  const injected = new Set();
-  for (let index = 1; index < launchArguments.length; index += 1) {
-    const argument = launchArguments[index];
-    if (
-      argument === "--node" ||
-      argument === "--shim" ||
-      argument === "--host-runtime" ||
-      argument === "--desktop-controller" ||
-      argument === "--renderer"
-    ) {
-      injected.add(argument);
-      index += 1;
-    }
-  }
-  const extras = [];
-  if (!injected.has("--node")) extras.push("--node", process.execPath);
-  if (!injected.has("--shim")) extras.push("--shim", shim);
-  if (!injected.has("--host-runtime")) extras.push("--host-runtime", hostRuntime);
-  if (!injected.has("--desktop-controller")) {
-    extras.push("--desktop-controller", desktopController);
-  }
-  if (!injected.has("--renderer")) extras.push("--renderer", rendererExtension);
-  launchArguments = ["launch", ...extras, ...launchArguments.slice(1)];
-}
-
-if (brokerArguments !== null) {
-  const child = spawn(
-    launcher,
-    [
-      "broker",
-      ...brokerArguments,
-      "--node", process.execPath, "--host-runtime", hostRuntime,
-    ],
-    {
-      env: updateEnvironment,
-      stdio: "inherit",
-      windowsHide: true,
-    },
-  );
+function run(command, arguments_, options, next) {
+  const child = spawn(command, arguments_, { env: process.env, windowsHide: true, ...options });
   child.on("error", (error) => fail(error.message));
   child.on("exit", (code, signal) => {
     if (signal) {
       process.kill(process.pid, signal);
       return;
     }
+    if (code === 0 && next) {
+      next();
+      return;
+    }
     process.exit(code ?? 1);
   });
-} else if (remoteArguments !== null) {
-  const runNativeBroker = (command) => {
-    const broker = spawn(
-      launcher,
-      ["broker", command, "--node", process.execPath, "--host-runtime", hostRuntime],
-      {
-        env: updateEnvironment,
-        // remote status is a stable JSON stdout surface. Keep the broker's
-        // human-readable status beside it on stderr instead of corrupting JSON.
-        stdio: command === "status" ? ["inherit", process.stderr, "inherit"] : "inherit",
-        windowsHide: true,
-      },
-    );
-    broker.on("error", (error) => fail(error.message));
-    broker.on("exit", (code, signal) => {
-      if (signal) {
-        process.kill(process.pid, signal);
-        return;
-      }
-      process.exit(code ?? 1);
-    });
-  };
-  const child = spawn(
+}
+
+// The Shim manages the per-Harness native broker LaunchAgent (macOS only).
+function runBroker(brokerArguments, stdio = "inherit") {
+  run(
+    shim,
+    [
+      "--claude-in-codex-broker",
+      ...brokerArguments,
+      "--node",
+      process.execPath,
+      "--host-runtime",
+      hostRuntime,
+    ],
+    { stdio },
+  );
+}
+
+if (userArguments[0] === "broker") {
+  runBroker(userArguments.slice(1));
+} else {
+  const remoteArguments = userArguments.slice(1);
+  const brokerCommand =
+    process.platform === "darwin" &&
+    ["install", "status", "uninstall"].includes(remoteArguments[0])
+      ? remoteArguments[0]
+      : null;
+  run(
     process.execPath,
     [
       hostRuntime,
-      "--codexhost-remote",
+      "--claude-in-codex-remote",
       ...remoteArguments,
       "--node",
       process.execPath,
@@ -597,97 +398,17 @@ if (brokerArguments !== null) {
       "--host-runtime",
       hostRuntime,
     ],
-    {
-      env: updateEnvironment,
-      stdio: "inherit",
-      windowsHide: true,
-    },
+    { stdio: "inherit" },
+    brokerCommand
+      ? () =>
+          // remote status is a stable JSON stdout surface. Keep the broker's
+          // human-readable status beside it on stderr instead of corrupting JSON.
+          runBroker(
+            [brokerCommand],
+            brokerCommand === "status" ? ["inherit", process.stderr, "inherit"] : "inherit",
+          )
+      : undefined,
   );
-  child.on("error", (error) => fail(error.message));
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    if (code === 0 && process.platform === "darwin") {
-      if (remoteArguments[0] === "install") {
-        runNativeBroker("install");
-        return;
-      }
-      if (remoteArguments[0] === "status") {
-        runNativeBroker("status");
-        return;
-      }
-      if (remoteArguments[0] === "uninstall") {
-        runNativeBroker("uninstall");
-        return;
-      }
-    }
-    process.exit(code ?? 1);
-  });
-} else if (launchArguments?.[0] === "launch") {
-  // The Launcher prints "ready" once the Desktop, Controller, and Host chain
-  // are up, then detaches from the terminal to keep supervising. Windows
-  // command hosts may clean up a completed command's process tree, so keep the
-  // npm parent alive there until the managed Desktop exits. Other platforms
-  // return immediately after startup as before.
-  startupTrace("spawning Launcher");
-  const keepLauncherForeground = process.platform === "win32";
-  const child = spawn(launcher, launchArguments, {
-    env: updateEnvironment,
-    stdio: ["ignore", "pipe", "inherit"],
-    windowsHide: true,
-  });
-  let finished = false;
-  const finish = (code) => {
-    if (finished) return;
-    finished = true;
-    startupTrace("Launcher finished startup with code " + code);
-    process.exit(code);
-  };
-  child.stdout.setEncoding("utf8");
-  let ready = false;
-  let launcherOutput = "";
-  const readyMarker = "ready\\n";
-  child.stdout.on("data", (chunk) => {
-    if (ready) return;
-    const output = launcherOutput + chunk;
-    if (output.includes(readyMarker)) {
-      ready = true;
-      launcherOutput = "";
-      startupTrace("received Launcher ready");
-      if (!keepLauncherForeground) finish(0);
-      return;
-    }
-    // Only retain the tail needed to recognize a marker split across chunks.
-    launcherOutput = output.slice(1 - readyMarker.length);
-  });
-  child.on("error", (error) => {
-    startupTrace("Launcher spawn failed: " + error.message);
-    fail(error.message);
-  });
-  child.on("exit", (code, signal) => {
-    startupTrace(ready ? "Launcher exited after ready" : "Launcher exited before ready");
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    finish(code ?? 1);
-  });
-} else {
-  const child = spawn(launcher, launchArguments, {
-    env: updateEnvironment,
-    stdio: "inherit",
-    windowsHide: true,
-  });
-  child.on("error", (error) => fail(error.message));
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 1);
-  });
 }
 `;
 }
@@ -713,47 +434,35 @@ This package is platform-specific (\`os=${npmPackageOs(target).join(",")}\`, \`c
 ## Usage
 
 \`\`\`bash
-codexhost
-codexhost --version
-codexhost inspect
-codexhost launch
-codexhost remote install
-codexhost remote start
-codexhost remote stop
-codexhost remote status
-codexhost remote uninstall
-codexhost broker status
+claude-in-codex --version
+claude-in-codex remote install
+claude-in-codex remote start
+claude-in-codex remote stop
+claude-in-codex remote status
+claude-in-codex remote uninstall
+claude-in-codex broker status
 \`\`\`
 
-The \`codexhost\` command launches the packaged Rust launcher with:
-
-- the current Node.js executable as Host Runtime
-- packaged \`host-runtime\`, Desktop Controller, Renderer, and Shim binaries
+The package ships the Host Runtime bundle (\`app/host-runtime.mjs\`), the preinstalled Harness plugins and the Rust Shim (\`libexec/claude-in-codex-shim\`). \`remote install\` copies the Shim into \`~/.claude-in-codex/remote/bin/codex\` and adds an SSH-guarded block to the login profile, so Codex Desktop's SSH connection reaches the Remote Host while local shells keep the stock Codex CLI.
 
 ## Requirements
 
 - Node.js 22 or 24 (Node 20 and older are not supported)
-- Official ChatGPT/Codex Desktop for macOS, Windows, or Linux
-- Pi on \`PATH\` when using the Pi agent
+- The official Codex CLI installed on this machine
 - Claude Code installed when using the Claude Code adapter
 
 ## Notes
 
-- This npm package does **not** embed a private Node.js runtime.
-- On macOS, \`remote install\` manages the current-user Aqua Harness broker; it never asks for a Keychain password or copies Claude credentials.
-- Installer packages (DMG/EXE) remain the zero-dependency desktop distribution path.
-- Prefer \`npm install -g ${NPM_PACKAGE_NAME}\` over installing the monorepo root.
+- This npm package does **not** embed a private Node.js runtime; the current Node.js executable runs the Host Runtime.
+- On macOS, \`remote install\` manages the current-user Aqua Harness broker through the Shim; it never asks for a Keychain password or copies Claude credentials.
+- The local Host is the macOS menu bar app; this package provides only the Remote Host.
 `;
-}
-
-export function resolveRuntimeLicenseSource(root, dependency) {
-  return path.resolve(root, dependency.source);
 }
 
 export async function writeThirdPartyNotices(root, packageRoot) {
   const licensesDirectory = path.join(packageRoot, "licenses");
   await mkdir(licensesDirectory, { recursive: true });
-  const notices = ["codexhost npm package third-party notices", ""];
+  const notices = ["claude-in-codex npm package third-party notices", ""];
   for (const dependency of runtimeLicenses) {
     const dependencyRoot = path.join(root, "node_modules", dependency.packageName);
     const manifest = packageManifest(
@@ -766,9 +475,7 @@ export async function writeThirdPartyNotices(root, packageRoot) {
       );
     }
     await copyReleaseFile(
-      dependency.packageName === "@opencode-ai/sdk"
-        ? resolveRuntimeLicenseSource(root, dependency)
-        : path.join(dependencyRoot, dependency.source),
+      path.join(dependencyRoot, dependency.source),
       path.join(licensesDirectory, dependency.output),
       `${dependency.packageName} license`,
     );
@@ -831,9 +538,6 @@ export async function validateNpmPackage({ packageRoot, target, root }) {
   for (const file of files.filter((entry) => /\.(?:js|md|mjs|txt)$/u.test(entry.relative))) {
     const text = await readFile(file.absolute, "utf8");
     const forbiddenReferences = [root];
-    if (["app/desktop-controller.mjs", "app/renderer-extension.js"].includes(file.relative)) {
-      forbiddenReferences.push("@anthropic-ai/", "@codexhost/adapter-claude-code");
-    }
     if (file.relative !== "package.json" && text.includes("runtime/node")) {
       throw new Error(`npm package must not embed a private Node runtime: ${file.relative}`);
     }
@@ -954,50 +658,23 @@ export async function prepareNpmPackage({
 
   const rustOutput = path.join(root, "target", target.rustTarget, "release");
   await copyReleaseFile(
-    path.join(rustOutput, `codexhost${target.executableSuffix}`),
-    path.join(packageRoot, "bin", `codexhost${target.executableSuffix}`),
-    "npm Launcher",
-    true,
-  );
-  await copyReleaseFile(
-    path.join(rustOutput, `codexhost-shim${target.executableSuffix}`),
-    path.join(packageRoot, "libexec", `codexhost-shim${target.executableSuffix}`),
+    path.join(rustOutput, `claude-in-codex-shim${target.executableSuffix}`),
+    path.join(packageRoot, "libexec", `claude-in-codex-shim${target.executableSuffix}`),
     "npm Shim",
     true,
   );
-  await runCommand(
-    {
-      label: "production Host Bundle build",
-      command: process.execPath,
-      args: [
-        "packages/host-runtime/scripts/build-release.mjs",
-        "--output",
-        path.join(packageRoot, "app", "host-runtime.mjs"),
-      ],
-    },
-    root,
-  );
-  await buildPreinstalledHarnessPlugins({
+  const hostBundle = await buildReleaseHostBundle({
+    repositoryRoot: root,
+    outputPath: path.join(packageRoot, "app", "host-runtime.mjs"),
+  });
+  const pluginBundles = await buildPreinstalledHarnessPlugins({
     repositoryRoot: root,
     outputDirectory: path.join(packageRoot, "app", "plugins"),
   });
-  await runCommand(
-    {
-      label: "Desktop Controller Bundle build",
-      command: process.execPath,
-      args: [
-        "packages/desktop-control/scripts/build-release.mjs",
-        "--output",
-        path.join(packageRoot, "app", "desktop-controller.mjs"),
-      ],
-    },
-    root,
-  );
-  await copyReleaseFile(
-    path.join(root, "packages", "renderer-extension", "dist", "production.js"),
-    path.join(packageRoot, "app", "renderer-extension.js"),
-    "production Renderer Bundle",
-  );
+  verifyShippedRuntimeLicenses([
+    ...hostBundle.runtimePackages,
+    ...pluginBundles.flatMap((plugin) => plugin.runtimePackages),
+  ]);
   await writeFile(
     path.join(packageRoot, "package.json"),
     `${JSON.stringify(createNpmPackageManifest({ version: packageVersion, target }), null, 2)}\n`,
@@ -1015,7 +692,7 @@ export async function prepareNpmPackage({
 }
 
 export function npmTarballFileName({ version, target }) {
-  return `codexhost-cli-${version}-${target.id}.tgz`;
+  return `claude-in-codex-cli-${version}-${target.id}.tgz`;
 }
 
 export async function packNpmPackage({ packageRoot, outputRoot, version, target }) {
@@ -1075,8 +752,7 @@ export async function runNpmReleaseCli(arguments_) {
       [
         "next:",
         `  npm run release:npm -- --version ${prepared.version} --pack`,
-        "or:",
-        "  build every platform plus the meta package, then run release:npm:publish",
+        `  npm run release:npm:meta -- --version ${prepared.version} --pack`,
       ].join("\n"),
     );
   }
@@ -1085,7 +761,7 @@ export async function runNpmReleaseCli(arguments_) {
 const invoked = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
 if (invoked === import.meta.url) {
   runNpmReleaseCli(process.argv.slice(2)).catch((error) => {
-    console.error(`codexhost npm release: ${error instanceof Error ? error.message : error}`);
+    console.error(`claude-in-codex npm release: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   });
 }

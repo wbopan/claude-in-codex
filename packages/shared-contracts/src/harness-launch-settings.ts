@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { harnessPluginIdSchema } from "./harness-plugins.js";
 
-export const HARNESS_LAUNCH_SETTINGS_GET_METHOD = "codexhost/harness/launch-settings/get";
-export const HARNESS_LAUNCH_SETTINGS_SET_METHOD = "codexhost/harness/launch-settings/set";
+export const HARNESS_LAUNCH_SETTINGS_GET_METHOD = "claude-in-codex/harness/launch-settings/get";
+export const HARNESS_LAUNCH_SETTINGS_SET_METHOD = "claude-in-codex/harness/launch-settings/set";
 
 /** An installation directory (or legacy entrypoint), never a shell command line or arguments. */
 export const harnessLaunchPathSchema = z

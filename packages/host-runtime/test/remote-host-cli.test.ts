@@ -32,15 +32,15 @@ describe("remote SSH Host CLI", () => {
         diagnosticOutput: stderr.output,
       }),
     ).resolves.toBe(0);
-    expect(stdout.text()).toContain("codexhost remote install");
-    expect(stdout.text()).toContain("codexhost remote start");
-    expect(stdout.text()).toContain("codexhost remote stop");
-    expect(stdout.text()).toContain("codexhost remote uninstall");
+    expect(stdout.text()).toContain("claude-in-codex remote install");
+    expect(stdout.text()).toContain("claude-in-codex remote start");
+    expect(stdout.text()).toContain("claude-in-codex remote stop");
+    expect(stdout.text()).toContain("claude-in-codex remote uninstall");
     expect(stderr.text()).toBe("");
   });
 
   it("reports an absent installation without mutating the host", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-cli-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-cli-"));
     const stdout = textSink();
     const stderr = textSink();
     try {
@@ -63,7 +63,7 @@ describe("remote SSH Host CLI", () => {
   });
 
   it("refuses lifecycle operations before installation", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-cli-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-cli-"));
     const expectedMessage =
       process.platform === "win32"
         ? "Remote Host lifecycle must run on the macOS or Linux SSH host"

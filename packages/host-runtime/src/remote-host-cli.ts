@@ -81,13 +81,13 @@ export async function runRemoteHostCli(input: {
       output.write(
         [
           "usage:",
-          "  codexhost remote install [--stock-codex PATH] [--claude-command PATH]",
-          "  codexhost remote start",
-          "  codexhost remote stop",
-          "  codexhost remote status",
-          "  codexhost remote uninstall",
+          "  claude-in-codex remote install [--stock-codex PATH] [--claude-command PATH]",
+          "  claude-in-codex remote start",
+          "  claude-in-codex remote stop",
+          "  claude-in-codex remote status",
+          "  claude-in-codex remote uninstall",
           "",
-          "Installs and manages a headless codexhost Remote Host for SSH sessions.",
+          "Installs and manages a headless claude-in-codex Remote Host for SSH sessions.",
         ].join("\n") + "\n",
       );
       return 0;
@@ -117,7 +117,7 @@ export async function runRemoteHostCli(input: {
     return 0;
   } catch (error) {
     diagnosticOutput.write(
-      `codexhost remote: ${error instanceof Error ? error.message : String(error)}\n`,
+      `claude-in-codex remote: ${error instanceof Error ? error.message : String(error)}\n`,
     );
     return 1;
   }

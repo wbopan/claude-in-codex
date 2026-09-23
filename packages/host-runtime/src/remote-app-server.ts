@@ -229,46 +229,6 @@ export function officialListenerArgumentsForRemoteListener(
   throw new Error("Unix listener invocation omitted --listen");
 }
 
-export function officialLoopbackListenerArguments(arguments_: readonly string[]): string[] {
-  const appServerIndex = appServerSubcommandIndex(arguments_);
-  if (appServerIndex === null) throw new Error("Expected an app-server invocation");
-  const result = [...arguments_.slice(0, appServerIndex + 1), "--listen", "ws://127.0.0.1:0"];
-  for (let index = appServerIndex + 1; index < arguments_.length; index += 1) {
-    const argument = arguments_[index];
-    if (!argument) throw new Error("Expected an app-server option");
-    if (argument === "--listen" || APP_SERVER_WEBSOCKET_AUTH_VALUE_OPTIONS.has(argument)) {
-      index += 1;
-      if (index >= arguments_.length) throw new Error(`${argument} requires a value`);
-      continue;
-    }
-    if (
-      argument.startsWith("--listen=") ||
-      [...APP_SERVER_WEBSOCKET_AUTH_VALUE_OPTIONS].some((option) =>
-        argument.startsWith(`${option}=`),
-      ) ||
-      argument === "--stdio"
-    ) {
-      continue;
-    }
-    if (APP_SERVER_VALUE_OPTIONS.has(argument)) {
-      const value = arguments_[index + 1];
-      if (!value) throw new Error(`${argument} requires a value`);
-      result.push(argument, value);
-      index += 1;
-      continue;
-    }
-    if (
-      [...APP_SERVER_VALUE_OPTIONS].some((option) => argument.startsWith(`${option}=`)) ||
-      APP_SERVER_FLAG_OPTIONS.has(argument)
-    ) {
-      result.push(argument);
-      continue;
-    }
-    throw new Error(`Unsupported app-server argument for a shared listener: ${argument}`);
-  }
-  return result;
-}
-
 function rawDataBuffer(data: RawData): Buffer {
   if (Buffer.isBuffer(data)) return data;
   if (data instanceof ArrayBuffer) return Buffer.from(data);
@@ -370,7 +330,7 @@ export function createRemoteAppServerWebSocketListener(input: {
   });
   const webSockets = new WebSocketServer({ server, maxPayload: 128 * 1024 * 1024 });
   webSockets.on("error", (error) => {
-    input.diagnosticOutput.write(`codexhost remote WebSocket server: ${error.message}\n`);
+    input.diagnosticOutput.write(`claude-in-codex remote WebSocket server: ${error.message}\n`);
   });
   const sessions = new Set<Promise<unknown>>();
   const sessionClosers = new Set<() => void>();
@@ -401,7 +361,7 @@ export function createRemoteAppServerWebSocketListener(input: {
           session.disconnect();
         } catch (error) {
           input.diagnosticOutput.write(
-            `codexhost remote app-server disconnect: ${error instanceof Error ? error.message : String(error)}\n`,
+            `claude-in-codex remote app-server disconnect: ${error instanceof Error ? error.message : String(error)}\n`,
           );
           closeSession();
         }
@@ -416,7 +376,7 @@ export function createRemoteAppServerWebSocketListener(input: {
         session.close();
       } catch (error) {
         input.diagnosticOutput.write(
-          `codexhost remote app-server close: ${error instanceof Error ? error.message : String(error)}\n`,
+          `claude-in-codex remote app-server close: ${error instanceof Error ? error.message : String(error)}\n`,
         );
       }
     };
@@ -450,7 +410,7 @@ export function createRemoteAppServerWebSocketListener(input: {
       })
       .catch((error: unknown) => {
         input.diagnosticOutput.write(
-          `codexhost remote app-server: ${error instanceof Error ? error.message : String(error)}\n`,
+          `claude-in-codex remote app-server: ${error instanceof Error ? error.message : String(error)}\n`,
         );
         if (socket.readyState === socket.OPEN) socket.close(1011, "Host Runtime failed");
       })

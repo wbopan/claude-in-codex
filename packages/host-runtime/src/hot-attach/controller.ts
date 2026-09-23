@@ -2,9 +2,10 @@ import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
-import { homedir } from "node:os";
 import path from "node:path";
-import { CdpClient } from "@codexhost/desktop-control";
+import { CdpClient } from "@claude-in-codex/desktop-control";
+import { DATA_DIRECTORY_ENV } from "@claude-in-codex/shared-contracts";
+import { dataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 import { installDesktopAgent, refreshDesktopQueries } from "./desktop-agent.js";
 import { HotAttachSession, type DesktopHello } from "./session.js";
 import { accountUsageMeters, type UsageMeter } from "./usage-meters.js";
@@ -93,6 +94,8 @@ export class HotAttachController {
       environment: NodeJS.ProcessEnv;
       hostRuntimeUrl: string;
       changed?: () => void;
+      /** Runs before every attachment; a rejection stops it, e.g. while legacy data cannot move yet. */
+      prepare?: () => Promise<void>;
     },
   ) {}
 
@@ -206,6 +209,14 @@ export class HotAttachController {
     return operation;
   }
   async #attach(): Promise<void> {
+    try {
+      await this.options.prepare?.();
+    } catch (error) {
+      this.#phase = "error";
+      this.#error = errorText(error);
+      this.#changed();
+      return;
+    }
     this.#phase = "attaching";
     this.#error = null;
     this.#changed();
@@ -274,7 +285,7 @@ export class HotAttachController {
         throw new Error("Unexpected inspector endpoint");
       cdp = await CdpClient.connect(endpoint.href, { commandTimeoutMs: 30_000 });
       const identity = await cdp.evaluate<{ pid: number; cliPath: string; attached: boolean }>(
-        `({pid:process.pid,cliPath:process.env.CODEX_CLI_PATH||"",attached:!!globalThis.__codexhostHotAttachV1})`,
+        `({pid:process.pid,cliPath:process.env.CODEX_CLI_PATH||"",attached:!!(globalThis.__claudeInCodexHotAttachV1||globalThis.__codexhostHotAttachV1)})`,
       );
       if (identity.pid !== target.pid) throw new Error("Inspector PID does not match Desktop");
       if (identity.cliPath)
@@ -284,7 +295,7 @@ export class HotAttachController {
       if (identity.attached) throw new Error("Another Host is already attached");
       const token = randomBytes(32).toString("hex");
       agentToken = token;
-      this.#directory = await mkdtemp("/tmp/codexhost-attach-");
+      this.#directory = await mkdtemp("/tmp/claude-in-codex-attach-");
       await chmod(this.#directory, 0o700);
       const socketPath = path.join(this.#directory, "bridge.sock");
       const accepted = Promise.withResolvers<HotAttachSession>();
@@ -378,7 +389,7 @@ export class HotAttachController {
       if (cdp && agentToken)
         await cdp
           .evaluate(
-            `(globalThis.__codexhostHotAttachV1?.ownerToken===${JSON.stringify(agentToken)} && globalThis.__codexhostHotAttachV1.detach("attach-failed"),true)`,
+            `(globalThis.__claudeInCodexHotAttachV1?.ownerToken===${JSON.stringify(agentToken)} && globalThis.__claudeInCodexHotAttachV1.detach("attach-failed"),true)`,
           )
           .catch(() => {});
       await this.#cleanup();
@@ -498,6 +509,6 @@ export class HotAttachController {
 export function defaultMenuBarEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...environment,
-    CODEXHOST_DATA_DIR: environment.CODEXHOST_DATA_DIR ?? path.join(homedir(), ".codexhost"),
+    [DATA_DIRECTORY_ENV]: dataDirectory(environment),
   };
 }

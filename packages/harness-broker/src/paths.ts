@@ -1,22 +1,22 @@
-import os from "node:os";
 import path from "node:path";
-import { harnessPluginIdSchema } from "@codexhost/shared-contracts";
+import { harnessPluginIdSchema } from "@claude-in-codex/shared-contracts";
+import { platformDataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 
-export const HARNESS_BROKER_DESCRIPTOR_ENV = "CODEXHOST_CLAUDE_BROKER_DESCRIPTOR";
+export const HARNESS_BROKER_DESCRIPTOR_ENV = "CLAUDE_IN_CODEX_CLAUDE_BROKER_DESCRIPTOR";
 export const HARNESS_BROKER_DESCRIPTOR_FILE = "claude-code-broker-v1.json";
 export const HARNESS_BROKER_SOCKET_FILE = "claude-code-broker-v1.sock";
 
 export function defaultHarnessBrokerDirectory(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
-  const home = environment.HOME || os.homedir();
-  if (environment.CODEXHOST_HARNESS_BROKER_DIR) {
-    if (!path.isAbsolute(environment.CODEXHOST_HARNESS_BROKER_DIR)) {
+  if (environment.CLAUDE_IN_CODEX_HARNESS_BROKER_DIR) {
+    if (!path.isAbsolute(environment.CLAUDE_IN_CODEX_HARNESS_BROKER_DIR)) {
       throw new Error("Harness broker directory must be absolute");
     }
-    return environment.CODEXHOST_HARNESS_BROKER_DIR;
+    return environment.CLAUDE_IN_CODEX_HARNESS_BROKER_DIR;
   }
-  return path.join(home, ".codexhost", "harness-broker");
+  // Independent of the data folder override: the Aqua LaunchAgent and every Host must agree on it.
+  return path.join(platformDataDirectory(environment), "broker");
 }
 
 export function defaultHarnessBrokerDescriptorPath(

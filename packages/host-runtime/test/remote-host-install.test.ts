@@ -37,6 +37,10 @@ import {
   installRemoteHost,
   uninstallRemoteHost,
 } from "../src/remote-host-install.js";
+import { platformDataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
+
+const defaultInstallRoot = (home: string): string =>
+  path.join(platformDataDirectory({ HOME: home }), "remote");
 
 async function executable(filePath: string): Promise<string> {
   await writeFile(filePath, "fixture\n", "utf8");
@@ -55,14 +59,62 @@ function shellQuote(value: string): string {
 }
 
 describe("remote SSH Host installation", () => {
+  it("adopts the data and replaces the profile block of an install made before the rename", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-legacy-"));
+    try {
+      const legacyRoot = path.join(home, ".codexhost", "remote");
+      await mkdir(path.join(legacyRoot, "bin"), { recursive: true });
+      await mkdir(path.join(legacyRoot, "data", "mapping-store"), { recursive: true });
+      await writeFile(path.join(legacyRoot, "bin", "codex"), "old shim\n", "utf8");
+      await writeFile(path.join(legacyRoot, "manifest.json"), "{}\n", "utf8");
+      await writeFile(
+        path.join(legacyRoot, "data", "mapping-store", "thread.json"),
+        "{}\n",
+        "utf8",
+      );
+      const profilePath = path.join(home, ".zshenv");
+      await writeFile(
+        profilePath,
+        [
+          "export KEEP=1",
+          "# >>> codexhost remote SSH >>>",
+          "export CODEXHOST_DATA_DIR='/old'",
+          "# <<< codexhost remote SSH <<<",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const installed = await installRemoteHost({
+        home,
+        stockCodexPath: await executable(path.join(home, "stock-codex")),
+        nodePath: await executable(path.join(home, "node")),
+        shimPath: await executable(path.join(home, "claude-in-codex-shim")),
+        hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
+        platform: "darwin" as const,
+        environment: { HOME: home, SHELL: "/bin/zsh" },
+      });
+
+      await expect(
+        readFile(path.join(installed.dataDirectory, "mapping-store", "thread.json"), "utf8"),
+      ).resolves.toBe("{}\n");
+      await expect(lstat(path.join(home, ".codexhost"))).rejects.toMatchObject({ code: "ENOENT" });
+      const profile = await readFile(profilePath, "utf8");
+      expect(profile).toContain("export KEEP=1");
+      expect(profile).not.toContain("codexhost remote SSH");
+      expect(profile.match(/>>> claude-in-codex remote SSH >>>/gu)).toHaveLength(1);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("uses the startup file read by non-interactive zsh SSH commands", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-zsh-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-zsh-"));
     try {
       const options = {
         home,
         stockCodexPath: await executable(path.join(home, "stock-codex")),
         nodePath: await executable(path.join(home, "node")),
-        shimPath: await executable(path.join(home, "codexhost-shim")),
+        shimPath: await executable(path.join(home, "claude-in-codex-shim")),
         hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
         platform: "darwin" as const,
         environment: { HOME: home, SHELL: "/bin/zsh" },
@@ -78,7 +130,10 @@ describe("remote SSH Host installation", () => {
       const unscopedProfile = profile
         .replace(`${sshCondition}\n`, "")
         .replace(/^  export/gmu, "export")
-        .replace("\nfi\n# <<< codexhost remote SSH <<<", "\n# <<< codexhost remote SSH <<<");
+        .replace(
+          "\nfi\n# <<< claude-in-codex remote SSH <<<",
+          "\n# <<< claude-in-codex remote SSH <<<",
+        );
       await writeFile(installed.profilePath, unscopedProfile, "utf8");
       await expect(inspectRemoteHostInstallation(options)).resolves.toMatchObject({
         state: "degraded",
@@ -94,7 +149,7 @@ describe("remote SSH Host installation", () => {
   it.skipIf(process.platform === "win32")(
     "loads the managed block before the standard non-interactive bash guard",
     async () => {
-      const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-bash-"));
+      const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-bash-"));
       const profilePath = path.join(home, ".bashrc");
       const originalProfile = [
         "# Stop before interactive-only setup, as in the default Ubuntu .bashrc.",
@@ -110,7 +165,7 @@ describe("remote SSH Host installation", () => {
         home,
         stockCodexPath: await executable(path.join(home, "stock-codex")),
         nodePath: await executable(path.join(home, "node")),
-        shimPath: await executable(path.join(home, "codexhost-shim")),
+        shimPath: await executable(path.join(home, "claude-in-codex-shim")),
         hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
         platform: "linux" as const,
         environment: { HOME: home, SHELL: "/bin/bash" },
@@ -120,8 +175,8 @@ describe("remote SSH Host installation", () => {
         const installed = await installRemoteHost(options);
         const initialProfile = await readFile(profilePath, "utf8");
         const blockEnd =
-          initialProfile.indexOf("# <<< codexhost remote SSH <<<") +
-          "# <<< codexhost remote SSH <<<\n".length;
+          initialProfile.indexOf("# <<< claude-in-codex remote SSH <<<") +
+          "# <<< claude-in-codex remote SSH <<<\n".length;
         await writeFile(
           profilePath,
           `${initialProfile.slice(blockEnd)}${initialProfile.slice(0, blockEnd)}`,
@@ -137,14 +192,14 @@ describe("remote SSH Host installation", () => {
         await installRemoteHost(options);
         await installRemoteHost(options);
         const profile = await readFile(profilePath, "utf8");
-        expect(profile.startsWith("# >>> codexhost remote SSH >>>\n")).toBe(true);
-        expect(profile.match(/>>> codexhost remote SSH >>>/gu)).toHaveLength(1);
+        expect(profile.startsWith("# >>> claude-in-codex remote SSH >>>\n")).toBe(true);
+        expect(profile.match(/>>> claude-in-codex remote SSH >>>/gu)).toHaveLength(1);
 
         const probeArguments = [
           "--noprofile",
           "--norc",
           "-c",
-          `unset PATH; . ${shellQuote(profilePath)}; printf '%s\\n%s\\n%s\\n' "$CODEXHOST_REMOTE_SSH_MANAGED" "$CODEX_INSTALL_DIR" "$PATH"`,
+          `unset PATH; . ${shellQuote(profilePath)}; printf '%s\\n%s\\n%s\\n' "$CLAUDE_IN_CODEX_REMOTE_SSH_MANAGED" "$CODEX_INSTALL_DIR" "$PATH"`,
         ];
         const localProbe = spawnSync("/bin/bash", probeArguments, {
           encoding: "utf8",
@@ -186,11 +241,11 @@ describe("remote SSH Host installation", () => {
   );
 
   it("installs an idempotent native entrypoint without replacing the existing Codex chain", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-install-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-install-"));
     const profilePath = path.join(home, ".zshrc");
     const stockCodexPath = await executable(path.join(home, "opencodex-codex"));
     const nodePath = await executable(path.join(home, "node"));
-    const shimPath = await executable(path.join(home, "codexhost-shim"));
+    const shimPath = await executable(path.join(home, "claude-in-codex-shim"));
     const hostRuntimePath = await regularFile(path.join(home, "host-runtime.mjs"));
     const claudeCommand = await executable(path.join(home, "claude"));
     await writeFile(profilePath, "export EXISTING_SETTING=1\n", "utf8");
@@ -214,26 +269,26 @@ describe("remote SSH Host installation", () => {
       expect(second.entrypointSha256).toMatch(/^[a-f0-9]{64}$/u);
       expect((await lstat(first.wrapperPath)).isFile()).toBe(true);
       expect(await readFile(first.wrapperPath)).toEqual(await readFile(shimPath));
-      expect(profile).toContain(`export CODEXHOST_STOCK_CODEX_PATH='${stockCodexPath}'`);
-      expect(profile).toContain(`export CODEXHOST_HOST_NODE_PATH='${nodePath}'`);
+      expect(profile).toContain(`export CLAUDE_IN_CODEX_STOCK_CODEX_PATH='${stockCodexPath}'`);
+      expect(profile).toContain(`export CLAUDE_IN_CODEX_HOST_NODE_PATH='${nodePath}'`);
       expect(profile).toContain(
         `export PATH='${path.dirname(first.wrapperPath)}':'${path.dirname(nodePath)}':'${path.dirname(stockCodexPath)}':\"\${PATH:-/usr/local/bin:/usr/bin:/bin}\"`,
       );
-      expect(profile).toContain(`export CODEXHOST_HOST_RUNTIME_PATH='${hostRuntimePath}'`);
-      expect(profile).toContain("export CODEXHOST_REMOTE_SSH_MANAGED='1'");
-      expect(profile).toContain(`export CODEXHOST_CLAUDE_COMMAND='${claudeCommand}'`);
+      expect(profile).toContain(`export CLAUDE_IN_CODEX_HOST_RUNTIME_PATH='${hostRuntimePath}'`);
+      expect(profile).toContain("export CLAUDE_IN_CODEX_REMOTE_SSH_MANAGED='1'");
+      expect(profile).toContain(`export CLAUDE_IN_CODEX_CLAUDE_COMMAND='${claudeCommand}'`);
       expect(profile).toContain(
-        `CODEXHOST_DATA_DIR='${path.join(home, ".codexhost", "remote", "data")}'`,
+        `CLAUDE_IN_CODEX_DATA_DIR='${path.join(defaultInstallRoot(home), "data")}'`,
       );
       expect(profile).toContain("export EXISTING_SETTING=1");
-      expect(profile.match(/>>> codexhost remote SSH >>>/gu)).toHaveLength(1);
+      expect(profile.match(/>>> claude-in-codex remote SSH >>>/gu)).toHaveLength(1);
       expect(profile).toContain(`export CODEX_INSTALL_DIR='${path.dirname(first.wrapperPath)}'`);
       expect(await readFile(stockCodexPath, "utf8")).toBe("fixture\n");
       await expect(inspectRemoteHostInstallation(options)).resolves.toMatchObject({
         state: "ready",
         stockCodexPath,
         profilePath,
-        dataDirectory: path.join(home, ".codexhost", "remote", "data"),
+        dataDirectory: path.join(defaultInstallRoot(home), "data"),
       });
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -243,12 +298,12 @@ describe("remote SSH Host installation", () => {
   it.skipIf(process.platform === "win32")(
     "reports a managed entrypoint without execute permission as degraded",
     async () => {
-      const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-entrypoint-mode-"));
+      const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-entrypoint-mode-"));
       const options = {
         home,
         stockCodexPath: await executable(path.join(home, "stock-codex")),
         nodePath: await executable(path.join(home, "node")),
-        shimPath: await executable(path.join(home, "codexhost-shim")),
+        shimPath: await executable(path.join(home, "claude-in-codex-shim")),
         hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
         platform: "darwin" as const,
       };
@@ -268,14 +323,14 @@ describe("remote SSH Host installation", () => {
   );
 
   it("reports a malformed managed profile block as degraded", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-profile-status-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-profile-status-"));
     const profilePath = path.join(home, ".zshenv");
     const options = {
       home,
       profilePath,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
     };
@@ -283,17 +338,21 @@ describe("remote SSH Host installation", () => {
     try {
       await installRemoteHost(options);
       const profile = await readFile(profilePath, "utf8");
-      await writeFile(profilePath, profile.replace("# <<< codexhost remote SSH <<<", ""), "utf8");
+      await writeFile(
+        profilePath,
+        profile.replace("# <<< claude-in-codex remote SSH <<<", ""),
+        "utf8",
+      );
 
       await expect(inspectRemoteHostInstallation(options)).resolves.toMatchObject({
         state: "degraded",
         issues: expect.arrayContaining(["shell profile contains a malformed managed block"]),
       });
       await expect(installRemoteHost(options)).rejects.toThrow(
-        "Shell profile contains a malformed codexhost remote SSH block",
+        "Shell profile contains a malformed claude-in-codex remote SSH block",
       );
       await expect(uninstallRemoteHost(options)).rejects.toThrow(
-        "Shell profile contains a malformed codexhost remote SSH block",
+        "Shell profile contains a malformed claude-in-codex remote SSH block",
       );
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -301,8 +360,8 @@ describe("remote SSH Host installation", () => {
   });
 
   it("rolls back a first installation when manifest publication fails", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-rollback-"));
-    const installRoot = path.join(home, ".codexhost", "remote");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-rollback-"));
+    const installRoot = defaultInstallRoot(home);
     const profilePath = path.join(home, ".zshenv");
     const originalProfile = "export EXISTING_SETTING=1\n";
     await writeFile(profilePath, originalProfile, "utf8");
@@ -312,7 +371,7 @@ describe("remote SSH Host installation", () => {
       profilePath,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
     };
@@ -338,8 +397,8 @@ describe("remote SSH Host installation", () => {
   });
 
   it("restores the previous managed installation when upgrade publication fails", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-upgrade-rollback-"));
-    const installRoot = path.join(home, ".codexhost", "remote");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-upgrade-rollback-"));
+    const installRoot = defaultInstallRoot(home);
     const profilePath = path.join(home, ".zshenv");
     await writeFile(profilePath, "export EXISTING_SETTING=1\n", "utf8");
     const initialOptions = {
@@ -348,7 +407,7 @@ describe("remote SSH Host installation", () => {
       profilePath,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node-v1")),
-      shimPath: await executable(path.join(home, "codexhost-shim-v1")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim-v1")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime-v1.mjs")),
       platform: "darwin" as const,
     };
@@ -360,7 +419,7 @@ describe("remote SSH Host installation", () => {
       const previousWrapper = await readFile(wrapperPath);
       const previousProfile = await readFile(profilePath);
       const previousManifest = await readFile(manifestPath);
-      const nextShimPath = await executable(path.join(home, "codexhost-shim-v2"));
+      const nextShimPath = await executable(path.join(home, "claude-in-codex-shim-v2"));
       await writeFile(nextShimPath, "replacement shim\n", "utf8");
       await chmod(nextShimPath, 0o755);
       const upgradeOptions = {
@@ -394,13 +453,13 @@ describe("remote SSH Host installation", () => {
   });
 
   it("diagnoses and migrates the legacy shell entrypoint", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-migrate-"));
-    const installRoot = path.join(home, ".codexhost", "remote");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-migrate-"));
+    const installRoot = defaultInstallRoot(home);
     const wrapperPath = path.join(installRoot, "bin", "codex");
     const profilePath = path.join(home, ".zshenv");
     const stockCodexPath = await executable(path.join(home, "stock-codex"));
     const nodePath = await executable(path.join(home, "node"));
-    const shimPath = await executable(path.join(home, "codexhost-shim"));
+    const shimPath = await executable(path.join(home, "claude-in-codex-shim"));
     const hostRuntimePath = await regularFile(path.join(home, "host-runtime.mjs"));
     const dataDirectory = path.join(installRoot, "data");
     const manifest = {
@@ -419,8 +478,8 @@ describe("remote SSH Host installation", () => {
       wrapperPath,
       [
         "#!/usr/bin/env sh",
-        "# codexhost remote SSH wrapper v1",
-        `export CODEXHOST_STOCK_CODEX_PATH='${stockCodexPath}'`,
+        "# claude-in-codex remote SSH wrapper v1",
+        `export CLAUDE_IN_CODEX_STOCK_CODEX_PATH='${stockCodexPath}'`,
         `exec '${shimPath}' \"$@\"`,
         "",
       ].join("\n"),
@@ -429,9 +488,9 @@ describe("remote SSH Host installation", () => {
     await writeFile(
       profilePath,
       [
-        "# >>> codexhost remote SSH >>>",
+        "# >>> claude-in-codex remote SSH >>>",
         `export CODEX_INSTALL_DIR='${path.dirname(wrapperPath)}'`,
-        "# <<< codexhost remote SSH <<<",
+        "# <<< claude-in-codex remote SSH <<<",
         "",
       ].join("\n"),
       "utf8",
@@ -462,7 +521,7 @@ describe("remote SSH Host installation", () => {
       });
 
       expect(await readFile(wrapperPath)).toEqual(await readFile(shimPath));
-      expect(await readFile(profilePath, "utf8")).toContain("CODEXHOST_HOST_RUNTIME_PATH");
+      expect(await readFile(profilePath, "utf8")).toContain("CLAUDE_IN_CODEX_HOST_RUNTIME_PATH");
       await expect(
         inspectRemoteHostInstallation({ home, platform: "darwin" }),
       ).resolves.toMatchObject({ state: "ready", issues: [] });
@@ -472,12 +531,12 @@ describe("remote SSH Host installation", () => {
   });
 
   it("uses the installed digest to uninstall safely after the source shim is removed", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-missing-shim-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-missing-shim-"));
     const options = {
       home,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
     };
@@ -492,7 +551,7 @@ describe("remote SSH Host installation", () => {
       });
       await expect(uninstallRemoteHost(options)).resolves.toBeUndefined();
       await expect(
-        readFile(path.join(home, ".codexhost", "remote", "bin", "codex")),
+        readFile(path.join(defaultInstallRoot(home), "bin", "codex")),
       ).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -500,12 +559,12 @@ describe("remote SSH Host installation", () => {
   });
 
   it("refuses to uninstall an entrypoint that no longer matches its recorded digest", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-tampered-shim-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-tampered-shim-"));
     const options = {
       home,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
     };
@@ -529,13 +588,13 @@ describe("remote SSH Host installation", () => {
   });
 
   it("keeps legacy digest-free manifests fail-closed when the source shim is missing", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-legacy-digest-"));
-    const installRoot = path.join(home, ".codexhost", "remote");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-legacy-digest-"));
+    const installRoot = defaultInstallRoot(home);
     const wrapperPath = path.join(installRoot, "bin", "codex");
     const profilePath = path.join(home, ".zshenv");
     const stockCodexPath = await executable(path.join(home, "stock-codex"));
     const nodePath = await executable(path.join(home, "node"));
-    const shimPath = await executable(path.join(home, "codexhost-shim"));
+    const shimPath = await executable(path.join(home, "claude-in-codex-shim"));
     const hostRuntimePath = await regularFile(path.join(home, "host-runtime.mjs"));
     const dataDirectory = path.join(installRoot, "data");
     await mkdir(path.dirname(wrapperPath), { recursive: true });
@@ -544,9 +603,9 @@ describe("remote SSH Host installation", () => {
     await writeFile(
       profilePath,
       [
-        "# >>> codexhost remote SSH >>>",
+        "# >>> claude-in-codex remote SSH >>>",
         `export CODEX_INSTALL_DIR='${path.dirname(wrapperPath)}'`,
-        "# <<< codexhost remote SSH <<<",
+        "# <<< claude-in-codex remote SSH <<<",
         "",
       ].join("\n"),
       "utf8",
@@ -585,14 +644,14 @@ describe("remote SSH Host installation", () => {
   });
 
   it("uninstalls only managed files and removes its profile block", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-uninstall-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-uninstall-"));
     const profilePath = path.join(home, ".zshrc");
     const options = {
       home,
       profilePath,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await executable(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
     };
@@ -616,14 +675,14 @@ describe("remote SSH Host installation", () => {
   });
 
   it("remembers an explicit profile for later default reinstall and uninstall", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-profile-"));
-    const profilePath = path.join(home, ".ssh-codexhost-env");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-profile-"));
+    const profilePath = path.join(home, ".ssh-claude-in-codex-env");
     const options = {
       home,
       profilePath,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
       environment: { HOME: home, SHELL: "/bin/zsh" },
@@ -655,7 +714,7 @@ describe("remote SSH Host installation", () => {
   });
 
   it("rejects changing the managed profile without uninstalling first", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-profile-change-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-profile-change-"));
     const firstProfile = path.join(home, ".first-profile");
     const secondProfile = path.join(home, ".second-profile");
     const options = {
@@ -663,7 +722,7 @@ describe("remote SSH Host installation", () => {
       profilePath: firstProfile,
       stockCodexPath: await executable(path.join(home, "stock-codex")),
       nodePath: await executable(path.join(home, "node")),
-      shimPath: await executable(path.join(home, "codexhost-shim")),
+      shimPath: await executable(path.join(home, "claude-in-codex-shim")),
       hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
       platform: "darwin" as const,
     };
@@ -681,8 +740,8 @@ describe("remote SSH Host installation", () => {
   });
 
   it("refuses to overwrite an unmanaged remote Codex entrypoint", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-conflict-"));
-    const installRoot = path.join(home, ".codexhost", "remote");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-conflict-"));
+    const installRoot = defaultInstallRoot(home);
     const wrapperPath = path.join(installRoot, "bin", "codex");
     await mkdir(path.dirname(wrapperPath), { recursive: true });
     await writeFile(wrapperPath, "unmanaged\n", "utf8");
@@ -695,7 +754,7 @@ describe("remote SSH Host installation", () => {
           profilePath: path.join(home, ".zshrc"),
           stockCodexPath: await executable(path.join(home, "stock-codex")),
           nodePath: await executable(path.join(home, "node")),
-          shimPath: await executable(path.join(home, "codexhost-shim")),
+          shimPath: await executable(path.join(home, "claude-in-codex-shim")),
           hostRuntimePath: await executable(path.join(home, "host-runtime.mjs")),
           platform: "darwin",
         }),
@@ -707,7 +766,7 @@ describe("remote SSH Host installation", () => {
   });
 
   it("rejects a directory where an executable runtime file is required", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-executable-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-executable-"));
     const nodeDirectory = path.join(home, "node-directory");
     await mkdir(nodeDirectory);
 
@@ -717,7 +776,7 @@ describe("remote SSH Host installation", () => {
           home,
           stockCodexPath: await executable(path.join(home, "stock-codex")),
           nodePath: nodeDirectory,
-          shimPath: await executable(path.join(home, "codexhost-shim")),
+          shimPath: await executable(path.join(home, "claude-in-codex-shim")),
           hostRuntimePath: await regularFile(path.join(home, "host-runtime.mjs")),
           platform: "darwin",
         }),
@@ -728,8 +787,8 @@ describe("remote SSH Host installation", () => {
   });
 
   it("rejects a manifest containing undeclared or relative paths", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-remote-manifest-"));
-    const installRoot = path.join(home, ".codexhost", "remote");
+    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-manifest-"));
+    const installRoot = defaultInstallRoot(home);
     await mkdir(installRoot, { recursive: true });
     await writeFile(
       path.join(installRoot, "manifest.json"),

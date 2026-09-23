@@ -8,7 +8,7 @@ import {
   hostTurnIdSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MappingStore } from "../src/index.js";
@@ -41,7 +41,7 @@ afterEach(async () => {
 
 describe.each(["last-Turn", "Fork-derived"] as const)("%s replacement expectation", (kind) => {
   async function setup() {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "codexhost-replacement-"));
+    const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-replacement-"));
     const store = new MappingStore({ directory });
     resources.push({ directory, store });
     await store.initialize();
@@ -50,7 +50,7 @@ describe.each(["last-Turn", "Fork-derived"] as const)("%s replacement expectatio
       createRequestId: "create-target",
       harnessId,
       cwd: "/synthetic",
-      transportModelId: "codexhost/pi-native",
+      transportModelId: "claude-in-codex/pi-native",
       ephemeral: false,
       historyMode: "paginated",
       forkSource,
@@ -92,7 +92,7 @@ describe.each(["last-Turn", "Fork-derived"] as const)("%s replacement expectatio
   it("rejects a stale edit after an earlier queued configuration write without losing indexes", async () => {
     const { directory, store, original, input, replace } = await setup();
     // Both requests enter the Store queue before either has persisted.
-    const updating = store.setTransportModelId(hostThreadId, "codexhost/pi-native@changed");
+    const updating = store.setTransportModelId(hostThreadId, "claude-in-codex/pi-native@changed");
     const replacing = replace(input);
     await expect(replacing).rejects.toMatchObject({ code: "MAPPING_CONFLICT" });
     const updated = await updating;

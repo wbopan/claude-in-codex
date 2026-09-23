@@ -1,10 +1,10 @@
-import { parseHostUsage, type HostUsage } from "@codexhost/harness-adapter";
+import { parseHostUsage, type HostUsage } from "@claude-in-codex/harness-adapter";
 import {
   observeCodexRateLimitResetCredits,
   observeCodexRateLimits,
   type CodexRateLimitResetCredits,
   type JsonObject,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 interface AccountSnapshot {
   usage: HostUsage | null;

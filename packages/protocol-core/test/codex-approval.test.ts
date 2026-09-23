@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { HostApprovalInteraction } from "@codexhost/harness-adapter";
-import { hostInteractionIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
+import type { HostApprovalInteraction } from "@claude-in-codex/harness-adapter";
+import { hostInteractionIdSchema, hostTurnIdSchema } from "@claude-in-codex/shared-contracts";
 import { ElicitRequestFormParamsSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { CodexTurnProjector, projectCodexApprovalRequest } from "../src/index.js";

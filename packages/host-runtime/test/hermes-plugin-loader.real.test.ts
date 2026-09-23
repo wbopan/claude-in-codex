@@ -3,13 +3,13 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
-import { harnessIdSchema } from "@codexhost/shared-contracts";
+import { harnessIdSchema } from "@claude-in-codex/shared-contracts";
 
 import { loadHarnessPlugins, type HarnessPluginDiagnostic } from "../src/harness-plugin-loader.js";
 
 /**
  * Real-loader acceptance for the Hermes harness plugin:
- * a temp isolated plugin root (never the user's ~/.codexhost), the real
+ * a temp isolated plugin root (never the user's data folder), the real
  * packaged entry, and a real `hermes acp` child process. Follows the
  * "development acceptance uses temporary isolated roots" rule.
  * This stays read-only because Hermes ACP does not expose Session deletion.
@@ -35,8 +35,8 @@ async function installHermesPlugin(): Promise<string> {
 }
 
 // Local acceptance only: standard CI intentionally has no Hermes installation
-// or user credentials. Run explicitly with CODEXHOST_RUN_HERMES_LIVE=1.
-describe.skipIf(process.env.CODEXHOST_RUN_HERMES_LIVE !== "1")(
+// or user credentials. Run explicitly with CLAUDE_IN_CODEX_RUN_HERMES_LIVE=1.
+describe.skipIf(process.env.CLAUDE_IN_CODEX_RUN_HERMES_LIVE !== "1")(
   "Hermes harness plugin (real loader + real hermes acp)",
   () => {
     it(

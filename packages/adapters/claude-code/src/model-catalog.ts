@@ -12,7 +12,7 @@ import {
   type HarnessModel,
   type HarnessModelCatalog,
   type HarnessModelRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { z } from "zod";
 
 import {
@@ -200,7 +200,7 @@ function mergeOptionOntoSdkRow(
 
 /**
  * Merge Claude Code user `modelPicker.options` into the SDK initialization Model list so
- * CodexHost's catalog matches `/model` picker rows (including third-party gateway IDs).
+ * ClaudeInCodex's catalog matches `/model` picker rows (including third-party gateway IDs).
  */
 export function mergeClaudeModelPickerOptions(
   sdkModels: unknown,

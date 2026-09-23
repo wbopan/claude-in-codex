@@ -131,7 +131,9 @@ describe("memory-only Desktop bridge", () => {
     expect(() => vm.runInContext(`(${installDesktopAgent.toString()})({})`, f.context)).toThrow(
       "already attached",
     );
-    expect(vm.runInContext("__codexhostHotAttachV1.status().phase", f.context)).toBe("attached");
+    expect(vm.runInContext("__claudeInCodexHotAttachV1.status().phase", f.context)).toBe(
+      "attached",
+    );
     f.receive({ type: "detach", reason: "test" });
   });
   it("does not duplicate a completed turn when the Host disconnects before the next heartbeat", () => {
@@ -225,7 +227,7 @@ describe("memory-only Desktop bridge", () => {
     expect(Object.hasOwn(f.connection, "routeIncomingMessage")).toBe(false);
     expect(f.native).toEqual([]);
     expect(f.desktop).toMatchObject([{ id: "mutating", error: { code: -32089 } }]);
-    expect(vm.runInContext("globalThis.__codexhostHotAttachV1", f.context)).toBeUndefined();
+    expect(vm.runInContext("globalThis.__claudeInCodexHotAttachV1", f.context)).toBeUndefined();
   });
   it("does not overwrite a later owner of an instance method", () => {
     const f = fixture();

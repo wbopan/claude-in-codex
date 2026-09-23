@@ -5,14 +5,14 @@ import { PassThrough, type Readable } from "node:stream";
 
 import { describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
-import { readLfFrames } from "@codexhost/protocol-core";
+import { readLfFrames } from "@claude-in-codex/protocol-core";
 
 import { createRemoteAppServerWebSocketListener } from "../src/remote-app-server.js";
 import { createRemoteOfficialAppServerConnection } from "../src/remote-official-connection.js";
 
 function testSocketPath(): string {
   return process.platform === "win32"
-    ? `\\\\.\\pipe\\codexhost-official-${process.pid}-${Date.now()}`
+    ? `\\\\.\\pipe\\claude-in-codex-official-${process.pid}-${Date.now()}`
     : path.join("/tmp", `ch-official-${process.pid}-${Date.now()}`, "control.sock");
 }
 

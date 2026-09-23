@@ -5,7 +5,7 @@ import {
   hostInteractionIdSchema,
   hostItemIdSchema,
   hostTurnIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 const turnId = hostTurnIdSchema.parse("turn-1");
 const itemId = hostItemIdSchema.parse("item-1");

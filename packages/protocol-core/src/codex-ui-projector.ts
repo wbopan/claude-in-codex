@@ -13,14 +13,14 @@ import type {
   ItemUpdatedEvent,
   TurnCompletedEvent,
   TurnStartedEvent,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import type {
   HostInteractionId,
   HostItemId,
   HostTurnId,
   JsonObject,
   JsonValue,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { createTwoFilesPatch } from "diff";
 import { summarizeFileChanges } from "./file-change-summary.js";
 
@@ -839,7 +839,7 @@ export class CodexTurnProjector {
       const item: HostItem = {
         type: "toolExecution",
         itemId,
-        namespace: "codexhost",
+        namespace: "claude-in-codex",
         toolName: "question",
         arguments: {},
       };

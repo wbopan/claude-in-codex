@@ -36,7 +36,7 @@ The native app's ordinary quit waits for this drain. Losing the native app's con
 | Child tasks, steering and queues | Existing session/child projection and thread queue | Host, subagent and queue suites |
 | History, titles, archive and memory | Same mapping store and Claude transcript/native memory adapters | History/memory suites; history read after detach/reattach |
 | Quota | Same usage publisher, fed from the native authenticated usage response | Live Codex/Claude/Fable rows and usage suites |
-| Remote lifecycle and macOS broker | Existing remote deployment and broker entry points retained | Full existing TypeScript/Rust remote tests |
+| Remote lifecycle and macOS broker | Existing remote lifecycle; shipped only as the npm `@claude-in-codex/cli` Remote Host, whose Shim also manages the broker (`--claude-in-codex-broker`) | Full existing TypeScript/Rust remote tests |
 
 External catalog entries are added only to the local connection. Native cloud membership and filters are left to the original connection and renderer. Detach invalidates local model/config queries and the exact `rate-limit-status` query, restoring their native values without page reload or persistent app changes.
 
@@ -50,14 +50,14 @@ The package contains the Swift executable, Node 22/24, bundled Host and reviewed
 
 ## Acceptance evidence
 
-The disposable stock App is under `.codexhost/hot-attach-research/app/ChatGPT.app`; Codex, Electron, Claude and Host data are isolated. Native authentication is reused through the supported default credential store. No credentials are copied into source or reports. The fixture starts without a CLI override or inspector launch flags.
+The disposable stock App is under `.dev/hot-attach-research/app/ChatGPT.app`; Codex, Electron, Claude and Host data are isolated. Native authentication is reused through the supported default credential store. No credentials are copied into source or reports. The fixture starts without a CLI override or inspector launch flags.
 
-Local reports, logs and screenshots are generated under `.codexhost/` and excluded from Git. `tools/probes/menubar-acceptance.mjs` drives real protocol requests against the recorded fixture PID and writes a sanitized report. It checks live model union, GPT continuity, background drain/cancel, admission, history and native CUA. `menubar-turn.mjs` and `menubar-usage.mjs` provide targeted probes. The older model-only prototype and its distinct evidence remain documented in [hot-attach-research.md](hot-attach-research.md).
+Local reports, logs and screenshots are generated under `.dev/` and excluded from Git. `tools/probes/menubar-acceptance.mjs` drives real protocol requests against the recorded fixture PID and writes a sanitized report. It checks live model union, GPT continuity, background drain/cancel, admission, history and native CUA. `menubar-turn.mjs` and `menubar-usage.mjs` provide targeted probes. The older model-only prototype and its distinct evidence remain documented in [hot-attach-research.md](hot-attach-research.md).
 
 Recorded checks (2026-09-22, Desktop 26.915.31945):
 
 - TypeScript: 1205 passed, 7 skipped; 107 files passed, 3 skipped.
-- Rust: 171 passed across launcher/platform/shim unit and integration suites.
+- Rust: 171 passed across launcher/platform/shim unit and integration suites. (The launcher crate and the local launcher flow were removed on 2026-09-23; the workspace is now `platform` and `shim` only, see [STATUS](../STATUS.md).)
 - Real native GPT turns completed across both attach and detach; Desktop and signed backend PIDs stayed unchanged.
 - Local model list contained 5 native GPT models and 5 Claude choices.
 - Background drain was canceled and resumed, rejected new external work, then waited about 40 seconds for a native Claude shell task. History remained readable after reconnecting.
@@ -66,4 +66,4 @@ Recorded checks (2026-09-22, Desktop 26.915.31945):
 - An additional Host was rejected while preserving the first Host. Control-pipe loss during a pending quit forced cleanup. Host SIGKILL restored native hooks; the Host, Claude, shell and background sleep exited, and their private socket directory was removed. A Host-opened inspector closed after attachment.
 - The native MenuBar app's status, dropdown, connect and disconnect actions were checked through accessibility. The template/App icons were visually inspected.
 
-Current generated reports are in `.codexhost/hot-attach-research/`, including `menubar-acceptance.json`, `menubar-lifecycle.json`, `menubar-owner-loss.json` and `second-host.json`. `tools/probes/menubar-lifecycle.mjs` reproduces the fault tests against a newly spawned Host and the recorded disposable Desktop. Re-run these probes after future compatibility changes. The main checkout can contain unrelated concurrent edits; migration changes stay in this worktree.
+Current generated reports are in `.dev/hot-attach-research/`, including `menubar-acceptance.json`, `menubar-lifecycle.json`, `menubar-owner-loss.json` and `second-host.json`. `tools/probes/menubar-lifecycle.mjs` reproduces the fault tests against a newly spawned Host and the recorded disposable Desktop. Re-run these probes after future compatibility changes. The main checkout can contain unrelated concurrent edits; migration changes stay in this worktree.

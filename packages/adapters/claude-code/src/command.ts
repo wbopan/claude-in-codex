@@ -8,9 +8,9 @@ import {
   withNodeRuntimeOnPath,
   type HarnessDiscoveryDependencies,
   type HarnessDiscoverySpec,
-} from "@codexhost/harness-discovery";
+} from "@claude-in-codex/harness-discovery";
 
-export { withNodeRuntimeOnPath } from "@codexhost/harness-discovery";
+export { withNodeRuntimeOnPath } from "@claude-in-codex/harness-discovery";
 
 export class ClaudeCodeExecutableError extends Error {
   readonly code = "CLAUDE_NOT_FOUND";
@@ -21,7 +21,7 @@ const CLAUDE_NPM_PACKAGE_BIN = "node_modules/@anthropic-ai/claude-code/bin";
 export const claudeCodeDiscoverySpec: HarnessDiscoverySpec = {
   id: "claude-code",
   command: "claude",
-  commandEnvironmentVariable: "CODEXHOST_CLAUDE_COMMAND",
+  commandEnvironmentVariable: "CLAUDE_IN_CODEX_CLAUDE_COMMAND",
   installRoots: {
     posix: [
       "~/.npm-global/bin",

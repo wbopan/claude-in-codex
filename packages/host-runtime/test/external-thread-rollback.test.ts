@@ -2,10 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { HarnessAdapter, HostThreadSnapshot } from "@codexhost/harness-adapter";
-import { FakeHarnessAdapter, FakeHarnessSession } from "@codexhost/harness-adapter/testing";
-import { MappingStore } from "@codexhost/mapping-store";
-import type { ExternalHarnessId } from "@codexhost/protocol-core";
+import type { HarnessAdapter, HostThreadSnapshot } from "@claude-in-codex/harness-adapter";
+import { FakeHarnessAdapter, FakeHarnessSession } from "@claude-in-codex/harness-adapter/testing";
+import { MappingStore } from "@claude-in-codex/mapping-store";
+import type { ExternalHarnessId } from "@claude-in-codex/protocol-core";
 import {
   harnessIdSchema,
   hostThreadIdSchema,
@@ -13,14 +13,14 @@ import {
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { executeExternalThreadRollback } from "../src/external-thread-rollback.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
 
-import { transportModelIdForHarness } from "@codexhost/protocol-core";
+import { transportModelIdForHarness } from "@claude-in-codex/protocol-core";
 
 const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
 
@@ -50,7 +50,7 @@ function snapshot(sessionId: string, count: number): HostThreadSnapshot {
 
 describe.each(["last-Turn", "Fork-derived"] as const)("%s rollback preparation", (kind) => {
   it("rejects a candidate if the Runtime record changes while native open is pending", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "codexhost-rollback-cas-"));
+    const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-rollback-cas-"));
     const store = new MappingStore({ directory });
     const repository = new ExternalThreadRepository(store);
     const adapter = new FakeHarnessAdapter(harnessId);

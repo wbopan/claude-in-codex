@@ -1,4 +1,4 @@
-import { hostItemIdSchema, type HostItemId } from "@codexhost/shared-contracts";
+import { hostItemIdSchema, type HostItemId } from "@claude-in-codex/shared-contracts";
 
 export type ClaudeTranscriptItemKind = "agentMessage" | "reasoning";
 

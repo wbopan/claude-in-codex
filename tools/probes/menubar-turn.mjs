@@ -2,7 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CdpClient } from "../../packages/desktop-control/dist/index.js";
-const root = path.resolve(import.meta.dirname, "../../.codexhost/hot-attach-research");
+const root = path.resolve(import.meta.dirname, "../../.dev/hot-attach-research");
 const state = JSON.parse(await readFile(path.join(root, "probe-state.json"), "utf8"));
 const targets = await fetch("http://127.0.0.1:9229/json/list").then((r) => r.json());
 const client = await CdpClient.connect(targets[0].webSocketDebuggerUrl, {

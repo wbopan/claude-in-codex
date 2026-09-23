@@ -3,9 +3,9 @@ import type {
   HarnessResult,
   TurnCancelAccepted,
   TurnCancelCommand,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 
-import { hostTurnIdSchema } from "@codexhost/shared-contracts";
+import { hostTurnIdSchema } from "@claude-in-codex/shared-contracts";
 
 import { ExternalTurnSteering } from "../src/external-turn-steering.js";
 

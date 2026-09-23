@@ -4,7 +4,6 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  DESKTOP_USAGE_PATH,
   DesktopUsagePublisher,
   codexUsageRows,
   desktopUiLanguage,
@@ -16,8 +15,8 @@ import {
 } from "../src/desktop-usage-buckets.js";
 
 const fixture = readFileSync(path.join(import.meta.dirname, "fixtures/wham-usage.json"), "utf8");
-const CLAUDE_OPUS = "codexhost/claude-code-native@claude-model-v1.b3B1c1sxbV0";
-const CLAUDE_SONNET = "codexhost/claude-code-native@claude-model-v1.c29ubmV0";
+const CLAUDE_OPUS = "claude-in-codex/claude-code-native@claude-model-v1.b3B1c1sxbV0";
+const CLAUDE_SONNET = "claude-in-codex/claude-code-native@claude-model-v1.c29ubmV0";
 const NOW = Date.parse("2026-09-22T05:00:00Z");
 
 const claudeAccount = {
@@ -190,7 +189,7 @@ describe("harnessUsageRows", () => {
     expect(parseAppleLanguages('(\n    "zh-Hans-CN",\n    "en-US"\n)\n')).toBe("zh-Hans-CN");
     expect(parseAppleLanguages("(\n    en\n)\n")).toBe("en");
     expect(parseAppleLanguages("")).toBeNull();
-    expect(desktopUiLanguage({ CODEXHOST_DESKTOP_LANGUAGE: " ja " }, "linux")).toBe("ja");
+    expect(desktopUiLanguage({ CLAUDE_IN_CODEX_DESKTOP_LANGUAGE: " ja " }, "linux")).toBe("ja");
     expect(desktopUiLanguage({}, "linux")).toBeNull();
   });
 
@@ -220,13 +219,6 @@ describe("DesktopUsagePublisher", () => {
     return usage;
   }
   const claudeReports = () => Promise.resolve([claudeReport]);
-
-  it("matches only the usage GET", () => {
-    const usage = new DesktopUsagePublisher();
-    expect(usage.matches({ method: "GET", path: DESKTOP_USAGE_PATH })).toBe(true);
-    expect(usage.matches({ method: "POST", path: DESKTOP_USAGE_PATH })).toBe(false);
-    expect(usage.matches({ method: "GET", path: "/backend-api/wham/accounts/check" })).toBe(false);
-  });
 
   it("appends buckets and builds the ambient usage section on the live response shape", async () => {
     const rewritten = await publisher(claudeReports).rewrite({

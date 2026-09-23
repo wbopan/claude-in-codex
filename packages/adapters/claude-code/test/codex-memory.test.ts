@@ -11,7 +11,7 @@ import {
 } from "../src/codex-memory.js";
 
 async function codexHome(summary?: string): Promise<string> {
-  const home = await mkdtemp(path.join(os.tmpdir(), "codexhost-codex-memory-"));
+  const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-codex-memory-"));
   if (summary !== undefined) {
     await mkdir(path.join(home, "memories"), { recursive: true });
     await writeFile(path.join(home, "memories", "memory_summary.md"), summary);

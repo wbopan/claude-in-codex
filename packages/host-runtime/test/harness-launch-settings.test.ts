@@ -11,7 +11,7 @@ afterEach(async () => {
 async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), "launch-settings-"));
   roots.push(root);
-  const environment = { CODEXHOST_DATA_DIR: root };
+  const environment = { CLAUDE_IN_CODEX_DATA_DIR: root };
   const file = path.join(root, "custom entry.cjs");
   await writeFile(file, "// fixture");
   return { root, environment, file, store: new HarnessLaunchSettingsStore(environment) };

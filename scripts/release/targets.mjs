@@ -46,12 +46,6 @@ export function supportedReleaseTargets() {
   return Object.keys(RELEASE_TARGETS);
 }
 
-export function installerReleaseTargets() {
-  return supportedReleaseTargets().filter(
-    (target) => RELEASE_TARGETS[target].installerArchitecture !== undefined,
-  );
-}
-
 export function releaseTarget(name) {
   if (!Object.hasOwn(RELEASE_TARGETS, name)) {
     throw new Error(
@@ -83,45 +77,9 @@ export function hostReleaseTarget(platform = process.platform, arch = process.ar
   return releaseTarget(hostReleaseTargetId(platform, arch));
 }
 
-export function releaseUsage() {
-  return [
-    "usage: npm run release:package -- --target <target>",
-    `targets: ${installerReleaseTargets().join(", ")}`,
-  ].join("\n");
-}
-
 export function npmReleaseUsage() {
   return [
     "usage: npm run release:npm -- [--target <target>] [--version <semver>] [--pack] [--skip-build]",
     `targets: ${supportedReleaseTargets().join(", ")} (default: current host)`,
   ].join("\n");
-}
-
-export function parseReleaseArguments(arguments_, hostPlatform = process.platform) {
-  let targetName;
-  for (let index = 0; index < arguments_.length; index += 1) {
-    const argument = arguments_[index];
-    if (argument === "--help" || argument === "-h") return { help: true };
-    if (argument === "--target") {
-      if (targetName !== undefined) throw new Error("--target may only be provided once");
-      targetName = arguments_[index + 1];
-      if (!targetName) throw new Error("--target requires a value");
-      index += 1;
-      continue;
-    }
-    if (argument.startsWith("--target=")) {
-      if (targetName !== undefined) throw new Error("--target may only be provided once");
-      targetName = argument.slice("--target=".length);
-      if (!targetName) throw new Error("--target requires a value");
-      continue;
-    }
-    throw new Error(`unknown release option: ${argument}`);
-  }
-  if (targetName === undefined) throw new Error("--target is required");
-  if (!installerReleaseTargets().includes(targetName)) {
-    throw new Error(
-      `release target '${targetName}' has no installer; expected one of: ${installerReleaseTargets().join(", ")}`,
-    );
-  }
-  return { help: false, target: releaseTargetForHost(targetName, hostPlatform) };
 }

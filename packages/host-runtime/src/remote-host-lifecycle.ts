@@ -13,7 +13,11 @@ import {
   type RemoteHostManifestV1,
 } from "./remote-host-install.js";
 
-const CODEXHOST_STATUS_METHOD = "codexhost/update/status";
+const CLAUDE_IN_CODEX_STATUS_METHOD = "claude-in-codex/update/status";
+/** The same probe under its pre-rename name; only a Host installed before the rename answers it. */
+const LEGACY_STATUS_METHOD = "codexhost/update/status";
+const LEGACY_HOST_MESSAGE =
+  "A Remote Host installed before the rename to Claude in Codex is running. Stop it with `codexhost remote stop`, then start this one.";
 const DIRECT_PROBE_TIMEOUT_MS = 5_000;
 const PROBE_TIMEOUT_MS = 5_000;
 const START_TIMEOUT_MS = 12_000;
@@ -21,7 +25,7 @@ const START_TIMEOUT_MS = 12_000;
 export interface RemoteHostRuntimeStatus {
   state: "stopped" | "running" | "conflict" | "unknown";
   socketPath: string;
-  protocol?: "codexhost" | "stock-codex" | "unknown";
+  protocol?: "claude-in-codex" | "stock-codex" | "unknown";
   message?: string;
 }
 
@@ -48,13 +52,32 @@ export function classifyRemoteHostProbeResponse(
 ): RemoteHostRuntimeStatus | null {
   if (response.id !== 1) return null;
   const message = typeof response.error?.message === "string" ? response.error.message : "";
-  if (message.includes(`unknown variant \`${CODEXHOST_STATUS_METHOD}\``)) {
+  if (message.includes(`unknown variant \`${CLAUDE_IN_CODEX_STATUS_METHOD}\``)) {
     return { state: "conflict", socketPath, protocol: "stock-codex" };
   }
   if (response.result !== undefined || response.error?.code === -32090) {
-    return { state: "running", socketPath, protocol: "codexhost" };
+    return { state: "running", socketPath, protocol: "claude-in-codex" };
   }
   return null;
+}
+
+/**
+ * Refines a stock-Codex verdict with the answer to the legacy probe (request id 2): a Host
+ * from before the rename rejects the current method but answers the legacy one.
+ */
+export function classifyLegacyRemoteHostProbeResponse(
+  current: RemoteHostRuntimeStatus,
+  legacy: RemoteHostProbeResponse,
+): RemoteHostRuntimeStatus {
+  if (current.protocol !== "stock-codex") return current;
+  return legacy.result !== undefined || legacy.error?.code === -32090
+    ? {
+        state: "conflict",
+        socketPath: current.socketPath,
+        protocol: "unknown",
+        message: LEGACY_HOST_MESSAGE,
+      }
+    : current;
 }
 
 interface RemoteHostLifecycleDependencies {
@@ -133,16 +156,18 @@ async function probeWebSocket(input: {
           }),
         input.timeoutMs,
       );
+      let current: RemoteHostRuntimeStatus | null = null;
+      let legacy: RemoteHostProbeResponse | null = null;
+      const settle = (): void => {
+        if (!current) return;
+        if (current.protocol !== "stock-codex") finish(current);
+        else if (legacy) finish(classifyLegacyRemoteHostProbeResponse(current, legacy));
+      };
       socket.once("open", () => {
-        socket.send(
-          JSON.stringify({
-            id: 1,
-            method: CODEXHOST_STATUS_METHOD,
-            params: {},
-          }),
-        );
+        socket.send(JSON.stringify({ id: 1, method: CLAUDE_IN_CODEX_STATUS_METHOD, params: {} }));
+        socket.send(JSON.stringify({ id: 2, method: LEGACY_STATUS_METHOD, params: {} }));
       });
-      socket.once("message", (data, isBinary) => {
+      socket.on("message", (data, isBinary) => {
         if (isBinary) {
           finish({
             state: "unknown",
@@ -154,8 +179,9 @@ async function probeWebSocket(input: {
         }
         try {
           const response = JSON.parse(data.toString("utf8")) as RemoteHostProbeResponse;
-          const classification = classifyRemoteHostProbeResponse(response, input.socketPath);
-          if (classification) finish(classification);
+          if (response.id === 2) legacy = response;
+          else current = classifyRemoteHostProbeResponse(response, input.socketPath) ?? current;
+          settle();
         } catch (error) {
           finish({
             state: "unknown",
@@ -218,7 +244,7 @@ async function probeProtocol(
 
 function installedManifest(status: RemoteHostInstallationStatus): RemoteHostManifestV1 {
   if (status.state === "not-installed") {
-    throw new Error("Remote Host is not installed. Run: codexhost remote install");
+    throw new Error("Remote Host is not installed. Run: claude-in-codex remote install");
   }
   if (status.state === "degraded") {
     throw new Error(`Remote Host installation is degraded: ${status.issues.join("; ")}`);
@@ -233,13 +259,13 @@ function managedEnvironment(
   return {
     ...environment,
     CODEX_INSTALL_DIR: path.dirname(manifest.wrapperPath),
-    CODEXHOST_STOCK_CODEX_PATH: manifest.stockCodexPath,
-    CODEXHOST_HOST_NODE_PATH: manifest.nodePath,
-    CODEXHOST_HOST_RUNTIME_PATH: manifest.hostRuntimePath,
-    CODEXHOST_DATA_DIR: manifest.dataDirectory,
-    CODEXHOST_DEFAULT_AGENT: "codex",
-    CODEXHOST_REMOTE_SSH_MANAGED: "1",
-    ...(manifest.claudeCommand ? { CODEXHOST_CLAUDE_COMMAND: manifest.claudeCommand } : {}),
+    CLAUDE_IN_CODEX_STOCK_CODEX_PATH: manifest.stockCodexPath,
+    CLAUDE_IN_CODEX_HOST_NODE_PATH: manifest.nodePath,
+    CLAUDE_IN_CODEX_HOST_RUNTIME_PATH: manifest.hostRuntimePath,
+    CLAUDE_IN_CODEX_DATA_DIR: manifest.dataDirectory,
+    CLAUDE_IN_CODEX_DEFAULT_AGENT: "codex",
+    CLAUDE_IN_CODEX_REMOTE_SSH_MANAGED: "1",
+    ...(manifest.claudeCommand ? { CLAUDE_IN_CODEX_CLAUDE_COMMAND: manifest.claudeCommand } : {}),
     PATH: `${path.dirname(manifest.wrapperPath)}${path.delimiter}${path.dirname(manifest.stockCodexPath)}${path.delimiter}${environment.PATH ?? "/usr/bin:/bin"}`,
   };
 }
@@ -253,7 +279,7 @@ async function defaultRunTerminator(
   const child = spawn(
     manifest.shimPath,
     [
-      "--codexhost-remote-terminate",
+      "--claude-in-codex-remote-terminate",
       role,
       "--socket",
       socketPath,
@@ -383,7 +409,7 @@ export async function stopRemoteHost(
   if (current.state === "stopped") return { state: "stopped", changed: false, socketPath };
   if (current.state !== "running") {
     throw new Error(
-      current.message ?? `Remote Host socket is not owned by codexhost: ${socketPath}`,
+      current.message ?? `Remote Host socket is not owned by claude-in-codex: ${socketPath}`,
     );
   }
   await lifecycle.runTerminator(manifest, socketPath, "managed", environment);

@@ -6,14 +6,14 @@ import type {
   HostSubagentDelegationItem,
   HostThreadSnapshot,
   HostToolExecutionItem,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   hostInteractionIdSchema,
   hostItemIdSchema,
   hostTurnIdSchema,
   nativeCheckpointRefSchema,
   nativeTurnRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { CodexTurnProjector, projectHistoricalTurn } from "../src/index.js";
 
@@ -1381,7 +1381,7 @@ describe("Codex UI projector", () => {
           item: {
             id: "synthetic-question",
             type: "dynamicToolCall",
-            namespace: "codexhost",
+            namespace: "claude-in-codex",
             tool: "question",
           },
         },

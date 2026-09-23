@@ -4,7 +4,20 @@ import { harnessModelRefSchema, harnessThinkingOptionIdSchema } from "./harness-
 import { harnessPermissionModeIdSchema } from "./harness-permission-modes.js";
 import { harnessPluginIdSchema } from "./harness-plugins.js";
 
-export const HARNESS_PLUGIN_ROUTE_PREFIX = "codexhost/plugin-v1@";
+/** Every Model route this App publishes starts with this prefix. */
+export const ROUTE_PREFIX = "claude-in-codex/";
+/** Prefix of the routes published before the rename; stored Threads and selections still carry it. */
+export const LEGACY_ROUTE_PREFIX = "codexhost/";
+export const HARNESS_PLUGIN_ROUTE_PREFIX = `${ROUTE_PREFIX}plugin-v1@`;
+
+/** Rewrites a pre-rename route to the current prefix; every other value is returned unchanged. */
+export function normalizeRouteId<T>(value: T): T {
+  return (
+    typeof value === "string" && value.startsWith(LEGACY_ROUTE_PREFIX)
+      ? `${ROUTE_PREFIX}${value.slice(LEGACY_ROUTE_PREFIX.length)}`
+      : value
+  ) as T;
+}
 const MAX_ROUTE_LENGTH = 4096;
 
 export const harnessPluginRouteSchema = z
@@ -27,7 +40,8 @@ export function encodeHarnessPluginRoute(route: HarnessPluginRoute): string {
 }
 
 /** null means another protocol, not an invalid or unavailable external Harness. */
-export function decodeHarnessPluginRoute(value: unknown): HarnessPluginRoute | null {
+export function decodeHarnessPluginRoute(input: unknown): HarnessPluginRoute | null {
+  const value = normalizeRouteId(input);
   if (typeof value !== "string" || !value.startsWith(HARNESS_PLUGIN_ROUTE_PREFIX)) return null;
   const payload = value.slice(HARNESS_PLUGIN_ROUTE_PREFIX.length);
   if (value.length > MAX_ROUTE_LENGTH || !/^(?:[a-f0-9]{2})+$/u.test(payload)) {

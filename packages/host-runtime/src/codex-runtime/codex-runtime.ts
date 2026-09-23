@@ -7,7 +7,7 @@ import {
   writeJsonFrame,
   type JsonObject,
   type JsonValue,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 import type {
   OfficialAppServerConnection,

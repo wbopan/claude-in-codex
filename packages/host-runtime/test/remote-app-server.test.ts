@@ -73,7 +73,7 @@ import {
 
 function testSocketPath(): string {
   return process.platform === "win32"
-    ? `\\\\.\\pipe\\codexhost-remote-${process.pid}-${Date.now()}`
+    ? `\\\\.\\pipe\\claude-in-codex-remote-${process.pid}-${Date.now()}`
     : path.join("/tmp", `ch-${process.pid}-${Date.now()}`, "control.sock");
 }
 
@@ -173,13 +173,13 @@ describe("remote SSH app-server transport", () => {
     ];
 
     expect(
-      officialListenerArgumentsForRemoteListener(incoming, "/tmp/codexhost-official.sock"),
+      officialListenerArgumentsForRemoteListener(incoming, "/tmp/claude-in-codex-official.sock"),
     ).toEqual([
       "-c",
       "features.code_mode_host=true",
       "app-server",
       "--listen",
-      "unix:///tmp/codexhost-official.sock",
+      "unix:///tmp/claude-in-codex-official.sock",
       "--analytics-default-enabled",
     ]);
   });
@@ -194,7 +194,7 @@ describe("remote SSH app-server transport", () => {
       "--ws-token-sha256=deadbeef",
       "--ws-shared-secret-file",
       "/tmp/shared-secret",
-      "--ws-issuer=codexhost",
+      "--ws-issuer=claude-in-codex",
       "--ws-audience",
       "codex-app-server",
       "--ws-max-clock-skew-seconds=30",
@@ -202,10 +202,10 @@ describe("remote SSH app-server transport", () => {
     ];
 
     expect(
-      officialListenerArgumentsForRemoteListener(incoming, "/tmp/codexhost-official.sock"),
+      officialListenerArgumentsForRemoteListener(incoming, "/tmp/claude-in-codex-official.sock"),
     ).toEqual([
       "app-server",
-      "--listen=unix:///tmp/codexhost-official.sock",
+      "--listen=unix:///tmp/claude-in-codex-official.sock",
       "--analytics-default-enabled",
     ]);
     expect(incoming).toEqual([
@@ -217,7 +217,7 @@ describe("remote SSH app-server transport", () => {
       "--ws-token-sha256=deadbeef",
       "--ws-shared-secret-file",
       "/tmp/shared-secret",
-      "--ws-issuer=codexhost",
+      "--ws-issuer=claude-in-codex",
       "--ws-audience",
       "codex-app-server",
       "--ws-max-clock-skew-seconds=30",
@@ -681,7 +681,10 @@ describe("remote SSH app-server transport", () => {
   it.skipIf(process.platform === "win32")(
     "refuses to place the control socket directly in a shared temporary directory",
     async () => {
-      const socketPath = path.join("/tmp", `codexhost-shared-${process.pid}-${Date.now()}.sock`);
+      const socketPath = path.join(
+        "/tmp",
+        `claude-in-codex-shared-${process.pid}-${Date.now()}.sock`,
+      );
       const listener = createRemoteAppServerWebSocketListener({
         socketPath,
         diagnosticOutput: new PassThrough(),

@@ -1,11 +1,12 @@
-import type { HarnessError } from "@codexhost/harness-adapter";
+import type { HarnessError } from "@claude-in-codex/harness-adapter";
 import {
   hostTurnIdSchema,
   type HostTurnId,
   type JsonObject,
   type JsonRpcRequest,
   type JsonValue,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
+import { MODEL_PROVIDER } from "@claude-in-codex/shared-contracts";
 
 export interface DecodedThreadForkRequest {
   threadId: string;
@@ -194,7 +195,7 @@ export function threadForkResult(
   return {
     thread,
     model: input.model,
-    modelProvider: "codexhost",
+    modelProvider: MODEL_PROVIDER,
     serviceTier: input.serviceTier ?? null,
     cwd: input.cwd,
     runtimeWorkspaceRoots: input.runtimeWorkspaceRoots ?? [],

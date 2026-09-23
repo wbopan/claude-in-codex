@@ -18,8 +18,15 @@ use sha2::{Digest, Sha256};
 
 use crate::PlatformError;
 
-pub const NATIVE_HARNESS_BROKER_LABEL: &str = "ai.bytepioneer.codexhost.native-harness-broker";
-const NATIVE_HARNESS_BROKER_ARGUMENT: &str = "--codexhost-harness-broker";
+pub const NATIVE_HARNESS_BROKER_LABEL: &str =
+    "ai.bytepioneer.claude-in-codex.native-harness-broker";
+const NATIVE_HARNESS_BROKER_ARGUMENT: &str = "--claude-in-codex-harness-broker";
+/// Label prefix of brokers installed before the rename to Claude in Codex; install and uninstall
+/// remove them so two brokers never compete for the same Harness.
+const LEGACY_LABEL_PREFIX: &str = "ai.bytepioneer.codexhost.";
+/// The per-user data folder, relative to the home directory; matches `platformDataDirectory`
+/// in `@claude-in-codex/shared-contracts`.
+const DATA_DIRECTORY: &str = "Library/Application Support/Claude in Codex";
 const NATIVE_HARNESS_BROKER_THROTTLE_SECONDS: u32 = 10;
 
 #[derive(Debug, Clone, Copy)]
@@ -131,8 +138,17 @@ pub fn native_harness_broker_label(harness_id: &str) -> Result<String, PlatformE
     Ok(if harness_id == "claude-code" {
         NATIVE_HARNESS_BROKER_LABEL.to_owned()
     } else {
-        format!("ai.bytepioneer.codexhost.{harness_id}-broker")
+        format!("ai.bytepioneer.claude-in-codex.{harness_id}-broker")
     })
+}
+
+/// The label the same broker had before the rename.
+fn legacy_native_harness_broker_label(harness_id: &str) -> Result<String, PlatformError> {
+    let label = native_harness_broker_label(harness_id)?;
+    Ok(format!(
+        "{LEGACY_LABEL_PREFIX}{}",
+        label.trim_start_matches("ai.bytepioneer.claude-in-codex.")
+    ))
 }
 
 pub fn plan_native_harness_broker_launch_agent(
@@ -217,7 +233,7 @@ pub fn plan_native_harness_broker_launch_agent_with_environment(
         .home
         .join("Library/LaunchAgents")
         .join(format!("{label}.plist"));
-    let broker_directory = paths.home.join(".codexhost/harness-broker");
+    let broker_directory = paths.home.join(DATA_DIRECTORY).join("broker");
     let descriptor_path = broker_directory.join(format!("{}-broker-v1.json", paths.harness_id));
     let mut program_arguments = vec![
         node,
@@ -453,8 +469,9 @@ fn ensure_managed_directories(
     let launch_agents = library.join("LaunchAgents");
     ensure_owned_directory(&library, uid, false)?;
     ensure_owned_directory(&launch_agents, uid, true)?;
-    let codexhost = home.join(".codexhost");
-    ensure_owned_directory(&codexhost, uid, true)?;
+    let application_support = library.join("Application Support");
+    ensure_owned_directory(&application_support, uid, false)?;
+    ensure_owned_directory(&home.join(DATA_DIRECTORY), uid, true)?;
     ensure_owned_directory(&plan.broker_directory, uid, true)
 }
 
@@ -704,12 +721,53 @@ pub fn inspect_native_harness_broker(
     })
 }
 
+/// Boots out and deletes the LaunchAgent a pre-rename install left for this Harness.
+/// Returns whether anything was removed.
+#[cfg(target_os = "macos")]
+fn remove_legacy_launch_agent(paths: NativeHarnessBrokerPaths<'_>) -> Result<bool, PlatformError> {
+    let uid = require_current_aqua_uid(paths.home)?;
+    let label = legacy_native_harness_broker_label(paths.harness_id)?;
+    let target = format!("gui/{uid}/{label}");
+    let print = NativeHarnessBrokerCommand {
+        program: "/bin/launchctl",
+        arguments: vec!["print".to_owned(), target.clone()],
+    };
+    let mut removed = false;
+    if run_launchctl(&print)?.status.success() {
+        execute_required(&NativeHarnessBrokerCommand {
+            program: "/bin/launchctl",
+            arguments: vec!["bootout".to_owned(), target],
+        })?;
+        removed = true;
+    }
+    let plist = paths
+        .home
+        .join("Library/LaunchAgents")
+        .join(format!("{label}.plist"));
+    match fs::symlink_metadata(&plist) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            fs::remove_file(&plist)?;
+            removed = true;
+        }
+        Ok(_) => {
+            return Err(PlatformError::Invalid(format!(
+                "refusing to remove a non-regular LaunchAgent property list: {}",
+                plist.display()
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(removed)
+}
+
 #[cfg(target_os = "macos")]
 pub fn install_native_harness_broker(
     paths: NativeHarnessBrokerPaths<'_>,
     environment: &[(String, String)],
 ) -> Result<NativeHarnessBrokerInstallOutcome, PlatformError> {
     let (plan, commands) = broker_context(paths, environment)?;
+    remove_legacy_launch_agent(paths)?;
     ensure_managed_directories(&plan, require_current_aqua_uid(paths.home)?)?;
     let uid = require_current_aqua_uid(paths.home)?;
     let matches = plist_matches(&plan, uid)?;
@@ -770,12 +828,13 @@ pub fn uninstall_native_harness_broker(
     paths: NativeHarnessBrokerPaths<'_>,
 ) -> Result<bool, PlatformError> {
     let (plan, commands) = broker_context(paths, &[])?;
+    let removed_legacy = remove_legacy_launch_agent(paths)?;
     if observed_launchctl_state(&commands)? != NativeHarnessBrokerObservedState::NotLoaded {
         execute_required(&commands.bootout)?;
     }
     let metadata = match fs::symlink_metadata(&plan.plist_path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(removed_legacy),
         Err(error) => return Err(error.into()),
     };
     if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -801,6 +860,19 @@ mod tests {
     };
 
     #[test]
+    fn legacy_labels_name_the_brokers_installed_before_the_rename() {
+        use super::legacy_native_harness_broker_label;
+        assert_eq!(
+            legacy_native_harness_broker_label("claude-code").unwrap(),
+            "ai.bytepioneer.codexhost.native-harness-broker"
+        );
+        assert_eq!(
+            legacy_native_harness_broker_label("codebuddy").unwrap(),
+            "ai.bytepioneer.codexhost.codebuddy-broker"
+        );
+    }
+
+    #[test]
     fn non_claude_brokers_have_independent_launch_agents_and_lifecycle_targets() {
         for harness_id in ["codebuddy", "workbuddy", "cursor-cli"] {
             let plan = plan_native_harness_broker_launch_agent(
@@ -813,7 +885,7 @@ mod tests {
                 501,
             )
             .expect("valid Harness");
-            let label = format!("ai.bytepioneer.codexhost.{harness_id}-broker");
+            let label = format!("ai.bytepioneer.claude-in-codex.{harness_id}-broker");
             assert_eq!(plan.label, label);
             assert_eq!(
                 plan.program_arguments.last().map(String::as_str),
@@ -843,9 +915,11 @@ mod tests {
             NativeHarnessBrokerPaths {
                 harness_id: "claude-code",
                 home: Path::new("/Users/moka"),
-                node: Path::new("/Applications/codexhost.app/Contents/Resources/runtime/node"),
+                node: Path::new(
+                    "/Applications/claude-in-codex.app/Contents/Resources/runtime/node",
+                ),
                 host_runtime: Path::new(
-                    "/Applications/codexhost.app/Contents/Resources/app/host-runtime.mjs",
+                    "/Applications/claude-in-codex.app/Contents/Resources/app/host-runtime.mjs",
                 ),
             },
             501,
@@ -856,14 +930,16 @@ mod tests {
         assert_eq!(plan.launchctl_domain, "gui/501");
         assert_eq!(
             plan.descriptor_path,
-            Path::new("/Users/moka/.codexhost/harness-broker/claude-code-broker-v1.json")
+            Path::new(
+                "/Users/moka/Library/Application Support/Claude in Codex/broker/claude-code-broker-v1.json"
+            )
         );
         assert_eq!(
             plan.program_arguments,
             [
-                "/Applications/codexhost.app/Contents/Resources/runtime/node",
-                "/Applications/codexhost.app/Contents/Resources/app/host-runtime.mjs",
-                "--codexhost-harness-broker",
+                "/Applications/claude-in-codex.app/Contents/Resources/runtime/node",
+                "/Applications/claude-in-codex.app/Contents/Resources/app/host-runtime.mjs",
+                "--claude-in-codex-harness-broker",
             ]
         );
         assert!(plan.plist_xml.contains("<string>Aqua</string>"));
@@ -878,7 +954,7 @@ mod tests {
     #[test]
     fn launchctl_plan_targets_only_the_current_users_gui_domain() {
         let plist = Path::new(
-            "/Users/moka/Library/LaunchAgents/ai.bytepioneer.codexhost.native-harness-broker.plist",
+            "/Users/moka/Library/LaunchAgents/ai.bytepioneer.claude-in-codex.native-harness-broker.plist",
         );
         let commands = plan_native_harness_broker_launchctl(501, plist).expect("command plan");
 
@@ -887,7 +963,7 @@ mod tests {
             commands.print.arguments,
             [
                 "print",
-                "gui/501/ai.bytepioneer.codexhost.native-harness-broker"
+                "gui/501/ai.bytepioneer.claude-in-codex.native-harness-broker"
             ]
         );
         assert_eq!(
@@ -898,7 +974,7 @@ mod tests {
             commands.bootout.arguments,
             [
                 "bootout",
-                "gui/501/ai.bytepioneer.codexhost.native-harness-broker"
+                "gui/501/ai.bytepioneer.claude-in-codex.native-harness-broker"
             ]
         );
         assert_eq!(
@@ -906,7 +982,7 @@ mod tests {
             [
                 "kickstart",
                 "-k",
-                "gui/501/ai.bytepioneer.codexhost.native-harness-broker"
+                "gui/501/ai.bytepioneer.claude-in-codex.native-harness-broker"
             ]
         );
     }
@@ -916,8 +992,8 @@ mod tests {
         let paths = NativeHarnessBrokerPaths {
             harness_id: "claude-code",
             home: Path::new("/Users/moka"),
-            node: Path::new("/opt/codexhost/node"),
-            host_runtime: Path::new("/opt/codexhost/host-runtime.mjs"),
+            node: Path::new("/opt/claude-in-codex/node"),
+            host_runtime: Path::new("/opt/claude-in-codex/host-runtime.mjs"),
         };
         let plan = plan_native_harness_broker_launch_agent_with_environment(
             paths,
@@ -981,7 +1057,7 @@ mod tests {
 
         use nix::unistd::Uid;
 
-        let root = crate::temporary_directory("codexhost-broker-directory-security");
+        let root = crate::temporary_directory("claude-in-codex-broker-directory-security");
         let managed = root.join("LaunchAgents");
         fs::create_dir(&managed).expect("managed directory");
         fs::set_permissions(&managed, fs::Permissions::from_mode(0o777))
@@ -1002,7 +1078,7 @@ mod tests {
 
         use nix::unistd::Uid;
 
-        let root = crate::temporary_directory("codexhost-broker-directory-identity");
+        let root = crate::temporary_directory("claude-in-codex-broker-directory-identity");
         let real = root.join("real");
         let linked = root.join("linked");
         fs::create_dir(&real).expect("real directory");
@@ -1021,14 +1097,14 @@ mod tests {
 
         use nix::unistd::Uid;
 
-        let home = crate::temporary_directory("codexhost-broker-plist-security");
+        let home = crate::temporary_directory("claude-in-codex-broker-plist-security");
         let uid = Uid::effective().as_raw();
         let plan = plan_native_harness_broker_launch_agent(
             NativeHarnessBrokerPaths {
                 harness_id: "claude-code",
                 home: &home,
-                node: Path::new("/opt/codexhost/node"),
-                host_runtime: Path::new("/opt/codexhost/host-runtime.mjs"),
+                node: Path::new("/opt/claude-in-codex/node"),
+                host_runtime: Path::new("/opt/claude-in-codex/host-runtime.mjs"),
             },
             uid,
         )

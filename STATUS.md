@@ -1,5 +1,38 @@
 # STATUS — goal tracker
 
+## Renamed to Claude in Codex; managed like a macOS App (2026-09-23)
+
+Every `codexhost` name became Claude in Codex naming: display name `Claude in Codex`, slug
+`claude-in-codex` (npm scope `@claude-in-codex/*`, crates, CLI, route prefix, JSON-RPC methods,
+launchd labels), environment prefix `CLAUDE_IN_CODEX_`, bundle identifier
+`ai.bytepioneer.claude-in-codex`. Entries below this one keep the old names as they were written.
+
+- Per-user folders follow platform conventions (`packages/shared-contracts/src/app-paths.ts`):
+  data in `~/Library/Application Support/Claude in Codex`, logs in `~/Library/Logs/Claude in Codex`,
+  `$XDG_DATA_HOME/claude-in-codex` on Linux. The repository's development folder is `.dev/`.
+- Upgrade path: the first attach moves `~/.codexhost` into the data folder, refusing while a legacy
+  Host still owns its Mapping Store; the App waits for a running `Codex Host.app` to quit first.
+  Legacy route ids, `modelProvider`, thread-list cursors, `CODEXHOST_*` variables, `codexhost/*`
+  methods, the injected hot-attach global, Remote install root, profile block, listener title and
+  broker LaunchAgents are still recognised.
+- `npm run app:install` builds and installs `/Applications/Claude in Codex.app`. The App gained a
+  Settings window (launch at login via `SMAppService`, launch preferences, folders), an About panel
+  and single-instance hand-off.
+
+## Legacy launcher removed (2026-09-23)
+
+The menu bar app (hot attach to a normally started Desktop) replaced the launcher as the only local
+entry, so the launcher flow was deleted instead of kept as a second, untested path:
+`crates/launcher`, the DMG payload and `scripts/release/macos/`, the debug-instance/fork build
+(`npm run debug*`), the Shim's local stdio Host path (native parent, runtime lease, Desktop helper
+detection), the Desktop backend proxy, native account host, launcher URL opener and the Desktop
+Controller release entry. The SSH Remote Host stays: the broker CLI moved into the Shim
+(`--codexhost-broker`), the Shim now starts the Host Runtime only for the SSH-managed
+`app-server --listen unix://` listener (a stdio `app-server` under the remote profile reaches the
+stock CLI), and the npm `@codexhost/cli` package again builds from this checkout
+(`npm run release:npm`). Probe fixture helpers moved to `tools/probes/fixture-instance.mjs`.
+The launcher-era entries below are historical.
+
 ## MenuBar hot attachment (2026-09-22)
 
 Implemented in the independent `codex/menubar-hot-attach` worktree, based on `8681959`.

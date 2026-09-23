@@ -1,4 +1,4 @@
-import { WORKSPACE_CONTRACT_VERSION } from "@codexhost/shared-contracts";
+import { WORKSPACE_CONTRACT_VERSION } from "@claude-in-codex/shared-contracts";
 
 export {
   CdpClient,
@@ -16,18 +16,7 @@ export type {
   CdpTarget,
 } from "./cdp-client.js";
 
-export {
-  parseDesktopControllerArguments,
-  runDesktopController,
-  serializeDesktopControllerReadiness,
-} from "./production-controller.js";
-export type {
-  DesktopControllerDependencies,
-  DesktopControllerOptions,
-  DesktopControllerReadiness,
-} from "./production-controller.js";
-
 export const packageMetadata = {
-  name: "@codexhost/desktop-control",
+  name: "@claude-in-codex/desktop-control",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;

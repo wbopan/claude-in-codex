@@ -2,8 +2,11 @@ import { readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { HarnessAdapter, HarnessError } from "@codexhost/harness-adapter";
-import type { HarnessPluginContext, HarnessPluginModule } from "@codexhost/harness-adapter/plugin";
+import type { HarnessAdapter, HarnessError } from "@claude-in-codex/harness-adapter";
+import type {
+  HarnessPluginContext,
+  HarnessPluginModule,
+} from "@claude-in-codex/harness-adapter/plugin";
 import {
   HARNESS_PLUGIN_API_VERSION,
   HARNESS_PLUGIN_LIMIT,
@@ -12,7 +15,7 @@ import {
   harnessPluginManifestSchema,
   type HarnessPluginDescriptor,
   type HarnessPluginManifest,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { HarnessPluginRegistry } from "./harness-plugin-registry.js";
 import {

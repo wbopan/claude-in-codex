@@ -11,12 +11,12 @@ import path from "node:path";
 export function traceClaude(event: Record<string, unknown>): void {
   const environment = process.env;
   const enabled =
-    environment.CODEXHOST_NATIVE_PICKER_TRACE === "1" ||
-    environment.CODEXHOST_STARTUP_TRACE === "1";
-  if (!enabled || !environment.CODEXHOST_DATA_DIR) return;
+    environment.CLAUDE_IN_CODEX_NATIVE_PICKER_TRACE === "1" ||
+    environment.CLAUDE_IN_CODEX_STARTUP_TRACE === "1";
+  if (!enabled || !environment.CLAUDE_IN_CODEX_DATA_DIR) return;
   try {
     appendFileSync(
-      path.join(path.resolve(environment.CODEXHOST_DATA_DIR), "native-picker-trace.jsonl"),
+      path.join(path.resolve(environment.CLAUDE_IN_CODEX_DATA_DIR), "native-picker-trace.jsonl"),
       `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`,
       { mode: 0o600 },
     );

@@ -44,7 +44,7 @@ describe("harness discovery", () => {
   });
 
   it("finds a harness installed under a Node.js version that is not active", () => {
-    // codexhost runs on v22 and only has v22 on PATH; the harness lives on v24.
+    // claude-in-codex runs on v22 and only has v22 on PATH; the harness lives on v24.
     const resolution = resolveHarnessExecutable(
       spec,
       {

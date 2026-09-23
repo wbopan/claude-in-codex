@@ -1,9 +1,9 @@
-import { packageMetadata as desktopControl } from "@codexhost/desktop-control";
-import { packageMetadata as harnessAdapter } from "@codexhost/harness-adapter";
-import { packageMetadata as harnessBroker } from "@codexhost/harness-broker";
-import { packageMetadata as mappingStore } from "@codexhost/mapping-store";
-import { packageMetadata as protocolCore } from "@codexhost/protocol-core";
-import { packageMetadata as sharedContracts } from "@codexhost/shared-contracts";
+import { packageMetadata as desktopControl } from "@claude-in-codex/desktop-control";
+import { packageMetadata as harnessAdapter } from "@claude-in-codex/harness-adapter";
+import { packageMetadata as harnessBroker } from "@claude-in-codex/harness-broker";
+import { packageMetadata as mappingStore } from "@claude-in-codex/mapping-store";
+import { packageMetadata as protocolCore } from "@claude-in-codex/protocol-core";
+import { packageMetadata as sharedContracts } from "@claude-in-codex/shared-contracts";
 
 export { loadHarnessPlugins } from "./harness-plugin-loader.js";
 export type {
@@ -18,8 +18,6 @@ export {
   officialEnvironment,
 } from "./app-server-host.js";
 export type { AppServerHostOptions } from "./app-server-host.js";
-export { startDesktopBackendProxy, spkiSha256Base64 } from "./desktop-backend-proxy.js";
-export type { DesktopBackendProxy, DesktopBackendRewrite } from "./desktop-backend-proxy.js";
 export {
   DesktopUsagePublisher,
   harnessUsageBuckets,
@@ -74,7 +72,7 @@ export type {
   TurnRequestRouteObservation,
 } from "./route-observation.js";
 export const packageMetadata = {
-  name: "@codexhost/host-runtime",
+  name: "@claude-in-codex/host-runtime",
   dependencies: [
     protocolCore.name,
     desktopControl.name,

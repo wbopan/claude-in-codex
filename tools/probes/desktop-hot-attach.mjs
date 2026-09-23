@@ -3,11 +3,11 @@ import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { prepareInstance } from "../fork/debug.mjs";
+import { prepareInstance } from "./fixture-instance.mjs";
 import { installDesktopModelHook } from "./desktop-model-hook.mjs";
 import { refreshDesktopModelCatalogue } from "./desktop-model-refresh.mjs";
 
-const root = path.resolve(import.meta.dirname, "../../.codexhost/hot-attach-research");
+const root = path.resolve(import.meta.dirname, "../../.dev/hot-attach-research");
 const app = path.join(root, "app/ChatGPT.app");
 const executable = path.join(app, "Contents/MacOS/ChatGPT");
 const stateFile = path.join(root, "probe-state.json");
@@ -211,8 +211,8 @@ if (command === "start") {
         if(!w)throw Error('Main Desktop view missing');
         const refresh=()=>w.executeJavaScript(${JSON.stringify(refreshSource)});
         (${installDesktopModelHook.toString()})({leaseMs:5000,onDetach:refresh});
-        try{await refresh()}catch(error){const h=globalThis.__codexhostModelHookProbeV1;h.detach('attach-failed');await h.settled();throw error}
-        return globalThis.__codexhostModelHookProbeV1.status();
+        try{await refresh()}catch(error){const h=globalThis.__claudeInCodexModelHookProbeV1;h.detach('attach-failed');await h.settled();throw error}
+        return globalThis.__claudeInCodexModelHookProbeV1.status();
       })()`;
       console.log(JSON.stringify(await client.evaluate(script), null, 2));
       console.log(
@@ -229,7 +229,9 @@ if (command === "start") {
           await delay(1500);
           if (
             !stopping &&
-            !(await client.evaluate("globalThis.__codexhostModelHookProbeV1?.heartbeat()??null"))
+            !(await client.evaluate(
+              "globalThis.__claudeInCodexModelHookProbeV1?.heartbeat()??null",
+            ))
           )
             break;
         }
@@ -239,7 +241,7 @@ if (command === "start") {
         console.log(
           JSON.stringify(
             await client.evaluate(
-              "(async()=>{const h=globalThis.__codexhostModelHookProbeV1;if(!h)return null;h.detach();return await h.settled()})()",
+              "(async()=>{const h=globalThis.__claudeInCodexModelHookProbeV1;if(!h)return null;h.detach();return await h.settled()})()",
             ),
             null,
             2,
@@ -250,7 +252,7 @@ if (command === "start") {
       console.log(
         JSON.stringify(
           await client.evaluate(
-            "({pid:process.pid,hook:globalThis.__codexhostModelHookProbeV1?.status()??null})",
+            "({pid:process.pid,hook:globalThis.__claudeInCodexModelHookProbeV1?.status()??null})",
           ),
           null,
           2,
@@ -260,7 +262,7 @@ if (command === "start") {
       console.log(
         JSON.stringify(
           await client.evaluate(
-            "(async()=>{const h=globalThis.__codexhostModelHookProbeV1;if(!h)return null;h.detach();return await h.settled()})()",
+            "(async()=>{const h=globalThis.__claudeInCodexModelHookProbeV1;if(!h)return null;h.detach();return await h.settled()})()",
           ),
           null,
           2,
@@ -269,13 +271,13 @@ if (command === "start") {
     } else if (command === "close-inspector") {
       console.log(
         await client.evaluate(
-          "(()=>{if(globalThis.__codexhostModelHookProbeV1)throw Error('Detach first');const inspector=process.mainModule.require('node:inspector');setTimeout(()=>inspector.close(),100);return 'Inspector close scheduled'})()",
+          "(()=>{if(globalThis.__claudeInCodexModelHookProbeV1)throw Error('Detach first');const inspector=process.mainModule.require('node:inspector');setTimeout(()=>inspector.close(),100);return 'Inspector close scheduled'})()",
         ),
       );
     } else {
       console.log(
         await client.evaluate(
-          "(async()=>{const h=globalThis.__codexhostModelHookProbeV1;if(h){h.detach();await h.settled()}setTimeout(()=>process.mainModule.require('electron').app.quit(),100);return 'Isolated Desktop quit scheduled'})()",
+          "(async()=>{const h=globalThis.__claudeInCodexModelHookProbeV1;if(h){h.detach();await h.settled()}setTimeout(()=>process.mainModule.require('electron').app.quit(),100);return 'Isolated Desktop quit scheduled'})()",
         ),
       );
     }

@@ -9,8 +9,8 @@ import { resolveClaudeCodeExecutable } from "../../packages/adapters/claude-code
 
 // Runs the real CLI against a loopback-only fake Messages API. No paid model
 // requests or existing Claude sessions are used. Requires Claude Code >= 2.1.246.
-// CODEXHOST_RUN_CLAUDE_STOP_REAL=1 npx vitest run --config tests/vitest.config.js tools/probes/claude-subagent-stop.real.test.mjs
-describe.skipIf(process.env.CODEXHOST_RUN_CLAUDE_STOP_REAL !== "1")(
+// CLAUDE_IN_CODEX_RUN_CLAUDE_STOP_REAL=1 npx vitest run --config tests/vitest.config.js tools/probes/claude-subagent-stop.real.test.mjs
+describe.skipIf(process.env.CLAUDE_IN_CODEX_RUN_CLAUDE_STOP_REAL !== "1")(
   "native Claude background task interrupt",
   () => {
     it.each([false, true])(

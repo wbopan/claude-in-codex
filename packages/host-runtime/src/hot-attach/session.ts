@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import type { Socket } from "node:net";
-import type { JsonObject } from "@codexhost/protocol-core";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 import { AppServerHost } from "../app-server-host.js";
 import { OfficialRuntimeScope } from "../codex-runtime/official-runtime-scope.js";
 import { DesktopUsagePublisher, desktopUiLanguage } from "../desktop-usage-buckets.js";
@@ -83,7 +83,7 @@ export class HotAttachSession extends EventEmitter {
       // The Desktop client must open first: it owns unsolicited native notifications.
       const reader = this.#scope.owner.attachManagement(async () => {});
       await reader.initialize({
-        clientInfo: { name: "codexhost_identity_reader", version: "1" },
+        clientInfo: { name: "claude_in_codex_identity_reader", version: "1" },
         capabilities: { experimentalApi: true },
       });
       this.#identityReader = reader;
@@ -101,7 +101,7 @@ export class HotAttachSession extends EventEmitter {
             const message = JSON.parse(line);
             if (message.id !== undefined && !message.method)
               this.#requests.delete(String(message.id));
-            if (message.id === "codexhost:attach:init") {
+            if (message.id === "claude-in-codex:attach:init") {
               if (message.error) this.ready.reject(new Error(message.error.message));
               else this.send({ type: "activate" });
             } else this.send({ type: "desktop", message });
@@ -143,10 +143,10 @@ export class HotAttachSession extends EventEmitter {
     );
     this.#input.write(
       JSON.stringify({
-        id: "codexhost:attach:init",
+        id: "claude-in-codex:attach:init",
         method: "initialize",
         params: {
-          clientInfo: { name: "codexhost_hot_attach", version: "1" },
+          clientInfo: { name: "claude_in_codex_hot_attach", version: "1" },
           capabilities: { experimentalApi: true },
         },
       }) + "\n",

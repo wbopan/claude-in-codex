@@ -5,10 +5,10 @@ import { readFile, writeFile, readdir, open } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { CdpClient } from "../../packages/desktop-control/dist/index.js";
-import { debugEnvironment } from "../fork/debug.mjs";
+import { debugEnvironment } from "./fixture-instance.mjs";
 
-const root = path.resolve(import.meta.dirname, "../../.codexhost/hot-attach-research");
-const resources = path.resolve(root, "../menubar/Codex Host.app/Contents/Resources");
+const root = path.resolve(import.meta.dirname, "../../.dev/hot-attach-research");
+const resources = path.resolve(root, "../menubar/Claude in Codex.app/Contents/Resources");
 const state = JSON.parse(await readFile(path.join(root, "probe-state.json"), "utf8"));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(read, predicate, label, timeout = 30_000) {
@@ -57,12 +57,13 @@ async function connect() {
   return client;
 }
 let cdp = await connect();
-assert.equal(await cdp.evaluate("!!globalThis.__codexhostHotAttachV1"), false);
+assert.equal(await cdp.evaluate("!!globalThis.__claudeInCodexHotAttachV1"), false);
 const backendPid = await cdp.evaluate("__cxConnection.connection.proc.pid");
 const originals = processes().filter((p) =>
   [backendPid, state.probe.pid, ...state.stable.map((p) => p.pid)].includes(p.pid),
 );
-const dirs = async () => (await readdir("/tmp")).filter((n) => n.startsWith("codexhost-attach-"));
+const dirs = async () =>
+  (await readdir("/tmp")).filter((n) => n.startsWith("claude-in-codex-attach-"));
 const report = { startedAt: new Date().toISOString(), checks: [] };
 const log = await open(path.join(root, "lifecycle-host.log"), "a", 0o600);
 let host,
@@ -78,12 +79,12 @@ function command(command) {
 async function launch() {
   host = spawn(
     path.join(resources, "runtime/node"),
-    [path.join(resources, "host.mjs"), "--codexhost-menubar"],
+    [path.join(resources, "host.mjs"), "--claude-in-codex-menubar"],
     {
       env: {
         ...debugEnvironment(process.env, root),
-        CODEXHOST_DESKTOP_APP: path.join(root, "app/ChatGPT.app"),
-        CODEXHOST_AUTO_ATTACH: "0",
+        CLAUDE_IN_CODEX_DESKTOP_APP: path.join(root, "app/ChatGPT.app"),
+        CLAUDE_IN_CODEX_AUTO_ATTACH: "0",
       },
       stdio: ["pipe", "pipe", log.fd],
     },
@@ -122,7 +123,7 @@ try {
     assert.equal(socketDirs.length, 1);
     const thread = await cdp.evaluate(`(async()=>{
       const c=__cxConnection;
-      const r=await c.sendAppServerRequest("thread/start",{model:"codexhost/claude-code-native@claude-model-v1.aGFpa3U",cwd:${JSON.stringify(path.join(root, "workspace"))},approvalPolicy:"never",sandbox:"read-only"});
+      const r=await c.sendAppServerRequest("thread/start",{model:"claude-in-codex/claude-code-native@claude-model-v1.aGFpa3U",cwd:${JSON.stringify(path.join(root, "workspace"))},approvalPolicy:"never",sandbox:"read-only"});
       await c.sendAppServerRequest("turn/start",{threadId:r.thread.id,effort:"low",input:[{type:"text",text:"Use Bash with run_in_background true to run sleep 180. Once launched reply BACKGROUND_STARTED immediately. Do not stop the background task."}]});
       return r.thread.id;
     })()`);
@@ -167,7 +168,7 @@ try {
     const clean = await until(
       () =>
         cdp.evaluate(
-          '({hook:!!globalThis.__codexhostHotAttachV1,send:Object.hasOwn(__cxConnection.connection,"send"),route:Object.hasOwn(__cxConnection,"routeIncomingMessage")})',
+          '({hook:!!globalThis.__claudeInCodexHotAttachV1,send:Object.hasOwn(__cxConnection.connection,"send"),route:Object.hasOwn(__cxConnection,"routeIncomingMessage")})',
         ),
       (s) => !s.hook && !s.send && !s.route,
       "native methods restored",

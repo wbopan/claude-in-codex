@@ -3,7 +3,7 @@ import {
   harnessModelCatalogSchema,
   hostInteractionIdSchema,
   hostItemIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import type {
   HarnessId,
   HarnessInspection,
@@ -21,7 +21,7 @@ import type {
   NativeCheckpointRef,
   NativeSessionRef,
   NativeTurnRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { validateHostInteractionResponse } from "./interaction.js";
 import { HarnessOutputChannel } from "./output-channel.js";

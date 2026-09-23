@@ -12,7 +12,7 @@ import {
 } from "../src/codex-memory-export.js";
 
 async function fixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-memory-export-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-memory-export-"));
   const claudeHome = path.join(root, "claude");
   const codexHome = path.join(root, "codex");
   const cwd = path.join(root, "work", "my project");

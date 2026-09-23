@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 
-import type { JsonObject } from "@codexhost/protocol-core";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 
 import type {
   OfficialAppServerConnection,
@@ -418,7 +418,7 @@ export class OfficialRuntimeOwner {
     if (!object(value)) return client.output(event);
     if (typeof value.id === "string" || typeof value.id === "number") {
       if (typeof value.method === "string") {
-        const id = `codexhost:server:${client.id}:${event.generation}:${randomUUID()}`;
+        const id = `claude-in-codex:server:${client.id}:${event.generation}:${randomUUID()}`;
         client.serverRequests.set(id, value.id);
         const projected = { ...value, id };
         return client.output({

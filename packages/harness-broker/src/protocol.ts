@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { harnessPluginIdSchema, type HarnessId } from "@codexhost/shared-contracts";
+import { harnessPluginIdSchema, type HarnessId } from "@claude-in-codex/shared-contracts";
 
 export const HARNESS_BROKER_PROTOCOL_VERSION = 1 as const;
 export const HARNESS_BROKER_MAX_FRAME_BYTES = 8 * 1024 * 1024;

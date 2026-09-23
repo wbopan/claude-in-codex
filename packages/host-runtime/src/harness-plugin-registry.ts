@@ -1,5 +1,5 @@
-import type { HarnessAdapter } from "@codexhost/harness-adapter";
-import type { HarnessId, HarnessPluginDescriptor } from "@codexhost/shared-contracts";
+import type { HarnessAdapter } from "@claude-in-codex/harness-adapter";
+import type { HarnessId, HarnessPluginDescriptor } from "@claude-in-codex/shared-contracts";
 
 /** One registry belongs to one Host connection, not to the process global scope. */
 export class HarnessPluginRegistry {

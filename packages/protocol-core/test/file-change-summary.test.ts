@@ -5,13 +5,13 @@ import type {
   HostItem,
   HostItemSnapshot,
   HostTurnSnapshot,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   hostItemIdSchema,
   hostTurnIdSchema,
   nativeTurnRefSchema,
   type JsonObject,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import {
   CodexTurnProjector,
   projectHistoricalTurn,

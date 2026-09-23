@@ -1,15 +1,15 @@
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import {
   decodeHostThreadListCursor,
   decodeThreadListRequest,
   type JsonObject,
   type OfficialThreadListPage,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 import {
   harnessIdSchema,
   hostThreadIdSchema,
   nativeSessionRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,7 +17,7 @@ import {
   officialThreadListPageFromResponse,
 } from "../src/thread-list-aggregator.js";
 
-import { transportModelIdForHarness } from "@codexhost/protocol-core";
+import { transportModelIdForHarness } from "@claude-in-codex/protocol-core";
 
 const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
 

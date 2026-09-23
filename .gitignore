@@ -1,3 +1,5 @@
+/.dev/
+# Development folder used before the rename to Claude in Codex.
 /.codexhost/
 .env
 .env.*

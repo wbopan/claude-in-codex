@@ -1,5 +1,5 @@
 [package]
-name = "codexhost-shim"
+name = "claude-in-codex-shim"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ publish.workspace = true
 test-utils = []
 
 [[bin]]
-name = "codexhost-shim"
+name = "claude-in-codex-shim"
 path = "src/main.rs"
 
 [[bin]]
@@ -18,10 +18,7 @@ path = "tests/fixtures/fake-codex-cli.rs"
 required-features = ["test-utils"]
 
 [dependencies]
-codexhost-platform = { path = "../platform" }
-fs2 = "0.4.3"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+claude-in-codex-platform = { path = "../platform" }
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 nix = { version = "0.31.3", features = ["process", "signal"] }

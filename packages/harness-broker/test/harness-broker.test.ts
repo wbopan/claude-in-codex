@@ -13,8 +13,8 @@ import {
   type HarnessOutput,
   type HarnessSession,
   type HostCommand,
-} from "@codexhost/harness-adapter";
-import { FakeHarnessAdapter, FakeHarnessSession } from "@codexhost/harness-adapter/testing";
+} from "@claude-in-codex/harness-adapter";
+import { FakeHarnessAdapter, FakeHarnessSession } from "@claude-in-codex/harness-adapter/testing";
 import {
   harnessIdSchema,
   harnessModelRefSchema,
@@ -22,7 +22,7 @@ import {
   harnessPermissionModeIdSchema,
   harnessPermissionModeCatalogSchema,
   hostTurnIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import {
   BrokeredHarnessAdapter,
   HARNESS_BROKER_MAX_PENDING_REQUESTS,
@@ -122,12 +122,12 @@ describe("macOS Aqua Harness broker", () => {
   it.each(["codebuddy", "workbuddy", "cursor-cli"])(
     "isolates %s identity and forwards only opted-in delegation environment",
     async (id) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-broker-multi-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-broker-multi-"));
       roots.push(root);
       const descriptorPath = path.join(root, "broker.json");
       const socketPath =
         process.platform === "win32"
-          ? `\\\\.\\pipe\\codexhost-broker-${randomUUID()}`
+          ? `\\\\.\\pipe\\claude-in-codex-broker-${randomUUID()}`
           : path.join(root, "broker.sock");
       const native = new FakeHarnessAdapter(harnessIdSchema.parse(id));
       const open = vi.spyOn(native, "open");
@@ -149,8 +149,8 @@ describe("macOS Aqua Harness broker", () => {
           kind: "create",
           cwd: "/synthetic",
           environment: {
-            CODEXHOST_THREAD_ID: "parent",
-            CODEXHOST_RUNTIME_TOKEN: "scoped-test-token",
+            CLAUDE_IN_CODEX_THREAD_ID: "parent",
+            CLAUDE_IN_CODEX_RUNTIME_TOKEN: "scoped-test-token",
             PATH: "/untrusted",
             HOME: "/another-user",
           },
@@ -160,8 +160,8 @@ describe("macOS Aqua Harness broker", () => {
         expect(created.value.harnessId).toBe(id);
         expect(open.mock.calls[0]?.[0]).toMatchObject({
           environment: {
-            CODEXHOST_THREAD_ID: "parent",
-            CODEXHOST_RUNTIME_TOKEN: "scoped-test-token",
+            CLAUDE_IN_CODEX_THREAD_ID: "parent",
+            CLAUDE_IN_CODEX_RUNTIME_TOKEN: "scoped-test-token",
           },
         });
         expect(open.mock.calls[0]?.[0].environment).not.toHaveProperty("PATH");
@@ -190,7 +190,7 @@ describe("macOS Aqua Harness broker", () => {
   it.skipIf(process.platform === "win32")(
     "refuses to replace a non-socket entry at the broker socket path",
     async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+      const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
       roots.push(root);
       const descriptorPath = path.join(root, "broker-v1.json");
       const socketPath = path.join(root, "broker.sock");
@@ -206,12 +206,12 @@ describe("macOS Aqua Harness broker", () => {
   );
 
   it("round-trips inspect, open, execute, streamed output, and close", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const account = {
       email: "broker@example.com",
@@ -292,12 +292,12 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("isolates accepted socket errors without stopping the broker", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const native = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
     const createServer = vi.spyOn(net, "createServer");
@@ -354,12 +354,12 @@ describe("macOS Aqua Harness broker", () => {
       (descriptor: Record<string, unknown>) => ({ ...descriptor, generation: randomUUID() }),
     ],
   ])("fails closed for a descriptor with the wrong %s", async (_field, mutate) => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const native = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
     const server = await startHarnessBrokerServer({ descriptorPath, socketPath, adapter: native });
@@ -384,12 +384,12 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("fail-closes before processing a packed frame batch beyond the server queue cap", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const native = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
     const inspect = vi.spyOn(native, "inspect");
@@ -427,12 +427,12 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("rejects a second writer before opening the same native Session", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const native = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
     const otherCwd = path.join(root, "other-cwd");
@@ -460,14 +460,14 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("reserves a known native writer before awaiting the native open", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const otherCwd = path.join(root, "other-cwd");
     await mkdir(otherCwd);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const native = new FakeHarnessAdapter(harnessIdSchema.parse("claude-code"));
     const seeded = await native.open({ kind: "create", cwd: root });
@@ -509,14 +509,14 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("fail-closes delayed create writes until the bootstrap turn claims native identity", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const otherCwd = path.join(root, "other-cwd");
     await mkdir(otherCwd);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const harnessId = harnessIdSchema.parse("claude-code");
     const fixture = new FakeHarnessAdapter(harnessId);
@@ -642,12 +642,12 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("drops delayed output from the retired generation without closing its replacement", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const harnessId = harnessIdSchema.parse("claude-code");
     const fixture = new FakeHarnessAdapter(harnessId);
@@ -744,12 +744,12 @@ describe("macOS Aqua Harness broker", () => {
   });
 
   it("reopens once after a terminal authentication failure and restores selection", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "codexhost-harness-broker-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-harness-broker-"));
     roots.push(root);
     const descriptorPath = path.join(root, "broker-v1.json");
     const socketPath =
       process.platform === "win32"
-        ? `\\\\.\\pipe\\codexhost-harness-broker-${process.pid}-${randomUUID()}`
+        ? `\\\\.\\pipe\\claude-in-codex-harness-broker-${process.pid}-${randomUUID()}`
         : path.join(root, "broker.sock");
     const harnessId = harnessIdSchema.parse("claude-code");
     const permissionModes = harnessPermissionModeCatalogSchema.parse({

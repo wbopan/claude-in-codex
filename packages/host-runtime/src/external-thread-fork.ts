@@ -1,14 +1,14 @@
 import nodePath from "node:path";
 
-import type { HarnessAdapter } from "@codexhost/harness-adapter";
+import type { HarnessAdapter } from "@claude-in-codex/harness-adapter";
 import {
   mapExternalThreadHarnessError,
   type DecodedThreadForkRequest,
   type ExternalHarnessId,
   type ExternalThreadRpcError,
   type JsonObject,
-} from "@codexhost/protocol-core";
-import type { NativeCheckpointRef, NativeSessionRef } from "@codexhost/shared-contracts";
+} from "@claude-in-codex/protocol-core";
+import type { NativeCheckpointRef, NativeSessionRef } from "@claude-in-codex/shared-contracts";
 
 import {
   createExternalThreadRecordInput,
@@ -16,6 +16,11 @@ import {
   type ExternalThreadRepository,
 } from "./external-thread-repository.js";
 import type { ExternalThread, ExternalThreadRuntime } from "./external-thread-runtime.js";
+import {
+  LEGACY_MODEL_PROVIDER,
+  MODEL_PROVIDER,
+  normalizeRouteId,
+} from "@claude-in-codex/shared-contracts";
 
 export type ExternalThreadForkResult =
   | { ok: false; error: ExternalThreadRpcError }
@@ -39,8 +44,10 @@ export async function executeExternalThreadFork(input: {
   const changesCwd = targetCwd !== source.cwd;
   if (
     fork.path ||
-    (fork.model !== undefined && fork.model !== source.transportModelId) ||
-    (fork.modelProvider !== undefined && fork.modelProvider !== "codexhost")
+    (fork.model !== undefined && normalizeRouteId(fork.model) !== source.transportModelId) ||
+    (fork.modelProvider !== undefined &&
+      fork.modelProvider !== MODEL_PROVIDER &&
+      fork.modelProvider !== LEGACY_MODEL_PROVIDER)
   ) {
     return {
       ok: false,

@@ -4,7 +4,7 @@
  * implementation. Nothing is written to the installed application or config.
  */
 export function installDesktopModelHook({ leaseMs = 15_000, onDetach } = {}) {
-  const key = "__codexhostModelHookProbeV1";
+  const key = "__claudeInCodexModelHookProbeV1";
   if (globalThis[key]) throw new Error("Model hook probe is already attached");
   if (!Number.isInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 60_000) {
     throw new Error("Expected a lease between 1 and 60 seconds");
@@ -30,7 +30,7 @@ export function installDesktopModelHook({ leaseMs = 15_000, onDetach } = {}) {
   if (!original?.configurable || typeof original.value !== "function") {
     throw new Error("Desktop response method cannot be reversibly wrapped");
   }
-  const modelId = "codexhost-hook-probe";
+  const modelId = "claude-in-codex-hook-probe";
   let deadline = Date.now() + leaseMs;
   let active = true;
   let rewritten = 0;

@@ -1,16 +1,16 @@
-import { FakeHarnessAdapter } from "@codexhost/harness-adapter/testing";
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
+import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import {
   harnessIdSchema,
   harnessThinkingOptionIdSchema,
   hostThreadIdSchema,
   nativeSessionRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import type { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
-import { transportModelIdForHarness } from "@codexhost/protocol-core";
+import { transportModelIdForHarness } from "@claude-in-codex/protocol-core";
 
 const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
 

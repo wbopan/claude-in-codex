@@ -2,7 +2,7 @@ import {
   harnessModelRefSchema,
   harnessThinkingOptionIdSchema,
   harnessThinkingOptionSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import { SessionStateObserver } from "../src/session-state-observer.js";

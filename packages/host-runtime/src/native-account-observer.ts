@@ -1,5 +1,5 @@
-import type { JsonObject, JsonValue } from "@codexhost/protocol-core";
-import { jsonObjectSchema } from "@codexhost/shared-contracts";
+import type { JsonObject, JsonValue } from "@claude-in-codex/protocol-core";
+import { jsonObjectSchema } from "@claude-in-codex/shared-contracts";
 import type { CodexAccountControl } from "./account/codex-account-control.js";
 import type { OfficialRuntimeOwner } from "./codex-runtime/official-runtime-owner.js";
 import type { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
@@ -58,7 +58,10 @@ export class NativeAccountObserver {
         const generation = this.input.scope.owner.generation;
         const snapshot = await this.input.control.refresh?.();
         if (snapshot && this.#ready() && generation === this.input.scope.owner.generation)
-          await this.input.notify("codexhost/account/changed", jsonObjectSchema.parse(snapshot));
+          await this.input.notify(
+            "claude-in-codex/account/changed",
+            jsonObjectSchema.parse(snapshot),
+          );
       }
     })()
       .catch(() => {

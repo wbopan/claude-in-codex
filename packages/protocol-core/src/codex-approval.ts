@@ -2,8 +2,8 @@ import type {
   HostApprovalAction,
   HostApprovalInteraction,
   HostApprovalResponse,
-} from "@codexhost/harness-adapter";
-import type { JsonObject } from "@codexhost/shared-contracts";
+} from "@claude-in-codex/harness-adapter";
+import type { JsonObject } from "@claude-in-codex/shared-contracts";
 
 export interface CodexApprovalRequestProjection {
   request: JsonObject;

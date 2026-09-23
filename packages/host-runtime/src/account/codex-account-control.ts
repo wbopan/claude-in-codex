@@ -3,7 +3,7 @@ import {
   codexAccountPlanTypeSchema,
   type CodexAccountListResult,
   type CodexAccountSummary,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 /** Current-only Codex identity. Credentials never cross this boundary. */
 export interface CodexAccountControl {

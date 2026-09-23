@@ -1,4 +1,4 @@
-import type { AccountCreditsSnapshot } from "@codexhost/shared-contracts";
+import type { AccountCreditsSnapshot } from "@claude-in-codex/shared-contracts";
 
 /**
  * One quota window as the MenuBar shows it: how much is left and when it resets. `window` is a

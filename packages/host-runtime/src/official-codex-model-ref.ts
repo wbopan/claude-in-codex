@@ -4,7 +4,7 @@ import {
   HARNESS_MODEL_REF_MAX_LENGTH,
   harnessModelRefSchema,
   type HarnessModelRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 export const OFFICIAL_CODEX_MODEL_REF_PREFIX = "codex-model-v1.";
 

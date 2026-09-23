@@ -1,5 +1,5 @@
 {
-  "name": "@codexhost/harness-adapter",
+  "name": "@claude-in-codex/harness-adapter",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -24,6 +24,6 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@codexhost/shared-contracts": "0.0.0"
+    "@claude-in-codex/shared-contracts": "0.0.0"
   }
 }

@@ -1,4 +1,4 @@
-import { parseJsonFrame, type JsonObject } from "@codexhost/protocol-core";
+import { parseJsonFrame, type JsonObject } from "@claude-in-codex/protocol-core";
 
 import type { OfficialAppServerConnection } from "../official-app-server-connection.js";
 import type { CodexRuntimeOutput } from "./codex-runtime.js";
@@ -117,7 +117,7 @@ export class OfficialRuntimeClient {
     // native capability or authentication result. Native requests remain gated.
     return {
       result: {
-        userAgent: "codexhost",
+        userAgent: "claude-in-codex",
         codexHome: this.#scope.permanentHome,
         platformFamily: process.platform === "win32" ? "windows" : "unix",
         platformOs:

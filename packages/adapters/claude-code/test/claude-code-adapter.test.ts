@@ -7,9 +7,9 @@ import {
   hostTurnIdSchema,
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
-import type { HarnessOutput, HarnessSession } from "@codexhost/harness-adapter";
+import type { HarnessOutput, HarnessSession } from "@claude-in-codex/harness-adapter";
 import { ClaudeCodeAdapter, type ClaudeCodeAdapterOptions } from "../src/index.js";
 import { projectClaudePlanLimitToCredits } from "../src/claude-code-adapter.js";
 import { ClaudeCodeExecutableError } from "../src/command.js";
@@ -378,19 +378,19 @@ describe("Claude Code HarnessAdapter", () => {
   it("passes per-Session delegation environment to the SDK transport", async () => {
     const { adapter, dependencies } = fixture();
     const session = await openSession(adapter, {
-      CODEXHOST_CLI_PATH: "/opt/codexhost",
-      CODEXHOST_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
-      CODEXHOST_RUNTIME_TOKEN: "token",
-      CODEXHOST_THREAD_ID: "thread-1",
+      CLAUDE_IN_CODEX_CLI_PATH: "/opt/claude-in-codex",
+      CLAUDE_IN_CODEX_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
+      CLAUDE_IN_CODEX_RUNTIME_TOKEN: "token",
+      CLAUDE_IN_CODEX_THREAD_ID: "thread-1",
     });
     await session.execute(textTurn("environment-turn"));
     expect(dependencies.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({
         environment: expect.objectContaining({
-          CODEXHOST_CLI_PATH: "/opt/codexhost",
-          CODEXHOST_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
-          CODEXHOST_RUNTIME_TOKEN: "token",
-          CODEXHOST_THREAD_ID: "thread-1",
+          CLAUDE_IN_CODEX_CLI_PATH: "/opt/claude-in-codex",
+          CLAUDE_IN_CODEX_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
+          CLAUDE_IN_CODEX_RUNTIME_TOKEN: "token",
+          CLAUDE_IN_CODEX_THREAD_ID: "thread-1",
         }),
       }),
     );

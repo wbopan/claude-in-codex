@@ -1,11 +1,7 @@
 import path from "node:path";
 import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
 
 import { AppServerHost, officialEnvironment } from "./app-server-host.js";
-import { startDesktopBackendProxy } from "./desktop-backend-proxy.js";
-import { DesktopUsagePublisher, desktopUiLanguage } from "./desktop-usage-buckets.js";
-import { prepareLocalCodex } from "./native-account-host.js";
 import { SingleNativeCodexAccount } from "./account/codex-account-control.js";
 import { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
 import { createOwnedUnixBackend } from "./codex-runtime/owned-official-backends.js";
@@ -21,9 +17,9 @@ import {
 } from "./remote-app-server.js";
 import { remoteOfficialAppServerSocketPath } from "./remote-official-app-server.js";
 
-const STOCK_CODEX_PATH_ENV = "CODEXHOST_STOCK_CODEX_PATH";
-const DEFAULT_AGENT_ENV = "CODEXHOST_DEFAULT_AGENT";
-export const MANAGED_REMOTE_APP_SERVER_PROCESS_TITLE = "codexhost remote app-server listener";
+const STOCK_CODEX_PATH_ENV = "CLAUDE_IN_CODEX_STOCK_CODEX_PATH";
+const DEFAULT_AGENT_ENV = "CLAUDE_IN_CODEX_DEFAULT_AGENT";
+export const MANAGED_REMOTE_APP_SERVER_PROCESS_TITLE = "claude-in-codex remote app-server listener";
 
 export function createRemoteOfficialAppServerPlan(
   arguments_: readonly string[],
@@ -59,41 +55,11 @@ export async function runHostRuntime(input: {
   hostRuntimeUrl?: string;
 }): Promise<number> {
   const { stockCodexPath, defaultAgent } = requiredRuntimeConfiguration(input.environment);
-  const hostRuntimePath = input.hostRuntimeUrl ? fileURLToPath(input.hostRuntimeUrl) : undefined;
-
+  // The Host Runtime serves only the SSH-managed remote listener. Every other app-server
+  // invocation stays on the stock Codex CLI; the Shim never routes one here.
   if (!isRemoteUnixListenerInvocation(input.arguments)) {
-    const official = await prepareLocalCodex({
-      stockCodexPath,
-      arguments: input.arguments,
-      environment: input.environment,
-      diagnosticOutput: process.stderr,
-    });
-    try {
-      const usage = new DesktopUsagePublisher({ language: desktopUiLanguage(input.environment) });
-      const desktopProxy = await startDesktopBackendProxy({
-        environment: input.environment,
-        diagnosticOutput: process.stderr,
-        rewrite: usage,
-      });
-      try {
-        return await new AppServerHost({
-          stockCodexPath,
-          arguments: input.arguments,
-          defaultAgent,
-          environment: input.environment,
-          officialRuntimeScope: official.officialRuntimeScope,
-          accountControl: official.accountControl,
-          ...(desktopProxy ? { desktopProxy, desktopUsage: usage } : {}),
-          ...installedHarnessPluginOptions(input.environment, false, input.hostRuntimeUrl),
-        }).run();
-      } finally {
-        await desktopProxy?.close();
-      }
-    } finally {
-      await official.close();
-    }
+    throw new Error("The Host Runtime serves only the managed remote app-server listener");
   }
-
   if (process.platform === "win32") {
     throw new Error("Remote Unix app-server listener is unavailable on Windows");
   }

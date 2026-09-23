@@ -33,7 +33,7 @@ import {
   type TurnCancelCommand,
   type TurnStartAccepted,
   type TurnStartCommand,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   harnessPluginIdSchema,
   type HarnessId,
@@ -42,7 +42,7 @@ import {
   harnessInspectionSchema,
   harnessSessionCapabilitiesSchema,
   type HarnessCommandCatalog,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { consumeBrokerFrames, writeBrokerFrame } from "./framing.js";
 import { defaultHarnessBrokerDescriptorPath } from "./paths.js";
@@ -694,10 +694,10 @@ export class BrokeredHarnessAdapter implements HarnessAdapter {
       delete safeInput.clientTools;
       if (this.#forwardEnvironment && input.environment) {
         const allowed = [
-          "CODEXHOST_CLI_PATH",
-          "CODEXHOST_RUNTIME_ENDPOINT",
-          "CODEXHOST_RUNTIME_TOKEN",
-          "CODEXHOST_THREAD_ID",
+          "CLAUDE_IN_CODEX_CLI_PATH",
+          "CLAUDE_IN_CODEX_RUNTIME_ENDPOINT",
+          "CLAUDE_IN_CODEX_RUNTIME_TOKEN",
+          "CLAUDE_IN_CODEX_THREAD_ID",
         ];
         const environment = Object.fromEntries(
           Object.entries(input.environment).filter(

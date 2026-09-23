@@ -19,7 +19,7 @@ import {
 import { releaseTarget } from "./targets.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const executablePaths = ["bin/codexhost", "libexec/codexhost-shim"];
+const executablePaths = ["libexec/claude-in-codex-shim"];
 
 function requireArgument(arguments_, name) {
   const index = arguments_.indexOf(name);
@@ -55,11 +55,13 @@ export async function smokeNpmPackage({ targetName, version, workDirectory }) {
     throw new Error("npm package smoke resolved an unexpected meta tarball");
   }
 
-  const directory = await mkdtemp(path.join(workDirectory ?? os.tmpdir(), "codexhost-npm-smoke-"));
+  const directory = await mkdtemp(
+    path.join(workDirectory ?? os.tmpdir(), "claude-in-codex-npm-smoke-"),
+  );
   try {
     await writeFile(
       path.join(directory, "package.json"),
-      `${JSON.stringify({ name: "codexhost-npm-smoke", private: true }, null, 2)}\n`,
+      `${JSON.stringify({ name: "claude-in-codex-npm-smoke", private: true }, null, 2)}\n`,
       "utf8",
     );
     execFileSync("npm", ["install", "--ignore-scripts", platformTarball, metaTarball], {
@@ -86,13 +88,13 @@ export async function smokeNpmPackage({ targetName, version, workDirectory }) {
       directory,
       "node_modules",
       ".bin",
-      process.platform === "win32" ? "codexhost.cmd" : "codexhost",
+      process.platform === "win32" ? "claude-in-codex.cmd" : "claude-in-codex",
     );
     const output = execFileSync(command, ["--version"], {
       cwd: directory,
       encoding: "utf8",
     }).trim();
-    if (output !== version) throw new Error(`installed codexhost reported '${output}'`);
+    if (output !== version) throw new Error(`installed claude-in-codex reported '${output}'`);
     return { platformTarball, metaTarball, packageName };
   } finally {
     await rm(directory, { recursive: true, force: true });

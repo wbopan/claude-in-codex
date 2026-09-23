@@ -9,34 +9,22 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
-use codexhost_platform::discover_desktop_managed_codex_cli;
-use codexhost_platform::{
+use claude_in_codex_platform::{
     CODEX_CLI_PATH_ENV, STOCK_CODEX_PATH_ENV, canonical_existing_file,
     configure_background_command, node_entrypoint_path, proxy_environment, spawn_supervised,
     validate_proxy_target,
 };
 
-mod desktop_invocation;
-#[cfg(target_os = "macos")]
-mod desktop_native_parent;
-mod local_runtime_lease;
-mod process_identity;
+mod broker_cli;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod remote_lifecycle;
 
-use local_runtime_lease::LocalRuntimeLease;
-
 pub type ShimResult<T> = Result<T, Box<dyn Error>>;
 
-pub const HOST_NODE_PATH_ENV: &str = "CODEXHOST_HOST_NODE_PATH";
-pub const HOST_RUNTIME_PATH_ENV: &str = "CODEXHOST_HOST_RUNTIME_PATH";
-pub const REMOTE_SSH_MANAGED_ENV: &str = "CODEXHOST_REMOTE_SSH_MANAGED";
-const DATA_DIRECTORY_ENV: &str = "CODEXHOST_DATA_DIR";
-const LAUNCHER_PID_ENV: &str = "CODEXHOST_LAUNCHER_PID";
-const NPM_NODE_PATH_ENV: &str = "CODEXHOST_NPM_NODE_PATH";
-const NPM_PACKAGE_ROOT_ENV: &str = "CODEXHOST_NPM_PACKAGE_ROOT";
-const REMOTE_LISTENER_CHILD_ENV: &str = "CODEXHOST_REMOTE_LISTENER_CHILD";
+pub const HOST_NODE_PATH_ENV: &str = "CLAUDE_IN_CODEX_HOST_NODE_PATH";
+pub const HOST_RUNTIME_PATH_ENV: &str = "CLAUDE_IN_CODEX_HOST_RUNTIME_PATH";
+pub const REMOTE_SSH_MANAGED_ENV: &str = "CLAUDE_IN_CODEX_REMOTE_SSH_MANAGED";
+const REMOTE_LISTENER_CHILD_ENV: &str = "CLAUDE_IN_CODEX_REMOTE_LISTENER_CHILD";
 const INTERNAL_ORIGINATOR_OVERRIDE_ENV: &str = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE";
 const DESKTOP_ORIGINATOR: &str = "Codex Desktop";
 
@@ -129,7 +117,6 @@ struct ChildOutcome {
     forwarded_signal: Option<i32>,
     forced: bool,
     terminated_descendants: bool,
-    desktop_input_closed: bool,
 }
 
 #[cfg(target_os = "macos")]
@@ -151,9 +138,8 @@ fn process_tree_refresh_due(
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn wait_for_child(
-    child: &mut codexhost_platform::SupervisedChild,
+    child: &mut claude_in_codex_platform::SupervisedChild,
     signals: &ShutdownSignals,
-    desktop_input: Option<&std::sync::mpsc::Receiver<io::Result<u64>>>,
 ) -> ShimResult<ChildOutcome> {
     const POLL_INTERVAL: Duration = Duration::from_millis(20);
     const TERMINATION_GRACE: Duration = Duration::from_secs(2);
@@ -163,7 +149,6 @@ fn wait_for_child(
     let mut deadline = None;
     let mut forced = false;
     let mut terminated_descendants = false;
-    let mut desktop_input_closed = false;
     let mut last_process_tree_refresh = None;
     loop {
         if root_status.is_none() {
@@ -180,7 +165,7 @@ fn wait_for_child(
         let has_live_processes = if refresh_process_tree {
             let has_live_processes = child.has_live_processes()?;
             #[cfg(all(target_os = "macos", feature = "test-utils"))]
-            if let Some(path) = env::var_os("CODEXHOST_TEST_PROCESS_OBSERVATIONS") {
+            if let Some(path) = env::var_os("CLAUDE_IN_CODEX_TEST_PROCESS_OBSERVATIONS") {
                 // The stderr pump holds its output lock for the child's lifetime.
                 // Use a test-only file to acknowledge completed observations.
                 std::fs::OpenOptions::new()
@@ -202,17 +187,9 @@ fn wait_for_child(
                 forwarded_signal,
                 forced,
                 terminated_descendants,
-                desktop_input_closed,
             });
         }
-        if !desktop_input_closed
-            && root_status.is_none()
-            && desktop_input.is_some_and(|input| input.try_recv().is_ok())
-        {
-            child.terminate()?;
-            desktop_input_closed = true;
-            deadline = Some(Instant::now() + TERMINATION_GRACE);
-        } else if let Some(signal) = signals.pending().filter(|_| forwarded_signal.is_none()) {
+        if let Some(signal) = signals.pending().filter(|_| forwarded_signal.is_none()) {
             child.forward_signal(signal)?;
             forwarded_signal = Some(signal);
             deadline = Some(Instant::now() + TERMINATION_GRACE);
@@ -293,7 +270,7 @@ pub fn app_server_subcommand_index(arguments: &[OsString]) -> Option<usize> {
 /// Returns whether the app-server invocation belongs to the Skysight memory summarizer.
 ///
 /// Skysight starts a short-lived stock Codex app-server with the dedicated `openai-memgen`
-/// provider. That auxiliary server must not be replaced by the long-lived codexhost Host Runtime.
+/// provider. That auxiliary server must not be replaced by the long-lived claude-in-codex Host Runtime.
 #[must_use]
 fn is_skysight_memory_app_server(arguments: &[OsString]) -> bool {
     const CONFIG_OPTIONS: &[&str] = &["-c", "--config"];
@@ -542,21 +519,13 @@ fn launch_detached_remote_listener(arguments: &[OsString]) -> ShimResult<i32> {
         let stock_codex_path = env::var_os(STOCK_CODEX_PATH_ENV)
             .map(PathBuf::from)
             .ok_or_else(|| format!("{STOCK_CODEX_PATH_ENV} is required"))?;
-        let launcher_managed = env::var_os(LAUNCHER_PID_ENV).is_some();
-        let (node_path, host_runtime_path) = select_host_paths(
-            env::var_os(HOST_NODE_PATH_ENV),
-            env::var_os(HOST_RUNTIME_PATH_ENV),
-            launcher_managed,
-            env::var_os(NPM_NODE_PATH_ENV),
-            env::var_os(NPM_PACKAGE_ROOT_ENV),
-        );
-        let node_path = node_path.as_deref().map(Path::new);
-        let host_runtime_path = host_runtime_path.as_deref().map(Path::new);
+        let node_path = env::var_os(HOST_NODE_PATH_ENV).map(PathBuf::from);
+        let host_runtime_path = env::var_os(HOST_RUNTIME_PATH_ENV).map(PathBuf::from);
         if remote_lifecycle::existing_listener_is_reusable(
             &socket_path,
             &stock_codex_path,
-            node_path,
-            host_runtime_path,
+            node_path.as_deref(),
+            host_runtime_path.as_deref(),
         )? {
             UnixStream::connect(&socket_path).map_err(|error| {
                 format!(
@@ -607,80 +576,53 @@ fn launch_detached_remote_listener(arguments: &[OsString]) -> ShimResult<i32> {
     }
 }
 
-fn select_host_paths(
-    configured_node: Option<OsString>,
-    configured_runtime: Option<OsString>,
-    launcher_managed: bool,
-    npm_node: Option<OsString>,
-    npm_package_root: Option<OsString>,
-) -> (Option<OsString>, Option<OsString>) {
-    if launcher_managed && let (Some(node), Some(package_root)) = (npm_node, npm_package_root) {
-        return (
-            Some(node),
-            Some(
-                PathBuf::from(package_root)
-                    .join("app")
-                    .join("host-runtime.mjs")
-                    .into_os_string(),
-            ),
-        );
-    }
-    (configured_node, configured_runtime)
-}
-
+/// Returns whether this invocation is the SSH-managed remote listener that the Host Runtime owns.
+///
+/// Every other invocation, including a stdio `app-server` started under the remote SSH profile,
+/// passes through to the stock Codex CLI unchanged.
 #[must_use]
-fn is_managed_remote_listener(arguments: &[OsString]) -> bool {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+fn routes_to_host_runtime(
+    arguments: &[OsString],
+    remote_ssh_managed: bool,
+    internal_originator: Option<&OsStr>,
+) -> bool {
+    #[cfg(any(target_os = "macos", target_os = "linux", test))]
     {
-        env::var_os(REMOTE_SSH_MANAGED_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
+        remote_ssh_managed
             && is_default_remote_unix_listener(arguments)
+            && should_start_host_runtime_for_originator(arguments, internal_originator)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", test)))]
     {
-        let _ = arguments;
+        let _ = (arguments, remote_ssh_managed, internal_originator);
         false
     }
 }
 
-#[must_use]
-fn host_runtime_paths_are_configured() -> bool {
-    let launcher_managed = env::var_os(LAUNCHER_PID_ENV).is_some();
-    matches!(
-        select_host_paths(
-            env::var_os(HOST_NODE_PATH_ENV),
-            env::var_os(HOST_RUNTIME_PATH_ENV),
-            launcher_managed,
-            env::var_os(NPM_NODE_PATH_ENV),
-            env::var_os(NPM_PACKAGE_ROOT_ENV),
-        ),
-        (Some(_), Some(_))
-    )
+fn remote_ssh_managed() -> bool {
+    env::var_os(REMOTE_SSH_MANAGED_ENV).as_deref() == Some(OsStr::new("1"))
 }
 
 fn child_command(
     arguments: &[OsString],
     current_executable: &Path,
     stock_codex_path: &Path,
-    desktop_helper: bool,
 ) -> ShimResult<Command> {
-    let launcher_managed = env::var_os(LAUNCHER_PID_ENV).is_some();
-    let inherited_remote_profile = launcher_managed
-        && env::var_os(REMOTE_SSH_MANAGED_ENV).as_deref() == Some(std::ffi::OsStr::new("1"));
-    let host_paths = select_host_paths(
-        env::var_os(HOST_NODE_PATH_ENV),
-        env::var_os(HOST_RUNTIME_PATH_ENV),
-        launcher_managed,
-        env::var_os(NPM_NODE_PATH_ENV),
-        env::var_os(NPM_PACKAGE_ROOT_ENV),
-    );
-    let remote_proxy_environment =
-        if env::var_os(REMOTE_SSH_MANAGED_ENV).as_deref() == Some(std::ffi::OsStr::new("1")) {
-            proxy_environment()
-        } else {
-            Vec::new()
-        };
-    if !desktop_helper && should_start_host_runtime(arguments) {
-        match host_paths {
+    let remote_ssh_managed = remote_ssh_managed();
+    let remote_proxy_environment = if remote_ssh_managed {
+        proxy_environment()
+    } else {
+        Vec::new()
+    };
+    if routes_to_host_runtime(
+        arguments,
+        remote_ssh_managed,
+        env::var_os(INTERNAL_ORIGINATOR_OVERRIDE_ENV).as_deref(),
+    ) {
+        match (
+            env::var_os(HOST_NODE_PATH_ENV),
+            env::var_os(HOST_RUNTIME_PATH_ENV),
+        ) {
             (Some(node_path), Some(runtime_path)) => {
                 let node_path =
                     validate_proxy_target(current_executable, &PathBuf::from(node_path))?;
@@ -695,9 +637,6 @@ fn child_command(
                     .env_remove(CODEX_CLI_PATH_ENV)
                     .env_remove(REMOTE_SSH_MANAGED_ENV)
                     .env_remove(REMOTE_LISTENER_CHILD_ENV);
-                if inherited_remote_profile {
-                    command.env_remove(DATA_DIRECTORY_ENV);
-                }
                 command.envs(remote_proxy_environment);
                 configure_background_command(&mut command);
                 return Ok(command);
@@ -713,16 +652,6 @@ fn child_command(
     }
 
     let mut command = Command::new(stock_codex_path);
-    if desktop_helper {
-        // Do not pass launcher/runtime credentials or npm routing back into the
-        // stock helper's descendants. The official CLI still performs policy,
-        // authentication, and tool approvals using its normal configuration.
-        for (name, _) in env::vars_os() {
-            if name.to_string_lossy().starts_with("CODEXHOST_") {
-                command.env_remove(name);
-            }
-        }
-    }
     command
         .args(arguments)
         .env_remove(CODEX_CLI_PATH_ENV)
@@ -735,51 +664,12 @@ fn child_command(
     Ok(command)
 }
 
-/// Resolve the official CLI for both the launcher-managed process tree and
-/// Desktop helpers that persist only the standard `CODEX_CLI_PATH`
-/// override.
-///
-/// The launcher-provided path remains authoritative. Discovery requires the
-/// exact self override, except for macOS node_repl's top-level `sandbox` call:
-/// it resolves the executable before clearing both CLI overrides from the child.
-fn resolve_stock_codex_path(
-    current_executable: &Path,
-    arguments: &[OsString],
-) -> ShimResult<PathBuf> {
-    #[cfg(not(target_os = "macos"))]
-    let _ = arguments;
-    let stock_codex_path = match env::var_os(STOCK_CODEX_PATH_ENV) {
-        Some(configured) => PathBuf::from(configured),
-        None => {
-            #[cfg(not(target_os = "macos"))]
-            return Err(format!("{STOCK_CODEX_PATH_ENV} is required").into());
-
-            #[cfg(target_os = "macos")]
-            {
-                if let Some(cli_override) = env::var_os(CODEX_CLI_PATH_ENV) {
-                    let cli_override = canonical_existing_file(&PathBuf::from(cli_override))?;
-                    let current_executable = canonical_existing_file(current_executable)?;
-                    if cli_override != current_executable {
-                        return Err(format!(
-                            "{STOCK_CODEX_PATH_ENV} is required when {CODEX_CLI_PATH_ENV} does not identify the running Shim"
-                        )
-                        .into());
-                    }
-                } else if !cfg!(target_os = "macos")
-                    || arguments
-                        .first()
-                        .is_none_or(|argument| argument != "sandbox")
-                {
-                    return Err(format!("{STOCK_CODEX_PATH_ENV} is required").into());
-                }
-                discover_desktop_managed_codex_cli().map_err(|error| {
-                    format!(
-                        "{STOCK_CODEX_PATH_ENV} is unavailable and the Desktop-managed official Codex CLI could not be discovered: {error}"
-                    )
-                })?
-            }
-        }
-    };
+/// Resolve the official CLI from the explicit `CLAUDE_IN_CODEX_STOCK_CODEX_PATH` that the remote
+/// profile exports. The Shim never guesses an official CLI from `PATH` or `CODEX_CLI_PATH`.
+fn resolve_stock_codex_path(current_executable: &Path) -> ShimResult<PathBuf> {
+    let stock_codex_path = env::var_os(STOCK_CODEX_PATH_ENV)
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("{STOCK_CODEX_PATH_ENV} is required"))?;
     Ok(validate_proxy_target(
         current_executable,
         &stock_codex_path,
@@ -792,52 +682,18 @@ pub fn run_proxy_with_observer(
     observer: &impl ProxyObserver,
 ) -> ShimResult<i32> {
     let current_executable = env::current_exe()?;
-    let stock_codex_path = resolve_stock_codex_path(&current_executable, arguments)?;
+    let stock_codex_path = resolve_stock_codex_path(&current_executable)?;
     observer.invocation(arguments, &stock_codex_path);
 
     let started = Instant::now();
-    let desktop_helper = desktop_invocation::is_desktop_helper(&stock_codex_path);
-    let local_host_runtime = !desktop_helper
-        && should_start_host_runtime(arguments)
-        && host_runtime_paths_are_configured()
-        && !is_managed_remote_listener(arguments)
-        && env::var_os(DATA_DIRECTORY_ENV).is_some();
-    #[cfg(target_os = "macos")]
-    // Default on macOS: the signed official CLI must own its native MCP children, otherwise the
-    // peer code-signing check rejects codex_app and cua_repl. `=0` restores the proxy topology.
-    if local_host_runtime
-        && env::var_os("CODEXHOST_NATIVE_APP_TOOLS").as_deref() != Some(OsStr::new("0"))
-    {
-        let command = child_command(arguments, &current_executable, &stock_codex_path, false)?;
-        return desktop_native_parent::run(command, &stock_codex_path);
-    }
     let shutdown_signals = ShutdownSignals::install()?;
-    let mut local_runtime_lease = if local_host_runtime {
-        Some(LocalRuntimeLease::acquire(&PathBuf::from(
-            env::var_os(DATA_DIRECTORY_ENV).ok_or("CODEXHOST_DATA_DIR is unavailable")?,
-        ))?)
-    } else {
-        None
-    };
-    let mut command = child_command(
-        arguments,
-        &current_executable,
-        &stock_codex_path,
-        desktop_helper,
-    )?;
+    let mut command = child_command(arguments, &current_executable, &stock_codex_path)?;
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = spawn_supervised(&mut command)?;
     let child_id = child.id();
-    if let Some(lease) = &mut local_runtime_lease
-        && let Err(error) = lease.set_child_process_id(child_id)
-    {
-        let _ = child.force_terminate();
-        let _ = child.wait();
-        return Err(error);
-    }
 
     let child_stdin = child
         .take_stdin()
@@ -849,18 +705,11 @@ pub fn run_proxy_with_observer(
         .take_stderr()
         .ok_or("official CLI stderr is unavailable")?;
 
-    let (stdin_sender, stdin_receiver) = std::sync::mpsc::sync_channel(1);
-    let _stdin_pump = thread::spawn(move || {
-        let _ = stdin_sender.send(copy_stream(io::stdin().lock(), child_stdin));
-    });
+    let _stdin_pump = thread::spawn(move || copy_stream(io::stdin().lock(), child_stdin));
     let stdout_pump = thread::spawn(move || copy_stream(child_stdout, io::stdout().lock()));
     let stderr_pump = thread::spawn(move || copy_stream(child_stderr, io::stderr().lock()));
 
-    let outcome = wait_for_child(
-        &mut child,
-        &shutdown_signals,
-        local_host_runtime.then_some(&stdin_receiver),
-    )?;
+    let outcome = wait_for_child(&mut child, &shutdown_signals)?;
     stdout_pump
         .join()
         .map_err(|_| "official CLI stdout pump panicked")??;
@@ -870,25 +719,20 @@ pub fn run_proxy_with_observer(
     observer.exit(child_id, &outcome.status, started.elapsed());
 
     if let Some(signal) = outcome.forwarded_signal {
-        eprintln!("codexhost shim: forwarded shutdown signal {signal}");
+        eprintln!("claude-in-codex shim: forwarded shutdown signal {signal}");
     }
     if outcome.terminated_descendants {
-        eprintln!("codexhost shim: terminated official CLI descendants after root exit");
-    }
-    if outcome.desktop_input_closed {
-        eprintln!("codexhost shim: closed the local Host Runtime after Desktop stdin EOF");
+        eprintln!("claude-in-codex shim: terminated official CLI descendants after root exit");
     }
     if outcome.forced {
-        eprintln!("codexhost shim: forced official CLI process-group termination after timeout");
+        eprintln!(
+            "claude-in-codex shim: forced official CLI process-group termination after timeout"
+        );
     }
     if let Some(signal) = exit_signal(&outcome.status) {
-        eprintln!("codexhost shim: official CLI terminated by signal {signal}");
+        eprintln!("claude-in-codex shim: official CLI terminated by signal {signal}");
     }
-    Ok(if outcome.desktop_input_closed {
-        0
-    } else {
-        outcome.status.code().unwrap_or(1)
-    })
+    Ok(outcome.status.code().unwrap_or(1))
 }
 
 pub fn run_proxy(arguments: &[OsString]) -> ShimResult<i32> {
@@ -897,9 +741,17 @@ pub fn run_proxy(arguments: &[OsString]) -> ShimResult<i32> {
 
 pub fn run_from_environment() -> ShimResult<i32> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments.first().and_then(|argument| argument.to_str()) == Some(broker_cli::BROKER_COMMAND)
+    {
+        let broker_arguments = arguments[1..]
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        return broker_cli::run_broker_cli(&broker_arguments);
+    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     if arguments.first().and_then(|argument| argument.to_str())
-        == Some("--codexhost-remote-terminate")
+        == Some("--claude-in-codex-remote-terminate")
     {
         let lifecycle_arguments = arguments[1..]
             .iter()
@@ -908,9 +760,7 @@ pub fn run_from_environment() -> ShimResult<i32> {
         return remote_lifecycle::run_terminate(&lifecycle_arguments);
     }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    if env::var_os(REMOTE_SSH_MANAGED_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
-        && is_default_remote_unix_listener(&arguments)
-    {
+    if remote_ssh_managed() && is_default_remote_unix_listener(&arguments) {
         if env::var_os(REMOTE_LISTENER_CHILD_ENV).as_deref() == Some(std::ffi::OsStr::new("1")) {
             detach_remote_listener_session()?;
         } else {
@@ -930,7 +780,7 @@ mod tests {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::{PROCESS_TREE_REFRESH_INTERVAL, ShutdownSignals, process_tree_refresh_due};
     use super::{
-        app_server_subcommand_index, is_default_remote_unix_listener, select_host_paths,
+        app_server_subcommand_index, is_default_remote_unix_listener, routes_to_host_runtime,
         should_start_host_runtime, should_start_host_runtime_for_originator,
     };
 
@@ -1067,25 +917,24 @@ mod tests {
     }
 
     #[test]
-    fn local_launcher_paths_win_over_remote_profile_bootstrap_paths() {
-        let selected = select_host_paths(
-            Some(OsString::from("/remote/node")),
-            Some(OsString::from("/remote/runtime/host-runtime.mjs")),
+    fn starts_host_runtime_only_for_the_ssh_managed_remote_listener() {
+        let listener = arguments(&["app-server", "--listen", "unix://"]);
+        assert!(routes_to_host_runtime(&listener, true, None));
+        assert!(!routes_to_host_runtime(&listener, false, None));
+        assert!(!routes_to_host_runtime(
+            &listener,
             true,
-            Some(OsString::from("/local/node")),
-            Some(OsString::from("/local/npm-package")),
-        );
-
-        assert_eq!(selected.0, Some(OsString::from("/local/node")));
-        assert_eq!(
-            selected.1,
-            Some(
-                std::path::PathBuf::from("/local/npm-package")
-                    .join("app")
-                    .join("host-runtime.mjs")
-                    .into_os_string()
-            )
-        );
+            Some(std::ffi::OsStr::new("skysight")),
+        ));
+        for stock in [
+            arguments(&["app-server"]),
+            arguments(&["app-server", "--stdio"]),
+            arguments(&["app-server", "--listen", "unix:///tmp/custom.sock"]),
+            arguments(&["app-server", "proxy"]),
+            arguments(&["exec", "prompt"]),
+        ] {
+            assert!(!routes_to_host_runtime(&stock, true, None), "{stock:?}");
+        }
     }
 
     #[test]
@@ -1175,8 +1024,8 @@ mod tests {
 
         let signals = ShutdownSignals::install().expect("install shutdown signals");
         let mut command = Command::new("/usr/bin/true");
-        let mut child =
-            codexhost_platform::spawn_supervised(&mut command).expect("spawn supervised child");
+        let mut child = claude_in_codex_platform::spawn_supervised(&mut command)
+            .expect("spawn supervised child");
         let _ = child.wait().expect("wait for child");
         observe_sigterm(&signals);
     }
@@ -1189,8 +1038,8 @@ mod tests {
         let signals = ShutdownSignals::install().expect("install shutdown signals");
         let mut command = Command::new("/bin/sleep");
         command.arg("30");
-        let mut child =
-            codexhost_platform::spawn_supervised(&mut command).expect("spawn supervised child");
+        let mut child = claude_in_codex_platform::spawn_supervised(&mut command)
+            .expect("spawn supervised child");
         observe_sigterm(&signals);
         child.force_terminate().expect("terminate child");
         let _ = child.wait().expect("wait for child");

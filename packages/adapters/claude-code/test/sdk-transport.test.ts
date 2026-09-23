@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 import type { PermissionUpdate, Query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { harnessThinkingOptionIdSchema } from "@codexhost/shared-contracts";
+import { harnessThinkingOptionIdSchema } from "@claude-in-codex/shared-contracts";
 
 import {
   allowsDangerouslySkipPermissions,
@@ -1026,15 +1026,15 @@ describe("ClaudeSdkTransport autonomous task continuation", () => {
 });
 
 describe("ClaudeSdkTransport process environment", () => {
-  it("attributes persisted sessions to the CodexHost SDK entrypoint", async () => {
+  it("attributes persisted sessions to the ClaudeInCodex SDK entrypoint", async () => {
     const value = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
       CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
     });
 
     await value.transport.start();
     expect(options(value).env).toMatchObject({
-      CLAUDE_CODE_ENTRYPOINT: "codexhost-sdk",
-      CLAUDE_AGENT_SDK_CLIENT_APP: "codexhost-claude-code-adapter/0.0.0",
+      CLAUDE_CODE_ENTRYPOINT: "claude-in-codex-sdk",
+      CLAUDE_AGENT_SDK_CLIENT_APP: "claude-in-codex-claude-code-adapter/0.0.0",
     });
     await value.transport.close();
   });
@@ -1178,7 +1178,9 @@ describe("ClaudeSdkTransport Model control", () => {
   it("detects Model selection without probing Context Usage", async () => {
     const value = fixture();
     value.fakeQuery.getContextUsage.mockRejectedValueOnce(new Error("must not be called"));
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-inspect-"));
+    const configDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "claude-in-codex-claude-inspect-"),
+    );
     try {
       const inspector = new ClaudeSdkModelInspector({
         command: process.execPath,
@@ -1197,7 +1199,9 @@ describe("ClaudeSdkTransport Model control", () => {
 
   it("inspects initialization Models with persistence disabled", async () => {
     const value = fixture();
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-inspect-"));
+    const configDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "claude-in-codex-claude-inspect-"),
+    );
     const inspector = new ClaudeSdkModelInspector({
       command: process.execPath,
       environment: { CLAUDE_CONFIG_DIR: configDirectory, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
@@ -1260,7 +1264,7 @@ describe("ClaudeSdkTransport Model control", () => {
         },
       ],
     });
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-picker-"));
+    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-picker-"));
     try {
       await writeFile(
         path.join(configDirectory, "settings.json"),
@@ -1494,7 +1498,7 @@ describe("ClaudeSdkTransport Question callbacks", () => {
     expect(queryOptions).not.toHaveProperty("tools");
     expect(queryOptions.onUserDialog).toBeUndefined();
     expect(queryOptions.onElicitation).toBeTypeOf("function");
-    expect(queryOptions.env?.CODEXHOST_MCP_ELICITATION).toBe("1");
+    expect(queryOptions.env?.CLAUDE_IN_CODEX_MCP_ELICITATION).toBe("1");
     const canUseTool = queryOptions.canUseTool;
     if (!canUseTool) throw new Error("SDK canUseTool callback was not configured");
 
@@ -2718,7 +2722,7 @@ describe("Claude SDK official Desktop MCP", () => {
   it.each(["create", "resume"] as const)(
     "appends the Codex memory summary to the preset system prompt (%s)",
     async (mode) => {
-      const codexHome = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-memory-"));
+      const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-memory-"));
       await mkdir(path.join(codexHome, "memories"), { recursive: true });
       await writeFile(
         path.join(codexHome, "memories", "memory_summary.md"),
@@ -2744,7 +2748,7 @@ describe("Claude SDK official Desktop MCP", () => {
   );
 
   it("always requests the Claude Code preset system prompt, without an append when no summary exists", async () => {
-    const codexHome = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-no-memory-"));
+    const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-no-memory-"));
     try {
       const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
         CODEX_HOME: codexHome,

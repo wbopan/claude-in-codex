@@ -5,18 +5,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { withUserShellEnvironment } from "../src/user-shell-environment.js";
 
-const marker = "startup output\0CODEXHOST_USER_SHELL_ENV_V1\0";
+const marker = "startup output\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\0";
 
 describe("User shell environment", () => {
   it.skipIf(process.platform === "win32")(
     "keeps the event loop responsive while a shell starts",
     async () => {
-      const directory = await mkdtemp(path.join(tmpdir(), "codexhost-shell-async-"));
+      const directory = await mkdtemp(path.join(tmpdir(), "claude-in-codex-shell-async-"));
       try {
         const shell = path.join(directory, "zsh");
         await writeFile(
           shell,
-          "#!/bin/sh\n/bin/sleep 0.2\nprintf '\\0CODEXHOST_USER_SHELL_ENV_V1\\0FROM_SHELL=yes\\0'\n",
+          "#!/bin/sh\n/bin/sleep 0.2\nprintf '\\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\\0FROM_SHELL=yes\\0'\n",
           { mode: 0o700 },
         );
         let settled = false;

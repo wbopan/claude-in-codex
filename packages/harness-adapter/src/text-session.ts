@@ -16,7 +16,7 @@ import type {
   NativeCheckpointRef,
   NativeSessionRef,
   NativeTurnRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import type { HostUsage } from "./usage.js";
 import type { HarnessClientTools } from "./client-tools.js";
@@ -32,7 +32,7 @@ export type {
   HarnessSessionCapabilities,
   HarnessThinkingOption,
   HarnessThinkingOptionId,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 export type HarnessErrorCode =
   | "notInstalled"

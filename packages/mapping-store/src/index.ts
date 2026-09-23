@@ -1,6 +1,6 @@
-import { WORKSPACE_CONTRACT_VERSION } from "@codexhost/shared-contracts";
+import { WORKSPACE_CONTRACT_VERSION } from "@claude-in-codex/shared-contracts";
 
-export { MappingStore, MappingStoreError } from "./mapping-store.js";
+export { MappingStore, MappingStoreError, mappingStoreOwnerIsLive } from "./mapping-store.js";
 export type { MappingStoreErrorCode, MappingStoreOptions } from "./mapping-store.js";
 export {
   delegationStatusSchema,
@@ -23,6 +23,6 @@ export type {
 } from "./records.js";
 
 export const packageMetadata = {
-  name: "@codexhost/mapping-store",
+  name: "@claude-in-codex/mapping-store",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, renameSync } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +10,7 @@ import {
   nativeSessionRefSchema,
   type HarnessConfigurationState,
   type NativeSessionRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 const reservationSchema = z.strictObject({
   version: z.literal(1),
@@ -27,11 +28,19 @@ export class ClaudePendingSessions {
   readonly #directory: string;
 
   constructor(environment: NodeJS.ProcessEnv) {
-    this.#directory = path.join(
-      path.resolve(environment.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude")),
-      "codexhost",
-      "pending-sessions",
+    const configDirectory = path.resolve(
+      environment.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
     );
+    this.#directory = path.join(configDirectory, "claude-in-codex", "pending-sessions");
+    // Reservations made before the rename live under the legacy folder name; adopt them once.
+    const legacy = path.join(configDirectory, "codexhost");
+    if (existsSync(legacy) && !existsSync(path.dirname(this.#directory))) {
+      try {
+        renameSync(legacy, path.dirname(this.#directory));
+      } catch {
+        // Another Host adopted it first, or the folder is unreadable; new reservations still work.
+      }
+    }
   }
 
   #path(ref: NativeSessionRef, cwd: string): string {

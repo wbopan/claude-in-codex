@@ -37,7 +37,7 @@ describe("Desktop initialization without native admission", () => {
     try {
       await expect(client.initializeProtocol(params)).resolves.toEqual({
         result: {
-          userAgent: "codexhost",
+          userAgent: "claude-in-codex",
           codexHome: "/synthetic/home",
           platformFamily: process.platform === "win32" ? "windows" : "unix",
           platformOs:

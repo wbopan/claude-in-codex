@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { harnessModelCatalogSchema } from "@codexhost/shared-contracts";
+import { harnessModelCatalogSchema } from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -36,7 +36,7 @@ const catalog = harnessModelCatalogSchema.parse({
   ],
   defaultThinkingOptionId: "auto",
 });
-const route = "codexhost/claude-code-native@opus";
+const route = "claude-in-codex/claude-code-native@opus";
 const edit = (keyPath: string, value: unknown) => ({ keyPath, value, mergeStrategy: "replace" });
 
 describe("native Model picker projection", () => {
@@ -44,7 +44,7 @@ describe("native Model picker projection", () => {
     const [opus, haiku] = projectNativeModels({
       harnessName: "Claude",
       catalog,
-      routeId: (model) => `codexhost/claude-code-native@${model.ref.id}`,
+      routeId: (model) => `claude-in-codex/claude-code-native@${model.ref.id}`,
     });
     expect(opus).toMatchObject({
       id: route,
@@ -105,7 +105,7 @@ describe("native Model picker projection", () => {
         thinkingOptions: [{ id: "auto", label: "Auto" }],
         defaultThinkingOptionId: "auto",
       }),
-      routeId: (model) => `codexhost/claude-code-native@${model.ref.id}`,
+      routeId: (model) => `claude-in-codex/claude-code-native@${model.ref.id}`,
     });
     expect(entries.map((entry) => entry.displayName)).toEqual([
       "Default (Opus 5)",
@@ -126,7 +126,7 @@ describe("native Model picker projection", () => {
           thinkingOptions: [{ id: "auto", label: "Auto" }],
           defaultThinkingOptionId: "auto",
         }),
-        routeId: (model) => `codexhost/claude-code-native@${model.ref.id}`,
+        routeId: (model) => `claude-in-codex/claude-code-native@${model.ref.id}`,
       }).map((entry) => entry.displayName);
     expect(names(["Default (recommended)", "Opus (1M context)", "Sonnet", "Haiku"])).toEqual([
       "Default",

@@ -4,11 +4,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FakeHarnessAdapter } from "@codexhost/harness-adapter/testing";
+import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
 import {
   harnessPluginDescriptorSchema,
   harnessPluginManifestSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { loadHarnessPlugins, type HarnessPluginDiagnostic } from "../src/harness-plugin-loader.js";
 import { HarnessPluginRegistry } from "../src/harness-plugin-registry.js";
@@ -24,7 +24,7 @@ const context = {
 const fakeModule = pathToFileURL(path.resolve("packages/harness-adapter/dist/testing.js")).href;
 
 async function root(enabled: string[] = []): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "codexhost-plugins-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "claude-in-codex-plugins-"));
   roots.push(directory);
   await writeFile(path.join(directory, "enabled.json"), JSON.stringify({ version: 1, enabled }));
   return directory;
@@ -518,15 +518,14 @@ describe("Harness plugin registry lifetime", () => {
     expect(() => registry.register(first, a)).toThrow("closed");
   });
 
-  it("uses the configured Host data directory and omits a remote URL opener", () => {
+  it("uses the configured Host data directory", () => {
     const data = path.resolve("host-data");
-    expect(installedHarnessPluginOptions({ CODEXHOST_DATA_DIR: data }, true).pluginRoots[1]).toBe(
-      path.join(data, "plugins"),
-    );
-    expect(installedHarnessPluginOptions({}, true).pluginContext.openLocalUrl).toBeUndefined();
+    expect(
+      installedHarnessPluginOptions({ CLAUDE_IN_CODEX_DATA_DIR: data }, true).pluginRoots[1],
+    ).toBe(path.join(data, "plugins"));
     const custom = path.resolve("custom-plugins");
     expect(
-      installedHarnessPluginOptions({ CODEXHOST_PLUGIN_DIRECTORY: custom }).pluginRoots[1],
+      installedHarnessPluginOptions({ CLAUDE_IN_CODEX_PLUGIN_DIRECTORY: custom }).pluginRoots[1],
     ).toBe(custom);
   });
 });

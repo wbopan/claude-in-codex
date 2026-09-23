@@ -1,11 +1,11 @@
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
-import { decodeThreadListRequest, type JsonObject } from "@codexhost/protocol-core";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
+import { decodeThreadListRequest, type JsonObject } from "@claude-in-codex/protocol-core";
 import {
   harnessIdSchema,
   hostThreadIdSchema,
   hostTurnIdSchema,
   nativeSessionRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,7 +14,7 @@ import {
   resolveExternalSessionTreeIds,
 } from "../src/external-thread-list.js";
 
-import { transportModelIdForHarness } from "@codexhost/protocol-core";
+import { transportModelIdForHarness } from "@claude-in-codex/protocol-core";
 
 const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
 
@@ -131,7 +131,7 @@ describe("External Thread metadata catalog", () => {
     expect(
       listExternalThreadMetadata({
         records: [active, archived],
-        query: query({ searchTerm: "needle", modelProviders: ["codexhost"] }),
+        query: query({ searchTerm: "needle", modelProviders: ["claude-in-codex"] }),
         runtimeFor: () => null,
       }).data.map((entry) => entry.thread.id),
     ).toEqual(["active"]);

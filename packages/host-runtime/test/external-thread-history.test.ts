@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { JsonObject } from "@codexhost/protocol-core";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 
 import {
   ExternalHistoryRequestError,

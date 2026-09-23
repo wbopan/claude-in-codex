@@ -1,5 +1,5 @@
-import type { HostUsage } from "@codexhost/harness-adapter";
-import type { HostTurnId, JsonObject } from "@codexhost/shared-contracts";
+import type { HostUsage } from "@claude-in-codex/harness-adapter";
+import type { HostTurnId, JsonObject } from "@claude-in-codex/shared-contracts";
 
 export interface CodexThreadUsageProjectionInput {
   threadId: string;

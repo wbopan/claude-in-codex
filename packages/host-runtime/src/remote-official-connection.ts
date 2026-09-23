@@ -81,7 +81,7 @@ export async function createRemoteOfficialAppServerConnection(
 
   const fail = (error: Error): void => {
     if (settled) return;
-    stderr.write(`codexhost shared official connection: ${describeError(error)}\n`);
+    stderr.write(`claude-in-codex shared official connection: ${describeError(error)}\n`);
     if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
       socket.terminate();
     }
@@ -130,7 +130,8 @@ export async function createRemoteOfficialAppServerConnection(
     },
   });
   stdin.on("error", (error) => {
-    if (!settled) stderr.write(`codexhost shared official connection: ${describeError(error)}\n`);
+    if (!settled)
+      stderr.write(`claude-in-codex shared official connection: ${describeError(error)}\n`);
   });
 
   const opened = new Promise<void>((resolve, reject) => {
@@ -161,7 +162,8 @@ export async function createRemoteOfficialAppServerConnection(
     }
   });
   socket.on("error", (error) => {
-    if (!settled) stderr.write(`codexhost shared official connection: ${describeError(error)}\n`);
+    if (!settled)
+      stderr.write(`claude-in-codex shared official connection: ${describeError(error)}\n`);
   });
   socket.once("close", (code, reason) => {
     const normal = code === 1000 || closeRequested;

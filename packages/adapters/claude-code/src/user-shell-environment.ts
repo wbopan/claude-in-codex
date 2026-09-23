@@ -1,8 +1,8 @@
 import path from "node:path";
 import { execFile } from "node:child_process";
 
-const ENVIRONMENT_MARKER = Buffer.from("\0CODEXHOST_USER_SHELL_ENV_V1\0");
-const ENVIRONMENT_COMMAND = "printf '\\0CODEXHOST_USER_SHELL_ENV_V1\\0'; /usr/bin/env -0";
+const ENVIRONMENT_MARKER = Buffer.from("\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\0");
+const ENVIRONMENT_COMMAND = "printf '\\0CLAUDE_IN_CODEX_USER_SHELL_ENV_V1\\0'; /usr/bin/env -0";
 const SHELL_ENVIRONMENT_TIMEOUT_MS = 3_000;
 const SHELL_ENVIRONMENT_MAX_BYTES = 2 * 1024 * 1024;
 const SUPPORTED_SHELLS = new Set(["bash", "fish", "zsh"]);

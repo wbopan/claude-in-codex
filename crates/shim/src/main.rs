@@ -3,10 +3,10 @@
 use std::process;
 
 fn main() {
-    let exit_code = match codexhost_shim::run_from_environment() {
+    let exit_code = match claude_in_codex_shim::run_from_environment() {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("codexhost shim: {error}");
+            eprintln!("claude-in-codex shim: {error}");
             1
         }
     };

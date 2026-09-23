@@ -8,8 +8,8 @@ import type {
   HostThreadSnapshot,
   HostUsage,
   TurnCompletedEvent,
-} from "@codexhost/harness-adapter";
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
+} from "@claude-in-codex/harness-adapter";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import {
   decodeExternalTransportSelection,
   encodeExternalTransportSelection,
@@ -20,8 +20,8 @@ import {
   type ExternalThreadRpcError,
   type JsonObject,
   type JsonValue,
-} from "@codexhost/protocol-core";
-import { HarnessOutputChannel } from "@codexhost/harness-adapter";
+} from "@claude-in-codex/protocol-core";
+import { HarnessOutputChannel } from "@claude-in-codex/harness-adapter";
 import {
   permissionModeFixedAtCreate,
   type HarnessId,
@@ -30,7 +30,7 @@ import {
   type HostInteractionId,
   type HostTurnId,
   type NativeSessionRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import {
   externalThreadValue,

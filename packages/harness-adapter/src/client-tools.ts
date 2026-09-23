@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "@codexhost/shared-contracts";
+import type { JsonObject, JsonValue } from "@claude-in-codex/shared-contracts";
 
 /** Client-owned MCP definitions and execution. The Harness retains its native tool permissions. */
 export interface HarnessClientTool {

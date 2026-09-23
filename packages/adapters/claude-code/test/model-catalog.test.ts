@@ -333,7 +333,9 @@ describe("Claude Code modelPicker.settings merge", () => {
   });
 
   it("reads user settings through CLAUDE_CONFIG_DIR and ignores malformed files", async () => {
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "codexhost-claude-settings-"));
+    const configDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "claude-in-codex-claude-settings-"),
+    );
     try {
       expect(
         await readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory }),

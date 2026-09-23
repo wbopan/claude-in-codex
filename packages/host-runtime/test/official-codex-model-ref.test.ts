@@ -1,4 +1,7 @@
-import { HARNESS_MODEL_REF_MAX_LENGTH, harnessModelRefSchema } from "@codexhost/shared-contracts";
+import {
+  HARNESS_MODEL_REF_MAX_LENGTH,
+  harnessModelRefSchema,
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {

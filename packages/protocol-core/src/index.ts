@@ -1,9 +1,17 @@
-import { packageMetadata as harnessAdapter } from "@codexhost/harness-adapter";
-import { packageMetadata as mappingStore } from "@codexhost/mapping-store";
-import { WORKSPACE_CONTRACT_VERSION } from "@codexhost/shared-contracts";
+import { packageMetadata as harnessAdapter } from "@claude-in-codex/harness-adapter";
+import { packageMetadata as mappingStore } from "@claude-in-codex/mapping-store";
+import { WORKSPACE_CONTRACT_VERSION } from "@claude-in-codex/shared-contracts";
 
-export { jsonRpcRequestSchema, jsonRpcSuccessResponseSchema } from "@codexhost/shared-contracts";
-export type { JsonObject, JsonRpcId, JsonRpcRequest, JsonValue } from "@codexhost/shared-contracts";
+export {
+  jsonRpcRequestSchema,
+  jsonRpcSuccessResponseSchema,
+} from "@claude-in-codex/shared-contracts";
+export type {
+  JsonObject,
+  JsonRpcId,
+  JsonRpcRequest,
+  JsonValue,
+} from "@claude-in-codex/shared-contracts";
 export { projectCodexApprovalRequest } from "./codex-approval.js";
 export type { CodexApprovalRequestProjection } from "./codex-approval.js";
 export { projectCodexQuestionRequest } from "./codex-question.js";
@@ -86,7 +94,7 @@ export {
 } from "./jsonl.js";
 
 export const packageMetadata = {
-  name: "@codexhost/protocol-core",
+  name: "@claude-in-codex/protocol-core",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
   dependencies: [harnessAdapter.name, mappingStore.name],
 } as const;

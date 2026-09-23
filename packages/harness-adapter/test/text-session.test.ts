@@ -6,7 +6,7 @@ import {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
   hostTurnIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { HarnessOutputChannel } from "../src/index.js";
 import type { HarnessError, HarnessOutput, HostEvent } from "../src/index.js";

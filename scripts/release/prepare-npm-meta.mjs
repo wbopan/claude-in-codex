@@ -14,7 +14,7 @@ import {
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 
 export function expectedNpmMetaPackagePaths() {
-  return ["README.md", "bin/codexhost.js", "package.json"];
+  return ["README.md", "bin/claude-in-codex.js", "package.json"];
 }
 
 export function createNpmMetaPackageManifest({ version }) {
@@ -23,19 +23,13 @@ export function createNpmMetaPackageManifest({ version }) {
     version,
     description: NPM_PACKAGE_DESCRIPTION,
     type: "module",
-    bin: { codexhost: "bin/codexhost.js" },
+    bin: { "claude-in-codex": "bin/claude-in-codex.js" },
     files: ["bin/**", "README.md"],
     engines: { node: ">=22" },
     optionalDependencies: Object.fromEntries(
       Object.values(NPM_PLATFORM_PACKAGE_NAMES).map((packageName) => [packageName, version]),
     ),
-    keywords: ["codex", "codexhost", "claude-code", "agent", "harness"],
-    repository: {
-      type: "git",
-      url: "git+https://github.com/BytePioneer-AI/codex-host.git",
-    },
-    bugs: { url: "https://github.com/BytePioneer-AI/codex-host/issues" },
-    homepage: "https://github.com/BytePioneer-AI/codex-host#readme",
+    keywords: ["codex", "claude-in-codex", "claude-code", "agent", "harness"],
     publishConfig: { access: "public" },
   };
 }
@@ -51,18 +45,18 @@ ${NPM_PACKAGE_DESCRIPTION}
 npm install -g ${NPM_PACKAGE_NAME}@${version}
 \`\`\`
 
-npm automatically installs the matching macOS, Windows, or Linux platform package. Node.js 22 or 24 and the official ChatGPT/Codex Desktop are required.
+npm automatically installs the matching macOS or Linux platform package. Node.js 22 or 24 and the official Codex CLI are required on this machine.
 
 ## Usage
 
 \`\`\`bash
-codexhost --version
-codexhost
-codexhost remote install
-codexhost remote status
+claude-in-codex --version
+claude-in-codex remote install
+claude-in-codex remote status
+claude-in-codex remote uninstall
 \`\`\`
 
-The \`codexhost\` command starts Codex Desktop. On macOS and Linux it returns immediately while the packaged Launcher keeps supervising in the background. On Windows, the command remains attached until Codex Desktop exits so shells that clean up process trees of completed commands cannot discard the supervisor. Re-running \`codexhost\` attaches to the same controlled instance.
+This package is the Remote Host: install it on the machine that Codex Desktop reaches over SSH. \`remote install\` routes Codex Desktop's managed SSH app-server listener to the Host Runtime while every other Codex CLI invocation keeps using the stock CLI. The local Host is the macOS menu bar app and is not part of this package.
 
 On macOS, \`remote install\` installs a current-user Aqua Harness broker so Background SSH Hosts can use native Claude Code login without reading, copying, or unlocking Keychain credentials.
 
@@ -98,8 +92,8 @@ export async function validateNpmMetaPackage({ packageRoot }) {
   const manifest = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
   if (manifest.name !== NPM_PACKAGE_NAME)
     throw new Error(`npm meta package name must be ${NPM_PACKAGE_NAME}`);
-  if (manifest.bin?.codexhost !== "bin/codexhost.js") {
-    throw new Error("npm meta package must expose bin/codexhost.js");
+  if (manifest.bin?.["claude-in-codex"] !== "bin/claude-in-codex.js") {
+    throw new Error("npm meta package must expose bin/claude-in-codex.js");
   }
   if (manifest.os !== undefined || manifest.cpu !== undefined) {
     throw new Error("npm meta package must be architecture-neutral");
@@ -114,11 +108,11 @@ export async function prepareNpmMetaPackage({ version, root = repositoryRoot }) 
   await rm(packageRoot, { recursive: true, force: true });
   await mkdir(path.join(packageRoot, "bin"), { recursive: true });
   await writeFile(
-    path.join(packageRoot, "bin", "codexhost.js"),
+    path.join(packageRoot, "bin", "claude-in-codex.js"),
     createNpmBinLauncherSource({ version: packageVersion }),
     "utf8",
   );
-  await chmod(path.join(packageRoot, "bin", "codexhost.js"), 0o755);
+  await chmod(path.join(packageRoot, "bin", "claude-in-codex.js"), 0o755);
   await writeFile(
     path.join(packageRoot, "package.json"),
     `${JSON.stringify(createNpmMetaPackageManifest({ version: packageVersion }), null, 2)}\n`,
@@ -132,7 +126,7 @@ export async function prepareNpmMetaPackage({ version, root = repositoryRoot }) 
 }
 
 export function npmMetaTarballFileName(version) {
-  return `codexhost-cli-${version}.tgz`;
+  return `claude-in-codex-cli-${version}.tgz`;
 }
 
 export async function packNpmMetaPackage({ outputRoot, packageRoot, version }) {
@@ -169,7 +163,9 @@ export async function runNpmMetaReleaseCli(arguments_) {
 const invoked = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
 if (invoked === import.meta.url) {
   runNpmMetaReleaseCli(process.argv.slice(2)).catch((error) => {
-    console.error(`codexhost npm meta release: ${error instanceof Error ? error.message : error}`);
+    console.error(
+      `claude-in-codex npm meta release: ${error instanceof Error ? error.message : error}`,
+    );
     process.exitCode = 1;
   });
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { FakeHarnessAdapter } from "@codexhost/harness-adapter/testing";
-import { harnessIdSchema, type HarnessAccountSnapshot } from "@codexhost/shared-contracts";
+import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
+import { harnessIdSchema, type HarnessAccountSnapshot } from "@claude-in-codex/shared-contracts";
 import {
   HarnessAccountInspectionCache,
   inspectHarnessAccount,

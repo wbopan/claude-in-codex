@@ -1,4 +1,4 @@
-import type { JsonValue } from "@codexhost/shared-contracts";
+import type { JsonValue } from "@claude-in-codex/shared-contracts";
 
 interface ClaudeTask {
   id: string;

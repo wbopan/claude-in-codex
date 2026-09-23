@@ -13,15 +13,16 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { normalizeRouteId, ROUTE_PREFIX } from "@claude-in-codex/shared-contracts";
 import type {
   HarnessModel,
   HarnessModelCatalog,
   HarnessThinkingOptionId,
   JsonObject,
   JsonValue,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
-export const NATIVE_ROUTE_PREFIX = "codexhost/";
+export const NATIVE_ROUTE_PREFIX = ROUTE_PREFIX;
 
 /** Reasoning efforts the official picker can display, in display order. */
 const NATIVE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -30,8 +31,9 @@ const FALLBACK_EFFORT = "medium";
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Accepts pre-rename route ids too; callers normalize before storing or comparing. */
 export function isNativeRouteModel(value: unknown): value is string {
-  return typeof value === "string" && value.startsWith(NATIVE_ROUTE_PREFIX);
+  return typeof value === "string" && normalizeRouteId(value).startsWith(NATIVE_ROUTE_PREFIX);
 }
 
 function modelEfforts(model: HarnessModel, catalog: HarnessModelCatalog): string[] {
@@ -385,12 +387,13 @@ export function planConfigEdits(
   const effortEdit = selectionEdits.find(({ key }) => key === "model_reasoning_effort");
   const effort = typeof effortEdit?.value === "string" ? effortEdit.value : undefined;
   if (modelEdit && isNativeRouteModel(modelEdit.value)) {
+    const model = normalizeRouteId(modelEdit.value);
     const owned = new Set<JsonValue>(selectionEdits.map(({ edit }) => edit as JsonValue));
-    const previousEffort = current?.model === modelEdit.value ? current.effort : undefined;
+    const previousEffort = current?.model === model ? current.effort : undefined;
     const nextEffort = effort ?? previousEffort;
     return {
       official: edits.filter((edit) => !owned.has(edit)),
-      selection: { model: modelEdit.value, ...(nextEffort ? { effort: nextEffort } : {}) },
+      selection: { model, ...(nextEffort ? { effort: nextEffort } : {}) },
     };
   }
   // Choosing an official Model returns ownership of both keys to the official config.
@@ -439,7 +442,7 @@ export class NativeSelectionStore {
       const parsed: unknown = JSON.parse(await readFile(this.#file, "utf8"));
       if (isRecord(parsed) && isNativeRouteModel(parsed.model)) {
         this.#selection = {
-          model: parsed.model,
+          model: normalizeRouteId(parsed.model),
           ...(typeof parsed.effort === "string" ? { effort: parsed.effort } : {}),
         };
       }

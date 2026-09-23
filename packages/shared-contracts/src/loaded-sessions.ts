@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const LOADED_SESSIONS_METHOD = "codexhost/sessions/loaded/list";
+export const LOADED_SESSIONS_METHOD = "claude-in-codex/sessions/loaded/list";
 export const loadedSessionStateSchema = z.enum([
   "idle",
   "running",

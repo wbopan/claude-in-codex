@@ -14,7 +14,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import type { HostThreadId, HostTurnId } from "@codexhost/shared-contracts";
+import type { HostThreadId, HostTurnId } from "@claude-in-codex/shared-contracts";
 
 import {
   storedDelegationRecordV1Schema,
@@ -161,6 +161,19 @@ function normalizeExecutablePath(value: string): string {
 function isNodeExecutable(value: string): boolean {
   const normalized = normalizeExecutablePath(value);
   return normalized.endsWith("\\node.exe") || normalized.endsWith("/node");
+}
+
+/** Whether a live Host process holds the Mapping Store in this directory. */
+export async function mappingStoreOwnerIsLive(directory: string): Promise<boolean> {
+  let lock: Partial<LockRecord>;
+  try {
+    lock = JSON.parse(
+      await readFile(path.join(directory, "store.lock"), "utf8"),
+    ) as Partial<LockRecord>;
+  } catch {
+    return false;
+  }
+  return lockOwnerIsLive(lock);
 }
 
 function lockOwnerIsLive(lock: Partial<LockRecord>): boolean {
@@ -898,7 +911,10 @@ export class MappingStore {
       // An invalid lock cannot prove a live owner and is treated as stale.
     }
     if (typeof existing.pid === "number" && lockOwnerIsLive(existing)) {
-      throw new MappingStoreError("STORE_LOCKED", "Another codexhost process owns Mapping Store");
+      throw new MappingStoreError(
+        "STORE_LOCKED",
+        "Another claude-in-codex process owns Mapping Store",
+      );
     }
     await rename(this.#lockPath, `${this.#lockPath}.stale-${this.#now().getTime()}`).catch(
       () => undefined,

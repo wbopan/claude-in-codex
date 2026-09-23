@@ -5,7 +5,7 @@ import {
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
   type JsonRpcRequest,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -44,7 +44,7 @@ describe("external Harness transport model routing", () => {
       configuration,
     );
     expect(decodeExternalTransportSelection("another-agent", transportModelId)).toBeNull();
-    expect(transportModelIdForHarness("sample-agent")).toMatch(/^codexhost\/plugin-v1@/u);
+    expect(transportModelIdForHarness("sample-agent")).toMatch(/^claude-in-codex\/plugin-v1@/u);
   });
 
   it.each(["claude-code", "pi", "sample-agent"])(

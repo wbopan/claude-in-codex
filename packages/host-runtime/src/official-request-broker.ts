@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { JsonObject, JsonValue } from "@codexhost/protocol-core";
+import type { JsonObject, JsonValue } from "@claude-in-codex/protocol-core";
 
-const INTERNAL_REQUEST_PREFIX = "codexhost:official:";
+const INTERNAL_REQUEST_PREFIX = "claude-in-codex:official:";
 const MAX_RETIRED_IDS = 1_024;
 
 interface PendingRequest {

@@ -1,5 +1,5 @@
 {
-  "name": "@codexhost/adapter-claude-code",
+  "name": "@claude-in-codex/adapter-claude-code",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -24,10 +24,10 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.246",
     "@anthropic-ai/sdk": "0.115.0",
-    "@codexhost/harness-adapter": "0.0.0",
-    "@codexhost/harness-broker": "0.0.0",
-    "@codexhost/harness-discovery": "0.0.0",
-    "@codexhost/shared-contracts": "0.0.0",
+    "@claude-in-codex/harness-adapter": "0.0.0",
+    "@claude-in-codex/harness-broker": "0.0.0",
+    "@claude-in-codex/harness-discovery": "0.0.0",
+    "@claude-in-codex/shared-contracts": "0.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.4.3"
   }

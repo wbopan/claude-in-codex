@@ -1,4 +1,4 @@
-import { hostTurnIdSchema } from "@codexhost/shared-contracts";
+import { hostTurnIdSchema } from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import { projectCodexThreadUsage } from "../src/index.js";

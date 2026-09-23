@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const IDLE_RELEASE_SETTINGS_METHOD = "codexhost/settings/idle-release/set";
+export const IDLE_RELEASE_SETTINGS_METHOD = "claude-in-codex/settings/idle-release/set";
 export const IDLE_RELEASE_TIMEOUT_MINUTES_MIN = 5;
 export const IDLE_RELEASE_TIMEOUT_MINUTES_MAX = 1440;
 export const idleReleaseSettingsSchema = z.strictObject({

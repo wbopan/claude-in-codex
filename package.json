@@ -23,22 +23,20 @@
     "trailingComma": "all"
   },
   "scripts": {
-    "bootstrap": "node tools/fork/bootstrap.mjs",
+    "bootstrap": "node tools/toolchain/bootstrap.mjs",
     "build:typescript": "tsc -b && npm run build:plugins",
     "build:plugins": "node scripts/release/harness-plugins.mjs --output packages/host-runtime/dist/plugins",
-    "build:rust": "cargo build --locked --package codexhost-launcher --package codexhost-platform --package codexhost-shim",
+    "build:rust": "cargo build --locked --package claude-in-codex-platform --package claude-in-codex-shim",
     "typecheck": "tsc -b --pretty false",
     "test:typescript": "npm run build:typescript && vitest run --config tests/vitest.config.js",
     "test": "npm run test:typescript && npm run test:rust",
     "format": "prettier --write . && cargo fmt --all",
-    "test:rust": "bash tools/fork/with-toolchain.sh cargo test --workspace --features codexhost-shim/test-utils",
-    "debug:build": "bash tools/fork/with-toolchain.sh node tools/fork/build.mjs --debug",
-    "debug:start": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs start",
-    "debug:restart": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs restart",
-    "debug:stop": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs stop",
-    "debug:status": "bash tools/fork/with-toolchain.sh node tools/fork/debug.mjs status",
-    "debug": "npm run debug:build && npm run debug:restart",
-    "menubar:build": "npm run build:typescript && node tools/menubar/build.mjs"
+    "test:rust": "bash tools/toolchain/with-toolchain.sh cargo test --workspace --features claude-in-codex-shim/test-utils",
+    "app:build": "npm run build:typescript && node tools/app/build.mjs",
+    "app:install": "npm run app:build && node tools/app/install.mjs",
+    "release:npm": "node scripts/release/prepare-npm.mjs",
+    "release:npm:meta": "node scripts/release/prepare-npm-meta.mjs",
+    "release:npm:publish": "node scripts/release/publish-npm.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.246",

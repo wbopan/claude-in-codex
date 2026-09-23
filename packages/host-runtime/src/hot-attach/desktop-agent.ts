@@ -1,8 +1,10 @@
 // @ts-nocheck -- Serialized into the version-checked Desktop's main realm. No imports/closures.
 /** All mutations are instance-local and have descriptor-preserving cleanup. */
 export function installDesktopAgent(config) {
-  const key = "__codexhostHotAttachV1";
-  if (globalThis[key]) throw new Error("A Host is already attached or attaching");
+  const key = "__claudeInCodexHotAttachV1";
+  // A pre-rename Host installs the same agent under its legacy key.
+  if (globalThis[key] || globalThis.__codexhostHotAttachV1)
+    throw new Error("A Host is already attached or attaching");
   const require = process.mainModule.require.bind(process.mainModule);
   const electron = require("electron");
   const net = require("node:net");
@@ -137,7 +139,7 @@ export function installDesktopAgent(config) {
     }
     socket?.end(JSON.stringify({ type: "detached", reason: why }) + "\n");
     socket?.destroySoon();
-    if (/^\/tmp\/codexhost-attach-[^/]+\/bridge\.sock$/.test(config.socketPath)) {
+    if (/^\/tmp\/claude-in-codex-attach-[^/]+\/bridge\.sock$/.test(config.socketPath)) {
       const fs = require("node:fs");
       fs.unlink(config.socketPath, () => fs.rmdir(config.socketPath.slice(0, -12), () => {}));
     }
@@ -295,7 +297,7 @@ export function installDesktopAgent(config) {
       } else if (message.method === "initialized") {
         // This virtual client borrows the already negotiated native connection.
       } else if (message.method && message.id !== undefined) {
-        const id = `codexhost:bridge:${config.token.slice(0, 8)}:${++counter}`;
+        const id = `claude-in-codex:bridge:${config.token.slice(0, 8)}:${++counter}`;
         pending.set(id, { channel: value.channel, id: message.id });
         outgoing.call(transport, JSON.stringify({ ...message, id }));
       } else {

@@ -19,7 +19,7 @@ describe("Codex Thread list and management protocol boundary", () => {
         cwd: ["/one", "/two"],
         isPinned: false,
         limit: 250,
-        modelProviders: ["codexhost"],
+        modelProviders: ["claude-in-codex"],
         searchTerm: "Title",
         sortDirection: "asc",
         sortKey: "recency_at",
@@ -106,7 +106,7 @@ describe("Codex Thread list and management protocol boundary", () => {
         id: 4,
         method: "thread/list",
         params: {
-          cursor: "codexhost:thread-list:v1:legacy-host-cursor",
+          cursor: "claude-in-codex:thread-list:v1:legacy-host-cursor",
           sortKey: "section_position",
         },
       }),
