@@ -4,7 +4,7 @@
 
 ## 使用
 
-App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
+从 [Releases](https://github.com/wbopan/claude-in-codex-releases/releases/latest) 下载 `Claude-in-Codex-<版本>-arm64.zip`，解压后把 Claude in Codex.app 拖到「应用程序」文件夹。App 经过 Apple 公证，可以直接打开；之后的新版本由 App 自己检查和安装。需要 Apple 芯片的 Mac、macOS 14+，以及已安装并登录的 Claude Code。自己构建见「构建」。
 
 1. 正常打开 `/Applications/ChatGPT.app`，然后打开 Claude in Codex。
 2. 菜单栏的云朵图标变成实心并睁开眼睛，表示已接入。原生模型选择器会增加本机 Claude 模型，侧栏左下角账户名下方显示「Claude Connected」。
@@ -52,6 +52,8 @@ Claude Code CLI 进程数和用量在接入后读取。
 - 启动时打开此窗口：默认关闭。
 - Codex App、数据目录和诊断日志的位置，可以在 Finder 中显示或直接打开日志。
 
+- 更新：自动检查更新（发布版默认开启，每 6 小时一次）和「检查更新…」，下方显示当前版本。安装更新前和退出一样，先等正在执行的 Session 完成，再重启到新版本。
+
 「关于 Claude in Codex」显示版本号，以及构建时写入的 Git 修订和构建时间。
 
 ## 构建
@@ -66,7 +68,7 @@ open '/Applications/Claude in Codex.app'
 
 `npm run app:install` 先构建到 `.dev/app/Claude in Codex.app`，再替换 `/Applications` 中的 App。正在运行的 App 不会被覆盖：先从菜单退出（等待任务完成），再安装。只构建不安装用 `npm run app:build`。
 
-也可以用 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标（装有 Xcode 时用 `actool` 编译 `apps/macos/icon/Claude.icon`，否则用预渲染 PNG 生成 icns）、进行本地 ad-hoc 签名并检查签名。
+也可以用 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标（装有 Xcode 时用 `actool` 编译 `apps/macos/icon/Claude.icon`，否则用预渲染 PNG 生成 icns），嵌入 Sparkle 更新框架（首次构建时按固定版本和校验和下载到 `.dev/toolchains`），然后用钥匙串中的 Developer ID 证书签名并检查签名；没有证书时退回 ad-hoc 签名。版本号取自根目录 `package.json`。开发构建不自动检查更新，只能手动检查。
 
 仓库内的开发产物（构建、工具链、验收记录）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
 
@@ -92,6 +94,18 @@ open --env CLAUDE_IN_CODEX_AUTO_ATTACH=0 --env CLAUDE_IN_CODEX_DATA_DIR="$PWD/.d
 远端只通过 npm 包 `@claude-in-codex/cli` 发行：在 SSH 目标机上执行 `npm install -g @claude-in-codex/cli`，再执行 `claude-in-codex remote install`。包内只有 Host Runtime（`app/host-runtime.mjs`，由当前 Node.js 运行）、预装的 Harness 插件和 Rust Shim（`libexec/claude-in-codex-shim`）。安装把 Shim 复制为 `<数据目录>/remote/bin/codex`（macOS 为 `~/Library/Application Support/Claude in Codex`，Linux 为 `$XDG_DATA_HOME/claude-in-codex`，默认 `~/.local/share/claude-in-codex`），并在登录配置中写入仅对 SSH 会话生效的段落。重新安装会接管改名前的 `~/.codexhost/remote`：迁移其中的数据，删除旧入口，并替换登录配置中的旧段落；macOS 上旧的 `ai.bytepioneer.codexhost.*` LaunchAgent 也会被移除。Shim 只把 Codex Desktop 托管的 `app-server --listen unix://` 监听交给 Host Runtime，其余调用（包括 stdio `app-server`）都原样转给官方 Codex CLI。macOS 上的 Aqua broker 由 Shim 的隐藏命令 `--claude-in-codex-broker` 安装和管理，`remote install|status|uninstall` 会自动调用，也可用 `claude-in-codex broker install|status|stop|uninstall` 单独管理。旧的 launcher、DMG 安装包和本机 stdio Host 已删除。
 
 本地打包验证：`npm run release:npm -- --pack` 生成当前平台包，`npm run release:npm:meta -- --version <版本> --pack` 生成入口包，输出位于 `build/npm/`。
+
+## 发布
+
+发布版上传到公开仓库 [wbopan/claude-in-codex-releases](https://github.com/wbopan/claude-in-codex-releases)，App 从最新 Release 的 `appcast.xml` 得知新版本。发布一个版本：
+
+```sh
+# 1. 修改 package.json 的 version，在 CHANGELOG.md 加一节同名说明，提交
+# 2. 推送同名 tag，GitHub Actions 构建、公证并发布
+git tag v0.2.1 && git push origin v0.2.1
+```
+
+也可以在本机执行 `npm run release:app -- --publish`。凭据、密钥备份和出错时的处理见 [发布手册](docs/release.md)。
 
 ## 开发验证
 

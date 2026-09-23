@@ -459,10 +459,14 @@ The package ships the Host Runtime bundle (\`app/host-runtime.mjs\`), the preins
 `;
 }
 
-export async function writeThirdPartyNotices(root, packageRoot) {
+export async function writeThirdPartyNotices(
+  root,
+  packageRoot,
+  heading = "claude-in-codex npm package third-party notices",
+) {
   const licensesDirectory = path.join(packageRoot, "licenses");
   await mkdir(licensesDirectory, { recursive: true });
-  const notices = ["claude-in-codex npm package third-party notices", ""];
+  const notices = [heading, ""];
   for (const dependency of runtimeLicenses) {
     const dependencyRoot = path.join(root, "node_modules", dependency.packageName);
     const manifest = packageManifest(

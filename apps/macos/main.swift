@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import Sparkle
 
 // MARK: Identity
 
@@ -505,8 +506,13 @@ final class ComponentCard {
 
 // MARK: App
 
-final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, NSToolbarDelegate {
+final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, NSToolbarDelegate,
+                      SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     private var statusItem: NSStatusItem!
+    /// Sparkle, for builds whose Info.plist names an appcast (SUFeedURL); test copies usually have none.
+    private var updaterController: SPUStandardUpdaterController?
+    /// Sparkle's go-ahead for an update that waits for the Host to drain before the App relaunches.
+    private var pendingInstall: (() -> Void)?
     private var legacyObserver: NSObjectProtocol?
     private var launched = false
     private let menu = NSMenu()
@@ -586,6 +592,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         applicationMenu.addItem(appItem)
         let appSubmenu = NSMenu()
         appSubmenu.addItem(withTitle: "关于 \(appName)", action: #selector(showAbout), keyEquivalent: "").target = self
+        if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
+            updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
+            appSubmenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
+        }
         appSubmenu.addItem(.separator())
         appSubmenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",").target = self
         appSubmenu.addItem(.separator())
@@ -658,7 +668,11 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.control = nil; self.child = nil
-                    if self.quitting { self.allowExit = true; NSApp.terminate(nil) }
+                    if self.quitting {
+                        self.allowExit = true
+                        // An update waiting on the drain installs now; Sparkle then quits and relaunches the App.
+                        if let install = self.pendingInstall { self.pendingInstall = nil; install() } else { NSApp.terminate(nil) }
+                    }
                     else { self.state = ["phase": "error", "error": "Host 已退出（\(process.terminationStatus)）"]; self.updateMenu() }
                 }
             }
@@ -773,7 +787,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
 
     @objc private func connect() { if child?.isRunning != true { startHost(autoAttach: true) } else { send("attach") } }
     @objc private func disconnect() { send("detach") }
-    @objc private func cancelDisconnect() { quitting = false; send("cancel-drain") }
+    @objc private func cancelDisconnect() { quitting = false; pendingInstall = nil; send("cancel-drain") }
     @objc private func stopAndDisconnect() {
         let alert = NSAlert(); alert.messageText = "停止 Session 并断开？"
         alert.informativeText = "正在运行的 Claude Code Session 会被中断，已保存的历史会保留。Codex App 和 GPT 任务会继续运行。"
@@ -939,11 +953,21 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
         let launchBox = group(launch)
 
+        var sections = [section("启动", content: launchBox)]
+        if let updater = updaterController?.updater {
+            let toggle = rowSwitch(self, #selector(toggleAutomaticUpdates(_:)))
+            toggle.state = updater.automaticallyChecksForUpdates ? .on : .off
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+            let check = NSButton(title: "检查更新…", target: self, action: #selector(checkForUpdates)); check.controlSize = .small
+            let note = label("当前版本 \(version)", size: 11, color: .secondaryLabelColor)
+            sections.append(section("更新", content: group([(hstack([titled("自动检查更新", note: note), check, toggle], spacing: 12), 56)])))
+        }
         let (app, appField) = pathRow("Codex App", appPath, [("在 Finder 中显示", #selector(revealDesktop))])
         appPathLabel = appField
         let (data, _) = pathRow("数据", dataDirectory.path, [("在 Finder 中显示", #selector(revealData))])
         let (logs, _) = pathRow("诊断日志", logFile.path, [("打开", #selector(openLogs)), ("在 Finder 中显示", #selector(revealLogs))])
-        return paneStack([section("启动", content: launchBox), section("位置", content: group([(app, 56), (data, 56), (logs, 56)]))])
+        sections.append(section("位置", content: group([(app, 56), (data, 56), (logs, 56)])))
+        return paneStack(sections)
     }
 
     /// The App lives in the menu bar (LSUIElement) and joins the Dock only while it has a window open,
@@ -1209,6 +1233,29 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if allowExit { return .terminateNow }
         quitHost(); return .terminateCancel
+    }
+
+    // MARK: Updates
+
+    @objc private func checkForUpdates() { comeForward(); updaterController?.checkForUpdates(nil) }
+    @objc private func toggleAutomaticUpdates(_ sender: NSSwitch) {
+        updaterController?.updater.automaticallyChecksForUpdates = sender.state == .on
+    }
+    /// Installing replaces the running App, so Sessions drain first exactly as they do on quit; the
+    /// update goes ahead once the Host has exited, or is dropped if the drain is canceled.
+    func updater(_ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem,
+                 untilInvokingBlock installHandler: @escaping () -> Void) -> Bool {
+        guard child?.isRunning == true else { return false }
+        pendingInstall = installHandler
+        quitHost()
+        return true
+    }
+    /// A menu bar App has no window to put the update alert behind, so it comes forward with the
+    /// alert and joins the Dock while the alert is open.
+    var supportsGentleScheduledUpdateReminders: Bool { true }
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem,
+                                                   state: SPUUserUpdateState) {
+        if handleShowingUpdate { comeForward() }
     }
 }
 
