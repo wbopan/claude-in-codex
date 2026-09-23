@@ -634,6 +634,7 @@ export class AppServerHost {
           }
         },
         canRelease: (thread) =>
+          (thread.session.backgroundTaskCount ?? 0) === 0 &&
           !this.#hasRunningSubagents(thread.id) &&
           !this.#externalSteering.hasPending(thread.id) &&
           !this.#pendingExternalCommandRequests.has(thread.id) &&
@@ -672,6 +673,41 @@ export class AppServerHost {
     const desktopInput = this.#options.desktopInput as Readable & { end?: () => void };
     if (typeof desktopInput.end === "function") desktopInput.end();
     else desktopInput.destroy();
+  }
+
+  #attachmentDraining = false;
+
+  /** Hot attachment owns external work only; native GPT work belongs to Desktop. */
+  attachmentState(): {
+    draining: boolean;
+    activeExternal: { threadId: string; turnId: string }[];
+    backgroundTasks: number;
+    busy: boolean;
+  } {
+    const activeExternal = this.#externalRuntime
+      .values()
+      .flatMap((thread) =>
+        thread.activeTurnId ? [{ threadId: thread.id, turnId: thread.activeTurnId }] : [],
+      );
+    const backgroundTasks = this.#externalRuntime
+      .values()
+      .reduce((count, thread) => count + (thread.session.backgroundTaskCount ?? 0), 0);
+    return {
+      draining: this.#attachmentDraining,
+      activeExternal,
+      backgroundTasks,
+      busy:
+        activeExternal.length > 0 ||
+        backgroundTasks > 0 ||
+        this.#desktopRequests.pendingCount > 0 ||
+        this.#externalSteering.hasPending() ||
+        this.#runningSubagentsByParent.size > 0 ||
+        this.#externalRuntime.values().some((thread) => thread.running),
+    };
+  }
+
+  setAttachmentDraining(draining: boolean): void {
+    this.#attachmentDraining = draining;
   }
 
   #waitForPlugins(): Promise<void> {
@@ -899,6 +935,32 @@ export class AppServerHost {
     frame: Buffer<ArrayBufferLike>,
   ): Promise<void> {
     if (this.#closeRequested) return;
+    if (
+      this.#attachmentDraining &&
+      [
+        "thread/start",
+        "thread/fork",
+        "turn/start",
+        "turn/steer",
+        "thread/queue/add",
+        "thread/queue/start",
+      ].includes(request.method)
+    ) {
+      const params = isRecord(request.params) ? request.params : {};
+      const external =
+        isNativeRouteModel(params.model) ||
+        (typeof params.threadId === "string" && (await this.#repository.find(params.threadId)));
+      if (external) {
+        await this.#writer.json(
+          rpcError(
+            request,
+            -32089,
+            "Host is disconnecting. Cancel disconnect to start another external turn.",
+          ),
+        );
+        return;
+      }
+    }
     if (request.method === LOADED_SESSIONS_METHOD) {
       await this.#writer.json(
         rpcEnvelope(request, { result: this.#externalRuntime.idleRelease.list() }),

@@ -397,6 +397,9 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
   #query: Query | null = null;
   #started = false;
   #backgroundTasks = new Set<string>();
+  get backgroundTaskCount(): number {
+    return this.#backgroundTasks.size;
+  }
   readonly #clientTools: HarnessClientTools | undefined;
   #desktopTools: Awaited<ReturnType<typeof createClaudeClientTools>> | undefined;
 

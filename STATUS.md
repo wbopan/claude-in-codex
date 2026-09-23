@@ -1,5 +1,20 @@
 # STATUS — goal tracker
 
+## MenuBar hot attachment (2026-09-22)
+
+Implemented in the independent `codex/menubar-hot-attach` worktree, based on `8681959`.
+The original checkout remains on `main`; concurrent edits there belong to other work.
+
+- Native macOS MenuBar app, vector icons, bundled Node/Host/plugins and local signing.
+- Version-checked, reversible in-memory attachment to normally started Desktop 26.915.31945.
+- Existing model/permission/Plan/tool/history/memory/usage and remote implementations retained.
+- Attach/detach preserve real GPT turns. Background drain, cancel, history after reconnect,
+  native CUA, usage rows, second-owner rejection and abnormal process cleanup verified.
+- TypeScript: 1205 passed, 7 skipped. Rust: 171 passed. Stable Desktop was never restarted.
+
+See [migration design and acceptance](docs/menubar-migration.md) and [usage](README.md).
+The earlier launcher goal and its historical evidence follow below.
+
 Goal (owner: Wenbo, set 2026-09-21): a slim repo that runs Claude Code inside the official Codex
 Desktop through native protocol seams only. Done = end-to-end verified in an independent debug
 Desktop instance. The stable Host/Desktop must never be stopped or restarted (the working agent

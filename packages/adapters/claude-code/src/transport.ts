@@ -186,6 +186,7 @@ export interface ClaudeAutonomousTurnHandler extends ClaudeIdleTurnHandler {
 
 export interface ClaudeTurnTransport {
   readonly sessionId: string;
+  readonly backgroundTaskCount?: number;
   setAutonomousTurnHandler(handler: ClaudeAutonomousTurnHandler | null): void;
   setIdleTurnHandler(handler: ClaudeIdleTurnHandler | null): void;
   /**

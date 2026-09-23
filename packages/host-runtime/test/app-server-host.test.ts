@@ -6960,3 +6960,52 @@ describe("AppServerHost External Thread message queue", () => {
     await stopFixture(fixture);
   });
 });
+
+describe("hot attachment admission", () => {
+  it("drains native background work after a foreground turn and reopens admission on cancel", async () => {
+    const f = createFixture();
+    try {
+      const threadId = await startPiThread(f);
+      const session = f.adapter.sessions[0]!;
+      let backgroundTasks = 1;
+      Object.defineProperty(session, "backgroundTaskCount", { get: () => backgroundTasks });
+      expect(f.host.attachmentState()).toMatchObject({
+        busy: true,
+        backgroundTasks: 1,
+        activeExternal: [],
+      });
+      f.host.setAttachmentDraining(true);
+      for (const [id, method, params] of [
+        [901, "thread/start", { model: PI_NATIVE_TRANSPORT_MODEL_ID, cwd: "/synthetic" }],
+        [902, "turn/start", { threadId, input: [{ type: "text", text: "new work" }] }],
+        [903, "thread/fork", { threadId }],
+        [
+          906,
+          "thread/queue/add",
+          { threadId, input: [{ type: "text", text: "new work" }], clientUserMessageId: "test" },
+        ],
+        [907, "thread/queue/start", { threadId }],
+      ] as const) {
+        writeRequest(f.desktopInput, { id, method, params });
+        expect(await f.collector.waitFor((m) => m.id === id)).toMatchObject({
+          error: { code: -32089 },
+        });
+      }
+      // Reading preserved history remains possible while the attachment is draining.
+      writeRequest(f.desktopInput, {
+        id: 904,
+        method: "thread/read",
+        params: { threadId, includeTurns: true },
+      });
+      expect(await f.collector.waitFor((m) => m.id === 904)).not.toHaveProperty("error");
+      backgroundTasks = 0;
+      await vi.waitFor(() => expect(f.host.attachmentState().busy).toBe(false));
+      f.host.setAttachmentDraining(false);
+      await completePiTurn(f, threadId, 905);
+    } finally {
+      f.host.close();
+      await f.running;
+      rmSync(f.mappingStoreDirectory, { recursive: true, force: true });
+    }
+  });
+});

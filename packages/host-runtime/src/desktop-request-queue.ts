@@ -3,6 +3,10 @@ export class DesktopRequestQueue {
   readonly #threads = new Map<string, Promise<void>>();
   readonly #pending = new Set<Promise<void>>();
 
+  get pendingCount(): number {
+    return this.#pending.size;
+  }
+
   run(threadId: string | undefined, operation: () => Promise<void>): Promise<void> {
     const previous = threadId === undefined ? undefined : this.#threads.get(threadId);
     const task = (previous ?? Promise.resolve()).then(operation);

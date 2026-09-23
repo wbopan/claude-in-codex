@@ -514,6 +514,8 @@ export type HarnessOutput =
 
 export interface HarnessSession {
   readonly harnessId: HarnessId;
+  /** Live native background work, including shell tasks after the foreground turn settles. */
+  readonly backgroundTaskCount?: number;
   readonly capabilities: HarnessSessionCapabilities;
   readonly initialState: HarnessSessionState;
   readonly initialUsage: HostUsage | null;
