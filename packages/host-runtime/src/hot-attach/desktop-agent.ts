@@ -24,7 +24,10 @@ export function installDesktopAgent(config) {
         candidates.add(p);
     }
   }
-  if (candidates.size !== 1) throw new Error("Unsupported Desktop connection layout");
+  if (candidates.size !== 1)
+    throw new Error(
+      `Desktop ${electron.app.getVersion()} changed its connection layout; update the Host adapter`,
+    );
   const prototype = [...candidates][0];
   const restorers = [];
   let connection, transport, socket, incoming, outgoing, timer;
