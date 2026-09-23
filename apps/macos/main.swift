@@ -44,32 +44,56 @@ func buildInfo() -> [String: Any]? {
     return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
 }
 
-func drawMark(_ rect: NSRect, phase: String, color: NSColor) {
+/// The Claude cloud from apps/macos/icon/Claude-Icon.svg (#cloud-silhouette): a 1024-point canvas, y down.
+let cloudOutline = "M 703.082 701.419 C 689.910 756.413 643.947 798.291 590.713 812.172 C 538.628 825.753 479.582 812.533 441.906 771.661 C 387.566 788.081 328.005 769.397 289.273 730.083 C 251.424 691.666 233.463 633.550 249.703 580.541 C 208.833 542.220 195.046 481.817 209.468 429.237 C 223.763 377.124 265.771 332.696 319.496 319.496 C 332.806 265.403 377.944 223.058 430.539 209.072 C 482.841 195.163 542.518 209.298 580.425 250.146 C 633.986 233.565 692.455 251.878 731.108 290.166 C 769.756 328.448 788.593 386.698 772.493 440.462 C 812.285 478.967 826.544 538.576 812.909 590.940 C 799.234 643.455 757.502 688.682 703.082 701.419 Z"
+/// The pixel eyes on the 18-point mark grid, widened from the icon's 1.3 points so they survive a 1x menu bar.
+let cloudEyes = [NSRect(x: 5.5, y: 7, width: 2, height: 4), NSRect(x: 10.5, y: 7, width: 2, height: 4)]
+
+/// The cloud fitted to the 18-point mark grid, y up; the source spans 195...827 on both axes.
+func cloudPath() -> NSBezierPath {
+    let numbers = cloudOutline.split(separator: " ").compactMap { Double($0) }.map { CGFloat($0) }
+    func point(_ i: Int) -> NSPoint { NSPoint(x: 1 + (numbers[i] - 195) * 16 / 632, y: 17 - (numbers[i + 1] - 195) * 16 / 632) }
+    let path = NSBezierPath()
+    path.move(to: point(0))
+    for i in stride(from: 2, to: numbers.count, by: 6) { path.curve(to: point(i + 4), controlPoint1: point(i), controlPoint2: point(i + 2)) }
+    path.close()
+    return path
+}
+
+/// Runs draw with rect mapped to the 18-point mark grid.
+func inMarkGrid(_ rect: NSRect, _ draw: () -> Void) {
     NSGraphicsContext.saveGraphicsState()
     let transform = NSAffineTransform()
     transform.translateX(by: rect.minX, yBy: rect.minY)
     transform.scaleX(by: rect.width / 18, yBy: rect.height / 18)
     transform.concat()
-    color.setStroke(); color.setFill()
-    let brackets = NSBezierPath()
-    brackets.lineWidth = 1.65; brackets.lineCapStyle = .round; brackets.lineJoinStyle = .round
-    brackets.move(to: NSPoint(x: 5.5, y: 3.5)); brackets.line(to: NSPoint(x: 2.5, y: 3.5))
-    brackets.line(to: NSPoint(x: 2.5, y: 14.5)); brackets.line(to: NSPoint(x: 5.5, y: 14.5))
-    brackets.move(to: NSPoint(x: 12.5, y: 3.5)); brackets.line(to: NSPoint(x: 15.5, y: 3.5))
-    brackets.line(to: NSPoint(x: 15.5, y: 14.5)); brackets.line(to: NSPoint(x: 12.5, y: 14.5))
-    brackets.stroke()
-    if phase == "draining" || phase == "attaching" || phase == "detaching" {
-        for x in [6.0, 9.0, 12.0] { NSBezierPath(ovalIn: NSRect(x: x - 0.7, y: 8.3, width: 1.4, height: 1.4)).fill() }
-    } else if phase == "attached" {
-        NSBezierPath(ovalIn: NSRect(x: 6.7, y: 6.7, width: 4.6, height: 4.6)).fill()
-    } else if phase == "error" {
-        let bar = NSBezierPath(roundedRect: NSRect(x: 8.2, y: 7.5, width: 1.6, height: 5), xRadius: 0.8, yRadius: 0.8)
-        bar.fill(); NSBezierPath(ovalIn: NSRect(x: 8.2, y: 4.5, width: 1.6, height: 1.6)).fill()
-    } else {
-        let dot = NSBezierPath(ovalIn: NSRect(x: 7.2, y: 7.2, width: 3.6, height: 3.6))
-        dot.lineWidth = 1.2; dot.stroke()
-    }
+    draw()
     NSGraphicsContext.restoreGraphicsState()
+}
+
+/// The menu bar mark, whose eyes show the phase: open eyes cut from a solid cloud when attached, three dots
+/// while attaching or draining, "!" on error, and closed eyes in an outlined cloud otherwise.
+func drawMark(_ rect: NSRect, phase: String, color: NSColor) {
+    inMarkGrid(rect) {
+        color.setStroke(); color.setFill()
+        let cloud = cloudPath()
+        let holes: [NSBezierPath]
+        switch phase {
+        case "attached":
+            holes = cloudEyes.map { NSBezierPath(rect: $0) }
+        case "attaching", "draining", "detaching":
+            holes = [6.0, 9.0, 12.0].map { NSBezierPath(ovalIn: NSRect(x: $0 - 0.9, y: 8.1, width: 1.8, height: 1.8)) }
+        case "error":
+            holes = [NSBezierPath(roundedRect: NSRect(x: 8.1, y: 8.3, width: 1.8, height: 4.4), xRadius: 0.9, yRadius: 0.9),
+                     NSBezierPath(ovalIn: NSRect(x: 8.1, y: 5.3, width: 1.8, height: 1.8))]
+        default:
+            cloud.lineWidth = 1.3; cloud.stroke()
+            for eye in cloudEyes { NSBezierPath(rect: NSRect(x: eye.minX, y: 8.35, width: eye.width, height: 1.3)).fill() }
+            return
+        }
+        holes.forEach { cloud.append($0) }
+        cloud.windingRule = .evenOdd; cloud.fill()
+    }
 }
 
 func statusIcon(_ phase: String) -> NSImage {
@@ -90,15 +114,6 @@ func renderAssets(_ directory: String) throws {
         let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
         try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("menu-\(phase).png"))
     }
-    let image = NSImage(size: NSSize(width: 1024, height: 1024), flipped: false) { rect in
-        let tile = NSBezierPath(roundedRect: rect.insetBy(dx: 36, dy: 36), xRadius: 215, yRadius: 215)
-        NSGradient(starting: NSColor(calibratedRed: 0.28, green: 0.25, blue: 0.67, alpha: 1),
-                   ending: NSColor(calibratedRed: 0.12, green: 0.14, blue: 0.35, alpha: 1))!.draw(in: tile, angle: -55)
-        drawMark(rect.insetBy(dx: 230, dy: 230), phase: "attached", color: .white)
-        return true
-    }
-    let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
-    try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: directory).appendingPathComponent("AppIcon.png"))
 }
 
 // MARK: Text and formatting
@@ -297,19 +312,14 @@ final class UsageBar: NSView {
     }
 }
 
-/// Claude Code's pixel mascot on its dark tile, drawn at any size from the 16×10 source grid.
-func clawdImage(size: CGFloat) -> NSImage {
-    NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
+/// The Claude cloud in Claude orange with white pixel eyes, on Claude Code's dark tile.
+func claudeCodeImage(size: CGFloat) -> NSImage {
+    NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
         rgb(0x1F1E1D).setFill()
         NSBezierPath(roundedRect: rect, xRadius: rect.width / 4, yRadius: rect.width / 4).fill()
-        let unit = rect.width / 24, origin = NSPoint(x: rect.width / 2 - 8 * unit, y: rect.height / 2 - 5 * unit)
-        rgb(0xD97757).setFill()
-        let pixels: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            (3, 0, 12, 2), (3, 2, 2, 2), (6, 2, 6, 2), (13, 2, 2, 2), (1, 4, 16, 2), (3, 6, 12, 2),
-            (4, 8, 1, 2), (6, 8, 1, 2), (11, 8, 1, 2), (13, 8, 1, 2),
-        ]
-        for (x, y, width, height) in pixels {
-            NSRect(x: origin.x + (x - 1) * unit, y: origin.y + y * unit, width: width * unit, height: height * unit).fill()
+        inMarkGrid(rect.insetBy(dx: rect.width / 7, dy: rect.width / 7)) {
+            rgb(0xD97757).setFill(); cloudPath().fill()
+            NSColor.white.setFill(); cloudEyes.forEach { NSBezierPath(rect: $0).fill() }
         }
         return true
     }
@@ -709,7 +719,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             error.textColor = .systemRed; error.font = .systemFont(ofSize: 12); errorLabel = error
 
             let app = ComponentCard(name: "Codex App"), cli = ComponentCard(name: "Claude Code CLI"), host = ComponentCard(name: appName)
-            cli.icon.image = clawdImage(size: 36)
+            cli.icon.image = claudeCodeImage(size: 36)
             host.icon.image = NSApp.applicationIconImage
             host.version.stringValue = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
             appCard = app; cliCard = cli; hostCard = host

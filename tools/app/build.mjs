@@ -105,30 +105,72 @@ try {
   );
   const assets = path.join(root, ".dev/app/assets");
   execFileSync(executable, ["--render-assets", assets]);
-  const iconset = path.join(assets, "AppIcon.iconset");
-  await mkdir(iconset, { recursive: true });
-  for (const size of [16, 32, 128, 256, 512]) {
-    for (const scale of [1, 2])
-      execFileSync(
-        "/usr/bin/sips",
-        [
-          "-z",
-          String(size * scale),
-          String(size * scale),
-          path.join(assets, "AppIcon.png"),
-          "--out",
-          path.join(iconset, `icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`),
-        ],
-        { stdio: "ignore" },
-      );
+  // Xcode's actool compiles the layered Icon Composer icon into Assets.car, which carries its dark,
+  // tinted and clear appearances, plus Claude.icns for older systems. Without Xcode the App gets a
+  // flat icns from the icon's pre-rendered PNG.
+  const icon = path.join(root, "apps/macos/icon");
+  let actool = null;
+  try {
+    actool = execFileSync("/usr/bin/xcrun", ["--find", "actool"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {}
+  const iconFile = actool ? "Claude" : "AppIcon";
+  if (actool) {
+    execFileSync(
+      actool,
+      [
+        path.join(icon, "Claude.icon"),
+        "--compile",
+        resources,
+        "--platform",
+        "macosx",
+        "--target-device",
+        "mac",
+        "--minimum-deployment-target",
+        "14.0",
+        "--app-icon",
+        "Claude",
+        "--output-partial-info-plist",
+        path.join(staging, "icon.plist"),
+        "--errors",
+        "--warnings",
+        "--output-format",
+        "human-readable-text",
+      ],
+      { stdio: "inherit" },
+    );
+    for (const file of ["Assets.car", "Claude.icns"])
+      await lstat(path.join(resources, file)).catch(() => {
+        throw new Error(`actool did not produce ${file} from Claude.icon`);
+      });
+  } else {
+    const iconset = path.join(assets, "AppIcon.iconset");
+    await mkdir(iconset, { recursive: true });
+    for (const size of [16, 32, 128, 256, 512]) {
+      for (const scale of [1, 2])
+        execFileSync(
+          "/usr/bin/sips",
+          [
+            "-z",
+            String(size * scale),
+            String(size * scale),
+            path.join(icon, "AppIcon-1024.png"),
+            "--out",
+            path.join(iconset, `icon_${size}x${size}${scale === 2 ? "@2x" : ""}.png`),
+          ],
+          { stdio: "ignore" },
+        );
+    }
+    execFileSync("/usr/bin/iconutil", [
+      "-c",
+      "icns",
+      iconset,
+      "-o",
+      path.join(resources, "AppIcon.icns"),
+    ]);
   }
-  execFileSync("/usr/bin/iconutil", [
-    "-c",
-    "icns",
-    iconset,
-    "-o",
-    path.join(resources, "AppIcon.icns"),
-  ]);
   await writeFile(
     path.join(contents, "Info.plist"),
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -142,8 +184,8 @@ try {
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>CFBundleIconFile</key><string>AppIcon</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>CFBundleIconFile</key><string>${iconFile}</string>
+${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>\n`,

@@ -1,0 +1,81 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:1,1,1,1",
+          "srgb:0.96,0.966,0.972,1"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.18,0.17,0.17,1",
+          "srgb:0.075,0.07,0.07,1"
+        ]
+      }
+    },
+    {
+      "appearance": "tinted",
+      "value": {
+        "solid": "srgb:0.15,0.15,0.15,1"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "02 White pixel eyes",
+      "layers": [
+        {
+          "image-name": "02-Pixel-Eyes.svg",
+          "name": "Clawd eyes",
+          "fill": "automatic",
+          "glass": false,
+          "hidden": false,
+          "opacity": 1
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "01 Orange glass cloud",
+      "layers": [
+        {
+          "image-name": "01-Orange-Cloud.svg",
+          "name": "Orange cloud",
+          "fill": "automatic",
+          "glass": true,
+          "hidden": false,
+          "opacity": 1
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared",
+    "circles": [
+      "watchOS"
+    ]
+  }
+}
