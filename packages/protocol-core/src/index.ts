@@ -21,6 +21,7 @@ export { CodexTurnProjector, projectHistoricalTurn } from "./codex-ui-projector.
 export type {
   CodexApprovalProjection,
   CodexQuestionProjection,
+  CodexTurnActivity,
   CodexTurnProjection,
   HistoricalTurnProjectionInput,
   ProjectableHostEvent,

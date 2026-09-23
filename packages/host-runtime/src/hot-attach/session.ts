@@ -5,6 +5,7 @@ import type { JsonObject } from "@codexhost/protocol-core";
 import { AppServerHost } from "../app-server-host.js";
 import { OfficialRuntimeScope } from "../codex-runtime/official-runtime-scope.js";
 import { DesktopUsagePublisher, desktopUiLanguage } from "../desktop-usage-buckets.js";
+import { codexUsageMeters, type UsageMeter } from "./usage-meters.js";
 import { installedHarnessPluginOptions } from "../installed-harness-plugins.js";
 import { BorrowedDesktopBackend } from "./borrowed-backend.js";
 import {
@@ -32,6 +33,8 @@ export class HotAttachSession extends EventEmitter {
   readonly #backend: BorrowedDesktopBackend;
   readonly #scope: OfficialRuntimeScope;
   readonly #usage: DesktopUsagePublisher;
+  /** The Codex windows from the Desktop's latest `/wham/usage` poll. */
+  codexUsage: { meters: UsageMeter[]; observedAt: string } | null = null;
   #closing: Promise<void> | undefined;
   #heartbeat: NodeJS.Timeout;
   #buffer = "";
@@ -168,6 +171,12 @@ export class HotAttachSession extends EventEmitter {
   }
   receive(value: Record<string, unknown>): void {
     if (value.type === "usage" && typeof value.body === "string") {
+      try {
+        const meters = codexUsageMeters(JSON.parse(value.body));
+        if (meters.length > 0) this.codexUsage = { meters, observedAt: new Date().toISOString() };
+      } catch {
+        // Only the Desktop's own response shape is read; anything else keeps the last snapshot.
+      }
       void this.#usage
         .rewrite({
           status: 200,

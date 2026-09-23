@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveClaudeCodeExecutable } from "../src/command.js";
+import { readClaudeCodeVersion, resolveClaudeCodeExecutable } from "../src/command.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -120,5 +120,17 @@ describe("Claude Code executable resolution", () => {
         platform: "linux",
       }),
     ).toThrow("not installed");
+  });
+});
+
+describe.skipIf(process.platform === "win32")("readClaudeCodeVersion", () => {
+  it("returns the bare version the CLI reports and null when it fails", async () => {
+    const { directory, executable } = fakeExecutable();
+    fs.writeFileSync(executable, '#!/bin/sh\necho "2.3.14 (Claude Code)"\n', { mode: 0o700 });
+    await expect(readClaudeCodeVersion(executable, {})).resolves.toBe("2.3.14");
+    const broken = path.join(directory, "broken");
+    fs.writeFileSync(broken, "#!/bin/sh\nexit 3\n", { mode: 0o700 });
+    await expect(readClaudeCodeVersion(broken, {})).resolves.toBeNull();
+    await expect(readClaudeCodeVersion(path.join(directory, "missing"), {})).resolves.toBeNull();
   });
 });

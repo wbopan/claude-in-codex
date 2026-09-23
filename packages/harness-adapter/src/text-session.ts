@@ -553,6 +553,13 @@ export interface HarnessWebUiAction {
   open(): Promise<HarnessResult<void>>;
 }
 
+/** The local native CLI a Harness drives, for status surfaces. */
+export interface HarnessInstallation {
+  executable: string;
+  /** Version text the CLI reports about itself, or null when it cannot be read. */
+  version: string | null;
+}
+
 export interface HarnessAdapter {
   readonly harnessId: HarnessId;
   /** Static command metadata. Reading it must not inspect, connect to, or open a Native Session. */
@@ -564,6 +571,8 @@ export interface HarnessAdapter {
    * Implementations must bound requests and release inspection resources on close.
    */
   inspectAccount?(): Promise<HarnessAccountSnapshot | null>;
+  /** Locates the native CLI without opening a Native Session. Null when it is not installed. */
+  describeInstallation?(): Promise<HarnessInstallation | null>;
 
   inspect(input?: InspectHarnessInput): Promise<HarnessInspection>;
   open(input: OpenSessionInput): Promise<HarnessResult<HarnessSession>>;

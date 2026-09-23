@@ -57,6 +57,7 @@ export async function runMenuBarHost(
             quitting = false;
             break;
           case "status":
+            await controller.refresh();
             break;
           case "quit":
             await quit();
@@ -96,6 +97,7 @@ export async function runMenuBarHost(
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
   publish();
+  void controller.refresh().catch(() => {});
   if (environment.CODEXHOST_AUTO_ATTACH !== "0") void controller.attach().catch(() => {});
   try {
     await done.promise;

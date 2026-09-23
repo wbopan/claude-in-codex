@@ -6,6 +6,7 @@ import {
   IDLE_RELEASE_SETTINGS_METHOD,
   LOADED_SESSIONS_METHOD,
   idleReleaseSettingsSchema,
+  type HarnessAccountSnapshot,
 } from "@codexhost/shared-contracts";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
@@ -167,6 +168,7 @@ import {
   transportModelIdForHarness,
   type CodexApprovalProjection,
   type CodexQuestionProjection,
+  type CodexTurnActivity,
   type DecodedThreadForkRequest,
   type DecodedThreadListRequest,
   type DecodedThreadRevertRequest,
@@ -458,6 +460,19 @@ class OrderedWriter {
   }
 }
 
+export interface ExternalTaskSummary {
+  threadId: string;
+  harnessId: ExternalHarnessId;
+  /** Thread name, else the first line of its first prompt. */
+  title: string | null;
+  cwd: string;
+  model: string | null;
+  subagent: boolean;
+  status: "running" | "background" | "idle";
+  activity: CodexTurnActivity | null;
+  backgroundTasks: number;
+}
+
 export class AppServerHost {
   readonly #options: Required<
     Pick<AppServerHostOptions, "desktopInput" | "desktopOutput" | "diagnosticOutput">
@@ -704,6 +719,72 @@ export class AppServerHost {
         this.#runningSubagentsByParent.size > 0 ||
         this.#externalRuntime.values().some((thread) => thread.running),
     };
+  }
+
+  /** Live External Threads for status surfaces: identity and activity, never content. */
+  externalTasks(): ExternalTaskSummary[] {
+    return this.#externalRuntime
+      .values()
+      .filter((thread) => !thread.record.subagent || thread.running)
+      .map((thread) => {
+        const backgroundTasks = thread.session.backgroundTaskCount ?? 0;
+        const preview = typeof thread.thread.preview === "string" ? thread.thread.preview : "";
+        return {
+          threadId: thread.id,
+          harnessId: thread.harnessId,
+          title: (thread.record.title || preview).split("\n")[0]!.trim().slice(0, 120) || null,
+          cwd: thread.cwd,
+          model: thread.stateObserver.state.effectiveModel?.id ?? thread.requestedModel?.id ?? null,
+          subagent: thread.record.subagent !== undefined,
+          status:
+            thread.running || thread.activeTurnId
+              ? "running"
+              : backgroundTasks > 0
+                ? "background"
+                : "idle",
+          activity: thread.activeTurnId
+            ? (thread.projectedTurns.get(thread.activeTurnId)?.projector.activity() ?? null)
+            : null,
+          backgroundTasks,
+        };
+      });
+  }
+
+  async harnessInstallations(): Promise<
+    { harnessId: ExternalHarnessId; executable: string | null; version: string | null }[]
+  > {
+    await this.#waitForPlugins();
+    return Promise.all(
+      [...this.#externalAdapters].map(async ([harnessId, adapter]) => {
+        const installation = await adapter.describeInstallation?.().catch(() => null);
+        return {
+          harnessId,
+          executable: installation?.executable ?? null,
+          version: installation?.version ?? null,
+        };
+      }),
+    );
+  }
+
+  /** Each Harness's quota snapshot, sharing the Desktop usage cache so both surfaces agree. */
+  async harnessAccounts(): Promise<
+    { harnessId: ExternalHarnessId; account: HarnessAccountSnapshot | null }[]
+  > {
+    await this.#waitForPlugins();
+    const accounts: { harnessId: ExternalHarnessId; account: HarnessAccountSnapshot | null }[] = [];
+    for (const [harnessId, adapter] of this.#externalAdapters) {
+      if (!adapter.inspectAccount) continue;
+      try {
+        const { account } = await this.#desktopUsageInspections.inspect(
+          adapter,
+          this.#pluginDescriptors,
+        );
+        accounts.push({ harnessId, account });
+      } catch (error) {
+        this.#diagnose(error);
+      }
+    }
+    return accounts;
   }
 
   setAttachmentDraining(draining: boolean): void {

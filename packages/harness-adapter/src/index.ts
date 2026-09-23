@@ -25,6 +25,7 @@ export type {
   HarnessErrorCode,
   HarnessExecutionPolicy,
   HarnessInspection,
+  HarnessInstallation,
   HarnessModel,
   HarnessModelCatalog,
   HarnessModelRef,

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { CodexTurnProjector } from "../src/codex-ui-projector.js";
-import { hostItemIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
+import {
+  hostInteractionIdSchema,
+  hostItemIdSchema,
+  hostTurnIdSchema,
+} from "@codexhost/shared-contracts";
 
 const turnId = hostTurnIdSchema.parse("turn-1");
 const itemId = hostItemIdSchema.parse("item-1");
@@ -82,5 +86,71 @@ describe("CodexTurnProjector pending Turn", () => {
       ],
     });
     expect(JSON.stringify(projector.pendingTurn())).not.toContain("hidden");
+  });
+
+  it("reports the current activity without any Item content", () => {
+    const projector = new CodexTurnProjector({
+      threadId: "thread-1",
+      turnId,
+      cwd: "/synthetic",
+      startedAtMs: 1_000,
+    });
+    expect(projector.activity()).toEqual({ startedAtMs: 1_000, kind: "starting" });
+    projector.project({ type: "turn.started", turnId });
+    expect(projector.activity().kind).toBe("thinking");
+    projector.project({
+      type: "item.started",
+      turnId,
+      item: { type: "commandExecution", itemId, command: "rm -rf secret" },
+    });
+    expect(projector.activity()).toEqual({ startedAtMs: 1_000, kind: "command" });
+    const toolId = hostItemIdSchema.parse("tool-1");
+    projector.project({
+      type: "item.started",
+      turnId,
+      item: { type: "toolExecution", itemId: toolId, toolName: "WebSearch", arguments: { q: "x" } },
+    });
+    expect(projector.activity()).toEqual({
+      startedAtMs: 1_000,
+      kind: "tool",
+      toolName: "WebSearch",
+    });
+    projector.projectApproval(
+      {
+        type: "approval",
+        interactionId: hostInteractionIdSchema.parse("approval-1"),
+        turnId,
+        title: "Allow?",
+        description: "One-shot",
+        subject: { type: "nativeAction" },
+        actions: [
+          { id: "allow", label: "Allow once", effect: "allowOnce" },
+          { id: "reject", label: "Deny", effect: "deny" },
+        ],
+      },
+      "Claude Code",
+    );
+    expect(projector.activity().kind).toBe("approval");
+    projector.project({
+      type: "interaction.closed",
+      interactionId: hostInteractionIdSchema.parse("approval-1"),
+      turnId,
+      reason: "responded",
+    });
+    projector.project({
+      type: "item.completed",
+      turnId,
+      snapshot: {
+        item: {
+          type: "toolExecution",
+          itemId: toolId,
+          toolName: "WebSearch",
+          arguments: { q: "x" },
+        },
+        outcome: { status: "succeeded" },
+      },
+    });
+    expect(projector.activity().kind).toBe("command");
+    expect(JSON.stringify(projector.activity())).not.toContain("secret");
   });
 });

@@ -22,7 +22,7 @@ contexts remain owned by the original app-server. See the [official unsubscribe 
 
 Draining closes admission for new external turns, forks, steering and queue submissions. Approvals, cancellation, history reads and native GPT requests continue. The Host waits for foreground turns, background shell tasks, subagents and requests already in progress. The existing successful-turn queue processing remains active. Canceling a drain reopens admission. Explicit stop cancels external work and releases adapter processes; it does not signal Desktop or its backend.
 
-The native app's ordinary quit waits for this drain. Losing the native app's control pipe forces cleanup so an orphaned Host does not keep the integration active. A crashed Host is reported in the menu and can be restarted with “接入原版 App”. If Desktop itself exits or replaces the local backend, the attachment restores itself; the user can attach again after Desktop is ready.
+The native app's ordinary quit waits for this drain. Losing the native app's control pipe forces cleanup so an orphaned Host does not keep the integration active. A crashed Host is reported in the menu and can be restarted with “接入 Codex App”. If Desktop itself exits or replaces the local backend, the attachment restores itself; the user can attach again after Desktop is ready.
 
 ## Feature parity
 
