@@ -115,7 +115,9 @@ try {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-  } catch {}
+  } catch {
+    // No Xcode: fall back to the pre-rendered icns below.
+  }
   const iconFile = actool ? "Claude" : "AppIcon";
   if (actool) {
     execFileSync(
