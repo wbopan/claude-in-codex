@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import { expect, vi } from "vitest";
+import { expect, onTestFinished, vi } from "vitest";
 import type { HarnessAdapter } from "@claude-in-codex/harness-adapter";
 import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
 import { MappingStore } from "@claude-in-codex/mapping-store";
@@ -25,6 +25,12 @@ import { FakeOfficialProcess } from "./fakes.js";
 import { JsonLineCollector, requestId, turnEvent, writeRequest } from "./json-rpc.js";
 
 export const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+
+type HostFixture = ReturnType<typeof createFixture>;
+
+// Keyed by Host so that a spread copy of a fixture (`{ ...fixture, adapter }`) shares the state.
+const exitedHosts = new WeakSet<AppServerHost>();
+const fixtureStops = new WeakMap<AppServerHost, Promise<void>>();
 
 export function createFixture(
   options: {
@@ -99,7 +105,8 @@ export function createFixture(
     () => startup.reject(new Error("Host exited before fixture startup")),
     (error) => startup.reject(error),
   );
-  return {
+  void running.finally(() => exitedHosts.add(host)).catch(() => undefined);
+  const fixture = {
     adapter,
     collector,
     desktopInput,
@@ -115,6 +122,31 @@ export function createFixture(
     mappingStoreDirectory,
     spawnOfficial,
   };
+  try {
+    onTestFinished(() => releaseFixture(fixture));
+  } catch {
+    // Outside a running test (for example in beforeAll) there is no test to hook into; the
+    // caller owns the fixture and must stop it itself, for example in afterAll.
+  }
+  return fixture;
+}
+
+/**
+ * Stop a fixture whatever state its test left it in: a failed test may leave the Host running,
+ * mid-Turn, or already exited with a non-zero code. It never asserts, so it cannot fail a test.
+ */
+async function releaseFixture(fixture: HostFixture): Promise<void> {
+  if (!exitedHosts.has(fixture.host)) fixture.host.close();
+  if (!fixtureStops.has(fixture.host)) {
+    fixtureStops.set(
+      fixture.host,
+      fixture.running.then(
+        () => rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true }),
+        () => rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true }),
+      ),
+    );
+  }
+  await fixtureStops.get(fixture.host)?.catch(() => undefined);
 }
 
 export async function startExternalThread(
@@ -183,9 +215,16 @@ export async function closeFixture(fixture: ReturnType<typeof createFixture>): P
   expect(outcome, fixture.diagnosticOutput.read()?.toString() ?? "").toBe(0);
 }
 
-export async function stopFixture(fixture: ReturnType<typeof createFixture>): Promise<void> {
-  await closeFixture(fixture);
-  rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
+/** Stop the Host, assert a clean exit, and remove its directory. Repeated calls share the first. */
+export function stopFixture(fixture: HostFixture): Promise<void> {
+  let stop = fixtureStops.get(fixture.host);
+  if (!stop) {
+    stop = closeFixture(fixture).finally(() =>
+      rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true }),
+    );
+    fixtureStops.set(fixture.host, stop);
+  }
+  return stop;
 }
 
 export async function bindOfficialThread(
