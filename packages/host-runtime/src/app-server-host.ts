@@ -726,7 +726,7 @@ export class AppServerHost {
         return {
           threadId: thread.id,
           harnessId: thread.harnessId,
-          title: (thread.record.title || preview).split("\n")[0]!.trim().slice(0, 120) || null,
+          title: (thread.record.title || preview).split("\n")[0]?.trim().slice(0, 120) || null,
           cwd: thread.cwd,
           model: thread.stateObserver.state.effectiveModel?.id ?? thread.requestedModel?.id ?? null,
           subagent: thread.record.subagent !== undefined,

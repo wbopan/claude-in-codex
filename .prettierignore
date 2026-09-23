@@ -3,3 +3,5 @@
 **/*.wxs
 package-lock.json
 Cargo.lock
+# Written by Icon Composer.
+apps/macos/icon/**/*.json
