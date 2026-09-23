@@ -4,9 +4,10 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import path from "node:path";
 import { CdpClient } from "@claude-in-codex/desktop-control";
-import { DATA_DIRECTORY_ENV } from "@claude-in-codex/shared-contracts";
+import { DATA_DIRECTORY_ENV, type FeatureId } from "@claude-in-codex/shared-contracts";
 import { dataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 import { installDesktopAgent, refreshDesktopQueries } from "./desktop-agent.js";
+import { FeatureHealth } from "./features.js";
 import { HotAttachSession, type DesktopHello } from "./session.js";
 import { accountUsageMeters, type UsageMeter } from "./usage-meters.js";
 
@@ -97,7 +98,12 @@ export class HotAttachController {
       /** Runs before every attachment; a rejection stops it, e.g. while legacy data cannot move yet. */
       prepare?: () => Promise<void>;
     },
-  ) {}
+  ) {
+    this.#features = new FeatureHealth({
+      environment: options.environment,
+      changed: () => this.#changed(),
+    });
+  }
 
   #installedAppVersion: string | null = null;
   #appRunning = false;
@@ -106,6 +112,7 @@ export class HotAttachController {
   #claudeProcesses = 0;
   #harnessUsage: { meters: UsageMeter[]; observedAt: string } | null = null;
   #harnessUsageRead: Promise<void> | undefined;
+  readonly #features: FeatureHealth;
 
   status() {
     const state = this.#session?.state();
@@ -132,7 +139,18 @@ export class HotAttachController {
             .sort()
             .at(-1) ?? null)
         : null,
+      features: this.#features.status(),
     };
+  }
+  /** Writes a feature switch to `features.json` and applies it where it can change live. */
+  async setFeature(id: FeatureId, enabled: boolean): Promise<void> {
+    await this.#features.set(id, enabled, this.#session);
+    this.#changed();
+  }
+  /** Re-runs every feature check now, including the official server listing while attached. */
+  async checkFeatures(): Promise<void> {
+    await this.#features.refresh(this.#session, true);
+    this.#changed();
   }
   /** Re-reads what the Dashboard shows outside the live attachment. Cheap except the CLI. */
   async refresh(): Promise<void> {
@@ -170,6 +188,7 @@ export class HotAttachController {
     } catch {
       this.#claudeProcesses = 0;
     }
+    await this.#features.refresh(session).catch(() => {});
     if (!session) this.#harnessUsage = null;
     // Account inspection can spawn the CLI; it runs beside the status reply, never in front of it.
     else if (session.attached) this.#harnessUsageRead ??= this.#readHarnessUsage(session);

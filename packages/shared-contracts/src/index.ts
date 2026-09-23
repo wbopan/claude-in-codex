@@ -9,6 +9,20 @@ export {
   type IdleReleaseSettings,
 } from "./idle-release.js";
 export {
+  DEFAULT_FEATURE_SETTINGS,
+  FEATURE_IDS,
+  FEATURES_FILE,
+  MEMORY_SYNC_RESULT_FILE,
+  featureIdSchema,
+  featureSettingsSchema,
+  memorySyncResultSchema,
+  resolveFeatures,
+  type FeatureId,
+  type FeatureSettings,
+  type FeatureState,
+  type MemorySyncResult,
+} from "./features.js";
+export {
   LOADED_SESSIONS_METHOD,
   loadedSessionsSchema,
   type LoadedSession,

@@ -18,6 +18,10 @@
     "./app-paths": {
       "types": "./dist/app-paths.d.ts",
       "import": "./dist/app-paths.js"
+    },
+    "./features-file": {
+      "types": "./dist/features-file.d.ts",
+      "import": "./dist/features-file.js"
     }
   },
   "scripts": {

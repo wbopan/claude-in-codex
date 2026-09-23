@@ -1,5 +1,9 @@
 import { appConsentEnabled, consentedApp } from "./desktop-app-consent.js";
-import { OfficialDesktopTools } from "./official-desktop-tools.js";
+import {
+  DESKTOP_TOOL_FEATURES,
+  OfficialDesktopTools,
+  type DesktopToolServerStatus,
+} from "./official-desktop-tools.js";
 import type { DesktopUsagePublisher, HarnessUsageReport } from "./desktop-usage-buckets.js";
 import {
   DATA_DIRECTORY_ENV,
@@ -12,6 +16,7 @@ import {
   idleReleaseSettingsSchema,
   type HarnessAccountSnapshot,
 } from "@claude-in-codex/shared-contracts";
+import { featureEnabled } from "@claude-in-codex/shared-contracts/features-file";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
@@ -604,6 +609,13 @@ export class AppServerHost {
       elicit: (threadId, turnId, params) =>
         this.#forwardDesktopElicitation(threadId, turnId, params),
       trace: (event) => this.#traceNativePicker(event),
+      enabledServers: async () => {
+        const enabled = new Set<string>();
+        for (const [feature, server] of Object.entries(DESKTOP_TOOL_FEATURES))
+          if (await featureEnabled(feature as keyof typeof DESKTOP_TOOL_FEATURES, environment))
+            enabled.add(server);
+        return enabled;
+      },
     });
     this.#externalRuntime = new ExternalThreadRuntime({
       clientTools: (threadId, cwd) => this.#desktopTools.forThread(threadId, cwd),
@@ -773,6 +785,22 @@ export class AppServerHost {
     this.#attachmentDraining = draining;
   }
 
+  /**
+   * Apply the `idleRelease` switch, keeping the configured timeout. The settings RPC stays an
+   * in-memory override for this Host and does not write the switch.
+   */
+  setIdleReleaseEnabled(enabled: boolean): void {
+    // A Host whose Desktop input ended has disabled idle release for good.
+    if (this.#closeRequested || this.#desktopInputEnded) return;
+    const idleRelease = this.#externalRuntime.idleRelease;
+    idleRelease.configure({ ...idleRelease.settings(), enabled });
+  }
+
+  /** The exposed official MCP servers as the native app-server reports them now. */
+  desktopToolServers(): Promise<Map<string, DesktopToolServerStatus>> {
+    return this.#desktopTools.inspect();
+  }
+
   #waitForPlugins(): Promise<void> {
     return (this.#pluginLoading ??= this.#loadInstalledPlugins().catch((error: unknown) => {
       this.#diagnose(`Harness plugin load failed: ${errorMessage(error)}`);
@@ -818,6 +846,14 @@ export class AppServerHost {
       }
       await this.#closeOfficialRuntime();
       return this.#closeRequested ? 0 : 1;
+    }
+    // Desktop input is not read yet, so the settings RPC cannot race the stored switch.
+    try {
+      this.setIdleReleaseEnabled(
+        await featureEnabled("idleRelease", this.#options.environment ?? process.env),
+      );
+    } catch (error) {
+      this.#diagnose(`Idle release could not be configured: ${errorMessage(error)}`);
     }
     try {
       await this.#officialRuntime.initialize();

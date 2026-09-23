@@ -55,6 +55,10 @@ export class ExternalThreadIdleRelease {
     return { ...settings };
   }
 
+  settings(): IdleReleaseSettings {
+    return { ...this.#settings };
+  }
+
   touch(thread: ExternalThread): void {
     const state = this.#activity.get(thread);
     if (state) state.lastActivity = Date.now();

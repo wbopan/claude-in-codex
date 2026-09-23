@@ -437,6 +437,35 @@ describe("AppServerHost idle resource release", () => {
     }
   });
 
+  it("applies the stored idleRelease switch at startup and when it changes", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-test-"));
+    writeFileSync(path.join(directory, "features.json"), JSON.stringify({ idleRelease: true }));
+    const fixture = createFixture({ mappingStoreDirectory: directory });
+    try {
+      const threadId = await startPiThread(fixture);
+      await completePiTurn(fixture, threadId, 2);
+      writeRequest(fixture.desktopInput, {
+        id: 910,
+        method: "claude-in-codex/sessions/loaded/list",
+        params: {},
+      });
+      expect(await fixture.collector.waitFor((message) => requestId(message, 910))).toMatchObject({
+        result: [{ threadId, state: "idle", reason: "timeout" }],
+      });
+      fixture.host.setIdleReleaseEnabled(false);
+      writeRequest(fixture.desktopInput, {
+        id: 911,
+        method: "claude-in-codex/sessions/loaded/list",
+        params: {},
+      });
+      expect(await fixture.collector.waitFor((message) => requestId(message, 911))).toMatchObject({
+        result: [{ threadId, state: "idle", reason: "disabled" }],
+      });
+    } finally {
+      await stopFixture(fixture);
+    }
+  });
+
   it("silently releases an idle session and resumes its history for another Turn", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     const fixture = createFixture();
