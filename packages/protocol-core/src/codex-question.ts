@@ -1,5 +1,8 @@
-import type { HostQuestionInteraction, HostQuestionResponse } from "@codexhost/harness-adapter";
-import type { JsonObject } from "@codexhost/shared-contracts";
+import type {
+  HostQuestionInteraction,
+  HostQuestionResponse,
+} from "@claude-in-codex/harness-adapter";
+import type { JsonObject } from "@claude-in-codex/shared-contracts";
 
 export interface CodexQuestionRequestProjection {
   request: JsonObject;

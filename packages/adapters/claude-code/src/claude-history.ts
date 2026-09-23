@@ -2,7 +2,7 @@ import type {
   HistoricalTurnOutcome,
   HostItemOutcome,
   HostThreadSnapshot,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   harnessIdSchema,
   hostItemIdSchema,
@@ -10,7 +10,7 @@ import {
   nativeCheckpointRefSchema,
   nativeTurnRefSchema,
   type HarnessId,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { claudeTranscriptItemId } from "./item-identity.js";
 

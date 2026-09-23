@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { harnessIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
+import { harnessIdSchema, hostTurnIdSchema } from "@claude-in-codex/shared-contracts";
 
 import type { HarnessError, HarnessOutput, HostEvent } from "../src/index.js";
 import { FakeHarnessSession } from "../src/testing.js";

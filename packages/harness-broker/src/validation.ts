@@ -11,18 +11,22 @@ import {
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
-} from "@codexhost/shared-contracts";
-import type { HarnessError, HarnessOutput, HarnessSessionState } from "@codexhost/harness-adapter";
+} from "@claude-in-codex/shared-contracts";
+import type {
+  HarnessError,
+  HarnessOutput,
+  HarnessSessionState,
+} from "@claude-in-codex/harness-adapter";
 
 const cwdSchema = z.string().min(1).max(16_384);
 // A remote caller may propagate only the Host's scoped delegation context,
 // never change the Aqua process's HOME, PATH, loader or native credentials.
 export const brokerEnvironmentSchema = z
   .object({
-    CODEXHOST_CLI_PATH: z.string().max(16_384).optional(),
-    CODEXHOST_RUNTIME_ENDPOINT: z.string().max(16_384).optional(),
-    CODEXHOST_RUNTIME_TOKEN: z.string().max(16_384).optional(),
-    CODEXHOST_THREAD_ID: z.string().max(256).optional(),
+    CLAUDE_IN_CODEX_CLI_PATH: z.string().max(16_384).optional(),
+    CLAUDE_IN_CODEX_RUNTIME_ENDPOINT: z.string().max(16_384).optional(),
+    CLAUDE_IN_CODEX_RUNTIME_TOKEN: z.string().max(16_384).optional(),
+    CLAUDE_IN_CODEX_THREAD_ID: z.string().max(256).optional(),
   })
   .strict();
 

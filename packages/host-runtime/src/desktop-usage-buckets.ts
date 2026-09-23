@@ -1,14 +1,20 @@
 import { execFileSync } from "node:child_process";
 import type { IncomingHttpHeaders } from "node:http";
 
-import type { JsonObject } from "@codexhost/protocol-core";
-import type { AccountCreditsSnapshot, HarnessAccountSnapshot } from "@codexhost/shared-contracts";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
+import type {
+  AccountCreditsSnapshot,
+  HarnessAccountSnapshot,
+} from "@claude-in-codex/shared-contracts";
 
-import type { DesktopBackendRewrite, DesktopRewriteRequest } from "./desktop-backend-proxy.js";
+/** Request context the Desktop reports alongside a usage response it asks Host to extend. */
+export interface DesktopRewriteRequest {
+  /** The Desktop's UI language (`OAI-Language`, else the first `Accept-Language` tag), if any. */
+  language: string | null;
+}
 
 /**
- * Phase B of the Desktop backend proxy: the only response rewrite. Two native surfaces read
- * `GET /backend-api/wham/usage`:
+ * The only Desktop response rewrite. Two native surfaces read `GET /backend-api/wham/usage`:
  *
  * - `additional_rate_limits[]`: per-Model windows keyed by `limit_name`; the profile menu's
  *   "Usage remaining" submenu shows the entry matching the selected Model. Each Harness with
@@ -173,7 +179,7 @@ const MESSAGES: Record<"en" | "zh", UsageMessages> = {
   },
 };
 
-export const DESKTOP_LANGUAGE_ENV = "CODEXHOST_DESKTOP_LANGUAGE";
+export const DESKTOP_LANGUAGE_ENV = "CLAUDE_IN_CODEX_DESKTOP_LANGUAGE";
 
 /** First entry of a `defaults read -g AppleLanguages` listing, e.g. `zh-Hans-CN`. */
 export function parseAppleLanguages(output: string): string | null {
@@ -186,7 +192,7 @@ export function parseAppleLanguages(output: string): string | null {
 /**
  * The Desktop renders its UI in the macOS preferred language (its `systemLocale`), while its
  * backend requests carry the Chromium locale (`en-US` here), so the header is not the UI
- * language. `CODEXHOST_DESKTOP_LANGUAGE` overrides; other platforms fall back to the request.
+ * language. `CLAUDE_IN_CODEX_DESKTOP_LANGUAGE` overrides; other platforms fall back to the request.
  */
 export function desktopUiLanguage(
   environment: NodeJS.ProcessEnv,
@@ -383,7 +389,7 @@ function ambientUsageWith(
  * not a 200 JSON object, the source is detached or fails, it yields nothing, or the fields to
  * extend have an unexpected shape.
  */
-export class DesktopUsagePublisher implements DesktopBackendRewrite {
+export class DesktopUsagePublisher {
   #source: (() => Promise<HarnessUsageReport[]>) | null = null;
   readonly #now: () => number;
   readonly #language: string | null;
@@ -406,13 +412,9 @@ export class DesktopUsagePublisher implements DesktopBackendRewrite {
     await this.#source?.();
   }
 
-  matches(request: { method: string; path: string }): boolean {
-    return request.method === "GET" && request.path === DESKTOP_USAGE_PATH;
-  }
-
   async rewrite(
     response: { status: number; headers: IncomingHttpHeaders; body: Buffer },
-    request: Pick<DesktopRewriteRequest, "language"> = { language: null },
+    request: DesktopRewriteRequest = { language: null },
   ): Promise<Buffer | null> {
     const source = this.#source;
     if (!source || response.status !== 200 || !isJson(response.headers)) return null;

@@ -6,8 +6,8 @@ import {
   ToolSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-import type { HarnessClientTools } from "@codexhost/harness-adapter";
-import type { JsonValue } from "@codexhost/shared-contracts";
+import type { HarnessClientTools } from "@claude-in-codex/harness-adapter";
+import type { JsonValue } from "@claude-in-codex/shared-contracts";
 
 /** Adapt only the transport. Schemas, descriptions, annotations and results stay client-owned. */
 export async function createClaudeClientTools(client: HarnessClientTools | undefined) {

@@ -1,4 +1,4 @@
-import type { HarnessAdapter } from "@codexhost/harness-adapter";
+import type { HarnessAdapter } from "@claude-in-codex/harness-adapter";
 import {
   harnessAccountInspectResultSchema,
   harnessAccountSnapshotSchema,
@@ -8,7 +8,7 @@ import {
   type HarnessAccountSourceListResult,
   type HarnessId,
   type HarnessPluginDescriptor,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 const DEFAULT_ACCOUNT_INSPECTION_TIMEOUT_MS = 12_000;
 const DEFAULT_ACCOUNT_CACHE_TTL_MS = 15_000;

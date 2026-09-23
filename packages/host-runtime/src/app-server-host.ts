@@ -1,13 +1,17 @@
 import { appConsentEnabled, consentedApp } from "./desktop-app-consent.js";
 import { OfficialDesktopTools } from "./official-desktop-tools.js";
-import type { DesktopBackendProxy } from "./desktop-backend-proxy.js";
 import type { DesktopUsagePublisher, HarnessUsageReport } from "./desktop-usage-buckets.js";
+import {
+  DATA_DIRECTORY_ENV,
+  isAppEnvironmentVariable,
+  MODEL_PROVIDER,
+} from "@claude-in-codex/shared-contracts";
 import {
   IDLE_RELEASE_SETTINGS_METHOD,
   LOADED_SESSIONS_METHOD,
   idleReleaseSettingsSchema,
   type HarnessAccountSnapshot,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
@@ -27,10 +31,10 @@ import type {
   HostSubagentState,
   HostApprovalResponse,
   HostQuestionInteraction,
-} from "@codexhost/harness-adapter";
-import { parseHostUsage, type HostUsage } from "@codexhost/harness-adapter";
-import type { HarnessPluginContext } from "@codexhost/harness-adapter/plugin";
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
+} from "@claude-in-codex/harness-adapter";
+import { parseHostUsage, type HostUsage } from "@claude-in-codex/harness-adapter";
+import type { HarnessPluginContext } from "@claude-in-codex/harness-adapter/plugin";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import {
   accountCreditsSnapshotSchema,
   harnessAccountInspectParamsSchema,
@@ -60,7 +64,7 @@ import {
   type HarnessThinkingOptionId,
   type HostInteractionId,
   type HostTurnId,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { executeExternalThreadFork } from "./external-thread-fork.js";
 import {
   ExternalHistoryRequestError,
@@ -182,7 +186,7 @@ import {
   type JsonRpcRequest,
   type JsonValue,
   type ProjectableHostEvent,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 export interface AppServerHostOptions {
   stockCodexPath: string;
@@ -206,9 +210,7 @@ export interface AppServerHostOptions {
   officialRuntimeScope?: OfficialRuntimeScope;
   onCreateRequestRoute?: (observation: CreateRequestRouteObservation) => void;
   onRequestRoute?: (observation: RequestRouteObservation) => void;
-  /** While active, `account/read` publishes the proxy origin as `workspaceRouting.backendOrigin`. */
-  desktopProxy?: Pick<DesktopBackendProxy, "origin" | "active">;
-  /** Receives the Harness buckets appended to the Desktop's proxied `/wham/usage` response. */
+  /** Receives the Harness buckets appended to the Desktop's `/wham/usage` response. */
   desktopUsage?: Pick<DesktopUsagePublisher, "attach">;
 }
 
@@ -269,35 +271,15 @@ function codexAccountRpcError(error: unknown): { code: number; message: string }
     : { code: -32086, message: "Codex Account operation failed" };
 }
 
+/** Official Codex never sees this App's variables, under either the current or the legacy prefix. */
+const LEGACY_METHOD_PREFIX = "codexhost/";
+
 export function officialEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const internal = new Set([
-    "CODEX_CLI_PATH",
-    "CODEXHOST_HOST_NODE_PATH",
-    "CODEXHOST_DATA_DIR",
-    "CODEXHOST_DEFAULT_AGENT",
-    "CODEXHOST_HOST_RUNTIME_PATH",
-    "CODEXHOST_NATIVE_APP_TOOLS",
-    "CODEXHOST_DESKTOP_PARENT_SOCKET",
-    "CODEXHOST_DESKTOP_PARENT_PID",
-    "CODEXHOST_DESKTOP_PARENT_LAUNCH",
-    "CODEXHOST_ENABLE_CLAUDE_CODE",
-    "CODEXHOST_CLAUDE_COMMAND",
-    "CODEXHOST_OPENCODE_COMMAND",
-    "CODEXHOST_STOCK_CODEX_PATH",
-    "CODEXHOST_LAUNCHER_PID",
-    "CODEXHOST_LAUNCHER_EXECUTABLE",
-    "CODEXHOST_RUNTIME_DESCRIPTOR_PATH",
-    "CODEXHOST_CONTROL_PORT",
-    "CODEXHOST_CONTROL_NONCE",
-    "CODEXHOST_NPM_NODE_PATH",
-    "CODEXHOST_NPM_CLI_PATH",
-    "CODEXHOST_NPM_LAUNCHER_PATH",
-    "CODEXHOST_NPM_PACKAGE_ROOT",
-    "CODEXHOST_DESKTOP_PROXY",
-    "CODEXHOST_DESKTOP_PROXY_SPKI",
-    "CODEXHOST_DESKTOP_PROXY_TRACE",
-  ]);
-  return Object.fromEntries(Object.entries(source).filter(([key]) => !internal.has(key)));
+  return Object.fromEntries(
+    Object.entries(source).filter(
+      ([key]) => key !== "CODEX_CLI_PATH" && !isAppEnvironmentVariable(key),
+    ),
+  );
 }
 
 function rpcEnvelope(request: JsonRpcRequest, value: JsonObject): JsonObject {
@@ -524,7 +506,7 @@ export class AppServerHost {
 
   constructor(options: AppServerHostOptions) {
     this.#nativeSelection = new NativeSelectionStore(
-      (options.environment ?? process.env).CODEXHOST_DATA_DIR,
+      (options.environment ?? process.env)[DATA_DIRECTORY_ENV],
     );
     this.#options = {
       desktopInput: process.stdin,
@@ -1042,6 +1024,10 @@ export class AppServerHost {
         return;
       }
     }
+    if (request.method.startsWith(LEGACY_METHOD_PREFIX)) {
+      // Tools and remote probes written before the rename still use the legacy namespace.
+      request.method = `claude-in-codex/${request.method.slice(LEGACY_METHOD_PREFIX.length)}`;
+    }
     if (request.method === LOADED_SESSIONS_METHOD) {
       await this.#writer.json(
         rpcEnvelope(request, { result: this.#externalRuntime.idleRelease.list() }),
@@ -1058,7 +1044,7 @@ export class AppServerHost {
       }
       return;
     }
-    if (request.method === "codexhost/update/status") {
+    if (request.method === "claude-in-codex/update/status") {
       // Protocol discriminator for the SSH remote Host probe: a managed Host answers
       // -32090 here, stock Codex rejects the method as an unknown variant.
       this.#dispatchDesktopRequest(async () => {
@@ -1066,11 +1052,11 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/account/usage/inspect") {
+    if (request.method === "claude-in-codex/account/usage/inspect") {
       this.#dispatchDesktopRequest(() => this.#handleCodexAccountRequest(request));
       return;
     }
-    if (request.method === "codexhost/harness/accounts/sources") {
+    if (request.method === "claude-in-codex/harness/accounts/sources") {
       this.#dispatchDesktopRequest(async () => {
         if (!harnessAccountSourceListParamsSchema.safeParse(request.params).success) {
           await this.#writer.json(
@@ -1087,7 +1073,7 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/harness/accounts/inspect") {
+    if (request.method === "claude-in-codex/harness/accounts/inspect") {
       this.#dispatchDesktopRequest(async () => {
         const params = harnessAccountInspectParamsSchema.safeParse(request.params);
         if (!params.success) {
@@ -1111,7 +1097,7 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/harness/accounts/list") {
+    if (request.method === "claude-in-codex/harness/accounts/list") {
       this.#dispatchDesktopRequest(async () => {
         const params = harnessAccountListParamsSchema.safeParse(request.params);
         if (!params.success) {
@@ -1179,7 +1165,7 @@ export class AppServerHost {
       });
       return;
     }
-    if (request.method === "codexhost/thread/usage/inspect") {
+    if (request.method === "claude-in-codex/thread/usage/inspect") {
       await this.#inspectThreadUsage(request);
       return;
     }
@@ -1190,12 +1176,6 @@ export class AppServerHost {
     }
     if (request.method === "config/read") {
       void this.#readNativeConfig(request).catch((error: unknown) => this.#diagnose(error));
-      return;
-    }
-    // Only the request side is rewritten: `#handleOfficialOutput` relays official responses
-    // verbatim, and `account/read` is the sole frame that carries `workspaceRouting`.
-    if (request.method === "account/read" && this.#options.desktopProxy?.active) {
-      void this.#readNativeAccount(request).catch((error: unknown) => this.#diagnose(error));
       return;
     }
     if (request.method === "config/batchWrite" || request.method === "config/value/write") {
@@ -1562,12 +1542,12 @@ export class AppServerHost {
   #traceNativePicker(event: JsonObject): void {
     const environment = this.#options.environment ?? process.env;
     const enabled =
-      environment.CODEXHOST_NATIVE_PICKER_TRACE === "1" ||
-      environment.CODEXHOST_STARTUP_TRACE === "1";
-    if (!enabled || !environment.CODEXHOST_DATA_DIR) return;
+      environment.CLAUDE_IN_CODEX_NATIVE_PICKER_TRACE === "1" ||
+      environment.CLAUDE_IN_CODEX_STARTUP_TRACE === "1";
+    if (!enabled || !environment.CLAUDE_IN_CODEX_DATA_DIR) return;
     try {
       appendFileSync(
-        path.join(path.resolve(environment.CODEXHOST_DATA_DIR), "native-picker-trace.jsonl"),
+        path.join(path.resolve(environment.CLAUDE_IN_CODEX_DATA_DIR), "native-picker-trace.jsonl"),
         `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`,
         { mode: 0o600 },
       );
@@ -1598,7 +1578,9 @@ export class AppServerHost {
     try {
       // Desktop startup must not depend on Harness loading: wait a bounded time, then answer
       // with the Harnesses that are ready. Desktop refetches the list on focus and expiry.
-      const configuredWait = Number(this.#options.environment?.CODEXHOST_NATIVE_MODEL_WAIT_MS);
+      const configuredWait = Number(
+        this.#options.environment?.CLAUDE_IN_CODEX_NATIVE_MODEL_WAIT_MS,
+      );
       const waitMs =
         Number.isFinite(configuredWait) && configuredWait >= 0 ? configuredWait : 5_000;
       let timer: NodeJS.Timeout | undefined;
@@ -1672,46 +1654,6 @@ export class AppServerHost {
       harnesses: reports.map((report) => `${report.harnessName}:${report.account ? "ok" : "none"}`),
     });
     return reports;
-  }
-
-  /**
-   * Fails open: the official response passes untouched whenever the proxy died meanwhile or the
-   * response carries no `workspaceRouting.backendOrigin`; every other field is preserved.
-   */
-  async #readNativeAccount(request: JsonRpcRequest): Promise<void> {
-    let response: JsonObject;
-    try {
-      response = await this.#requestOfficial(
-        "account/read",
-        isRecord(request.params) ? request.params : {},
-      );
-    } catch {
-      await this.#writer.json(
-        rpcError(request, -32001, "Official request failed; retry explicitly"),
-      );
-      return;
-    }
-    const proxy = this.#options.desktopProxy;
-    const result = isRecord(response.result) ? response.result : undefined;
-    const routing =
-      result && isRecord(result.workspaceRouting) ? result.workspaceRouting : undefined;
-    if (!proxy?.active || !result || !routing || typeof routing.backendOrigin !== "string") {
-      await this.#writer.json({ ...response, id: request.id });
-      return;
-    }
-    this.#traceNativePicker({
-      event: "desktop-proxy/account-read",
-      from: routing.backendOrigin,
-      to: proxy.origin,
-    });
-    await this.#writer.json({
-      ...response,
-      id: request.id,
-      result: {
-        ...result,
-        workspaceRouting: { ...routing, backendOrigin: proxy.origin },
-      },
-    });
   }
 
   async #readNativeConfig(request: JsonRpcRequest): Promise<void> {
@@ -2112,7 +2054,7 @@ export class AppServerHost {
     const permission = this.#nativePermissionFields(thread);
     return {
       model,
-      modelProvider: "codexhost",
+      modelProvider: MODEL_PROVIDER,
       cwd: thread.cwd,
       effort: reasoningEffort,
       approvalPolicy: permission.approvalPolicy ?? "on-request",
@@ -2222,7 +2164,7 @@ export class AppServerHost {
     if (isRecord(parsed) && typeof parsed.method === "string" && "id" in parsed) {
       const originalId = parsed.id;
       if (typeof originalId === "string" || typeof originalId === "number") {
-        const forwardedId = `codexhost:official:${++this.#nextOfficialServerRequestId}`;
+        const forwardedId = `claude-in-codex:official:${++this.#nextOfficialServerRequestId}`;
         this.#officialServerRequests.set(forwardedId, originalId);
         forwarded = { ...parsed, id: forwardedId };
       }
@@ -2664,7 +2606,7 @@ export class AppServerHost {
             result: {
               thread,
               model: this.#nativeThreadSelection(externalThread).model,
-              modelProvider: "codexhost",
+              modelProvider: MODEL_PROVIDER,
               cwd,
               // Echo the requested policy. Rewriting a granular policy to "never" made later
               // Turns claim an approval-free Thread the user never selected.
@@ -4396,6 +4338,6 @@ export class AppServerHost {
   }
 
   #diagnose(error: unknown): void {
-    this.#options.diagnosticOutput.write(`codexhost Host Runtime: ${errorMessage(error)}\n`);
+    this.#options.diagnosticOutput.write(`claude-in-codex Host Runtime: ${errorMessage(error)}\n`);
   }
 }

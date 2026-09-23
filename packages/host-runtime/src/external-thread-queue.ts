@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { JsonObject, JsonValue } from "@codexhost/protocol-core";
+import type { JsonObject, JsonValue } from "@claude-in-codex/protocol-core";
 
 /** Mirrors the official `QueuedSubmission` wire shape plus the text the Host will send. */
 export interface QueuedSubmission {

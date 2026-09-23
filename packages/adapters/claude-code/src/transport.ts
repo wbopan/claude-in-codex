@@ -1,9 +1,9 @@
-import type { HarnessClientTools } from "@codexhost/harness-adapter";
+import type { HarnessClientTools } from "@claude-in-codex/harness-adapter";
 import type {
   HarnessAccountSnapshot,
   HarnessThinkingOptionId,
   JsonValue,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import type { ClaudeNativeFileChange } from "./file-change.js";
 import type { ClaudeModelInspectionSnapshot } from "./model-catalog.js";

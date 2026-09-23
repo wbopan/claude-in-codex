@@ -6,8 +6,8 @@ import type {
   HostItemOutcome,
   HostToolExecutionItem,
   HostToolOutput,
-} from "@codexhost/harness-adapter";
-import type { HostItemId, HostTurnId, JsonValue } from "@codexhost/shared-contracts";
+} from "@claude-in-codex/harness-adapter";
+import type { HostItemId, HostTurnId, JsonValue } from "@claude-in-codex/shared-contracts";
 
 import { projectClaudeFileChange } from "./file-change.js";
 import { isClaudeTaskTool, type ClaudeTaskTracker } from "./task-tracker.js";

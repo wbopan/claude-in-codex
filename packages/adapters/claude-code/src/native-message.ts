@@ -1,4 +1,4 @@
-import { jsonValueSchema } from "@codexhost/shared-contracts";
+import { jsonValueSchema } from "@claude-in-codex/shared-contracts";
 
 import { parseClaudeNativeFileChange } from "./file-change.js";
 import type {

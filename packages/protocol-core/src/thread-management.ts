@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 
-import type { JsonObject, JsonRpcRequest, JsonValue } from "@codexhost/shared-contracts";
+import type { JsonObject, JsonRpcRequest, JsonValue } from "@claude-in-codex/shared-contracts";
 
-const HOST_CURSOR_PREFIX = "codexhost:thread-list:v1:";
+const HOST_CURSOR_PREFIX = "claude-in-codex:thread-list:v1:";
+/** Cursors a Desktop may still hold from a pre-rename Host. */
+const LEGACY_HOST_CURSOR_PREFIX = "codexhost:thread-list:v1:";
 const MAX_CURSOR_LENGTH = 65_536;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
@@ -227,7 +229,7 @@ export function decodeHostThreadListCursor(
   expected: { queryFingerprint: string; sortDirection: ThreadListSortDirection },
 ): HostThreadListCursor {
   if (value.length > MAX_CURSOR_LENGTH || !value.startsWith(HOST_CURSOR_PREFIX)) {
-    throw new Error("thread/list cursor is not a codexhost cursor");
+    throw new Error("thread/list cursor is not a claude-in-codex cursor");
   }
   let decoded: unknown;
   try {
@@ -287,7 +289,11 @@ export function decodeThreadListRequest(request: JsonRpcRequest): DecodedThreadL
     sourceKinds,
     useStateDbOnly: params.useStateDbOnly === true,
   });
-  const cursorText = nullableText(params.cursor, "thread/list params.cursor");
+  const cursorText =
+    nullableText(params.cursor, "thread/list params.cursor")?.replace(
+      LEGACY_HOST_CURSOR_PREFIX,
+      HOST_CURSOR_PREFIX,
+    ) ?? null;
   const hasUnknownFields = Object.keys(params).some((name) => !THREAD_LIST_FIELDS.has(name));
   const isHostCursor = cursorText?.startsWith(HOST_CURSOR_PREFIX) === true;
   if (sortKey === "section_position" && isHostCursor) {

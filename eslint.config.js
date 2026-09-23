@@ -6,7 +6,6 @@ const typeScriptFiles = ["packages/**/*.ts", "tests/**/*.ts"];
 const javaScriptFiles = [
   "*.config.js",
   "packages/**/scripts/**/*.mjs",
-  "packages/repository-automation/**/*.mjs",
   "scripts/**/*.mjs",
   "tests/**/*.mjs",
   "tools/**/*.mjs",
@@ -15,6 +14,7 @@ const javaScriptFiles = [
 export default [
   {
     ignores: [
+      ".dev/**",
       ".codexhost/**",
       ".pi/**",
       "build/**",
@@ -43,12 +43,6 @@ export default [
     files: typeScriptFiles,
     rules: {
       "@typescript-eslint/consistent-type-imports": "error",
-    },
-  },
-  {
-    files: ["packages/renderer-extension/**/*.ts"],
-    languageOptions: {
-      globals: globals.browser,
     },
   },
 ];

@@ -9,13 +9,13 @@ import type {
   HarnessOutput,
   HarnessSession,
   OpenSessionInput,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 
 import {
   harnessAccountListParamsSchema,
   harnessAccountSnapshotSchema,
   harnessPluginIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { consumeBrokerFrames, writeBrokerFrame } from "./framing.js";
 import {
   HARNESS_BROKER_MAX_PENDING_REQUESTS,

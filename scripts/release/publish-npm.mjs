@@ -122,7 +122,7 @@ export async function runNpmPublishCli(arguments_) {
 const invoked = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
 if (invoked === import.meta.url) {
   runNpmPublishCli(process.argv.slice(2)).catch((error) => {
-    console.error(`codexhost npm publish: ${error instanceof Error ? error.message : error}`);
+    console.error(`claude-in-codex npm publish: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   });
 }

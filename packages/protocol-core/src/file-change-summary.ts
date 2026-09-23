@@ -1,6 +1,6 @@
 import path from "node:path";
 import { diffArrays, formatPatch, parsePatch, type StructuredPatch } from "diff";
-import type { HostFileChange } from "@codexhost/harness-adapter";
+import type { HostFileChange } from "@claude-in-codex/harness-adapter";
 
 export function filePathKey(file: string, cwd: string): string {
   const windows = /^[a-z]:[/\\]/i.test(cwd) || /^[a-z]:[/\\]/i.test(file);

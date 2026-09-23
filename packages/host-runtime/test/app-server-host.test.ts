@@ -12,15 +12,15 @@ import type {
   HarnessResult,
   HarnessSessionState,
   HostThreadSnapshot,
-} from "@codexhost/harness-adapter";
-import { FakeHarnessAdapter, FakeHarnessSession } from "@codexhost/harness-adapter/testing";
-import { MappingStore } from "@codexhost/mapping-store";
+} from "@claude-in-codex/harness-adapter";
+import { FakeHarnessAdapter, FakeHarnessSession } from "@claude-in-codex/harness-adapter/testing";
+import { MappingStore } from "@claude-in-codex/mapping-store";
 import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
   encodeClaudeTransportModel,
   type ExternalHarnessId,
   type JsonObject,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 import {
   encodeHarnessPluginRoute,
   harnessPluginRouteSchema,
@@ -33,7 +33,7 @@ import {
   hostItemIdSchema,
   hostThreadIdSchema,
   hostTurnIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { AppServerHost } from "../src/app-server-host.js";
 import type { HarnessUsageReport } from "../src/desktop-usage-buckets.js";
@@ -51,7 +51,7 @@ import type {
 import {
   transportModelIdForHarness,
   encodeExternalTransportSelection,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
 
@@ -239,14 +239,13 @@ function createFixture(
       OfficialAppServerConnection | Promise<OfficialAppServerConnection>;
     accountControl?: CodexAccountControl;
     officialRuntimeScope?: OfficialRuntimeScope;
-    desktopProxy?: { origin: string; active: boolean };
     desktopUsage?: { attach(source: () => Promise<HarnessUsageReport[]>): void };
   } = {},
 ) {
   const adapter =
     options.externalAdapters?.get("pi") ?? new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
   const mappingStoreDirectory =
-    options.mappingStoreDirectory ?? mkdtempSync(path.join(tmpdir(), "codexhost-host-test-"));
+    options.mappingStoreDirectory ?? mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-test-"));
   const mappingStore =
     options.mappingStore ?? new MappingStore({ directory: mappingStoreDirectory });
   const desktopInput = new PassThrough();
@@ -274,8 +273,8 @@ function createFixture(
       ? { closeMappingStoreOnExit: options.closeMappingStoreOnExit }
       : {}),
     environment: {
-      CODEXHOST_NATIVE_MODEL_WAIT_MS: "0",
-      CODEXHOST_DATA_DIR: mappingStoreDirectory,
+      CLAUDE_IN_CODEX_NATIVE_MODEL_WAIT_MS: "0",
+      CLAUDE_IN_CODEX_DATA_DIR: mappingStoreDirectory,
       ...(options.environment ?? {}),
     },
     ...(options.pluginDirectory ? { pluginRoots: [options.pluginDirectory] } : {}),
@@ -292,7 +291,6 @@ function createFixture(
       : {}),
     ...(options.accountControl ? { accountControl: options.accountControl } : {}),
     ...(options.officialRuntimeScope ? { officialRuntimeScope: options.officialRuntimeScope } : {}),
-    ...(options.desktopProxy ? { desktopProxy: options.desktopProxy } : {}),
     ...(options.desktopUsage ? { desktopUsage: options.desktopUsage } : {}),
   });
   const running = host.run();
@@ -419,7 +417,7 @@ describe("AppServerHost idle resource release", () => {
       await fixture.ready;
       writeRequest(fixture.desktopInput, {
         id: 900,
-        method: "codexhost/settings/idle-release/set",
+        method: "claude-in-codex/settings/idle-release/set",
         params: { enabled: true, timeoutMinutes: 4 },
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 900))).toMatchObject({
@@ -427,7 +425,7 @@ describe("AppServerHost idle resource release", () => {
       });
       writeRequest(fixture.desktopInput, {
         id: 901,
-        method: "codexhost/settings/idle-release/set",
+        method: "claude-in-codex/settings/idle-release/set",
         params: { enabled: false, timeoutMinutes: 30 },
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 901))).toMatchObject({
@@ -465,14 +463,14 @@ describe("AppServerHost idle resource release", () => {
       });
       writeRequest(fixture.desktopInput, {
         id: 900,
-        method: "codexhost/settings/idle-release/set",
+        method: "claude-in-codex/settings/idle-release/set",
         params: { enabled: true, timeoutMinutes: 10 },
       });
       await fixture.collector.waitFor((message) => requestId(message, 900));
       await vi.advanceTimersByTimeAsync(9 * 60_000);
       writeRequest(fixture.desktopInput, {
         id: 910,
-        method: "codexhost/sessions/loaded/list",
+        method: "claude-in-codex/sessions/loaded/list",
         params: {},
       });
       const listing = await fixture.collector.waitFor((message) => requestId(message, 910));
@@ -483,7 +481,7 @@ describe("AppServerHost idle resource release", () => {
       expect(close).toHaveBeenCalledTimes(1);
       writeRequest(fixture.desktopInput, {
         id: 911,
-        method: "codexhost/sessions/loaded/list",
+        method: "claude-in-codex/sessions/loaded/list",
         params: {},
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 911))).toMatchObject({
@@ -533,7 +531,7 @@ describe("AppServerHost idle resource release", () => {
       const close = vi.spyOn(session, "close");
       writeRequest(fixture.desktopInput, {
         id: 900,
-        method: "codexhost/settings/idle-release/set",
+        method: "claude-in-codex/settings/idle-release/set",
         params: { enabled: true, timeoutMinutes: 10 },
       });
       await fixture.collector.waitFor((message) => requestId(message, 900));
@@ -550,7 +548,7 @@ describe("AppServerHost idle resource release", () => {
 
 describe("AppServerHost official forwarding", () => {
   it.each([
-    { method: "codexhost/unknown", params: {} },
+    { method: "claude-in-codex/unknown", params: {} },
     {
       method: "thread/start",
       params: { model: "gpt-5", cwd: "/synthetic", unknownParam: "opaque" },
@@ -582,7 +580,7 @@ describe("AppServerHost official forwarding", () => {
 describe("AppServerHost installed Harness plugins", () => {
   // A cold plugin import has a 10s per-plugin loader budget; RPC checks remain 2s.
   it("discovers an unknown plugin, serves its descriptor, routes a Thread, and closes it", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-plugin-host-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-plugin-host-"));
     const location = path.join(directory, "sample-agent");
     mkdirSync(location);
     writeFileSync(
@@ -620,7 +618,7 @@ describe("AppServerHost installed Harness plugins", () => {
       await fixture.ready;
       writeRequest(fixture.desktopInput, {
         id: 907,
-        method: "codexhost/harness/accounts/sources",
+        method: "claude-in-codex/harness/accounts/sources",
         params: {},
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 907))).toMatchObject({
@@ -630,7 +628,7 @@ describe("AppServerHost installed Harness plugins", () => {
       });
       writeRequest(fixture.desktopInput, {
         id: 908,
-        method: "codexhost/harness/accounts/inspect",
+        method: "claude-in-codex/harness/accounts/inspect",
         params: { harnessId: "sample-agent" },
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 908))).toMatchObject({
@@ -645,7 +643,7 @@ describe("AppServerHost installed Harness plugins", () => {
       });
       writeRequest(fixture.desktopInput, {
         id: 905,
-        method: "codexhost/harness/accounts/list",
+        method: "claude-in-codex/harness/accounts/list",
         params: {},
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 905))).toMatchObject({
@@ -662,7 +660,7 @@ describe("AppServerHost installed Harness plugins", () => {
       });
       writeRequest(fixture.desktopInput, {
         id: 909,
-        method: "codexhost/harness/accounts/inspect",
+        method: "claude-in-codex/harness/accounts/inspect",
         params: { harnessId: "sample-agent", refresh: true },
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 909))).toMatchObject({
@@ -673,7 +671,7 @@ describe("AppServerHost installed Harness plugins", () => {
       });
       writeRequest(fixture.desktopInput, {
         id: 906,
-        method: "codexhost/harness/accounts/list",
+        method: "claude-in-codex/harness/accounts/list",
         params: { token: "invalid" },
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 906))).toMatchObject({
@@ -731,11 +729,15 @@ describe("AppServerHost installed Harness plugins", () => {
     }
   });
 
-  const pluginWaitMethods = ["codexhost/harness/accounts/inspect", "thread/start", "thread/resume"];
+  const pluginWaitMethods = [
+    "claude-in-codex/harness/accounts/inspect",
+    "thread/start",
+    "thread/resume",
+  ];
   it.each(pluginWaitMethods)(
     "keeps official requests moving during plugin loading: %s",
     async (blockedMethod) => {
-      const directory = mkdtempSync(path.join(tmpdir(), "codexhost-plugin-parallel-"));
+      const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-plugin-parallel-"));
       const location = path.join(directory, "slow-agent");
       const release = path.join(directory, "release");
       mkdirSync(location);
@@ -893,7 +895,7 @@ describe("AppServerHost installed Harness plugins", () => {
     "cancels blocked plugin loads on %s",
     async (ending) => {
       const ids = ["a-agent", "b-agent", "c-agent", "d-agent", "e-agent"];
-      const directory = mkdtempSync(path.join(tmpdir(), "codexhost-plugin-close-"));
+      const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-plugin-close-"));
       const started = path.join(directory, "started");
       const finished = path.join(directory, "finished");
       mkdirSync(started);
@@ -949,7 +951,7 @@ describe("AppServerHost installed Harness plugins", () => {
         await vi.waitFor(() => expect(readdirSync(started)).toHaveLength(4));
         writeRequest(fixture.desktopInput, {
           id: 925,
-          method: "codexhost/harness/commands/inspect",
+          method: "claude-in-codex/harness/commands/inspect",
           params: { harnessId: "a-agent" },
         });
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1046,7 +1048,7 @@ describe("AppServerHost installed Harness plugins", () => {
   );
 
   it("persists launch settings through Host RPC and applies them only to the next plugin factory", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-launch-rpc-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-launch-rpc-"));
     const location = path.join(directory, "sample-agent");
     const entrypoint = path.join(directory, "installed-app");
     const received = path.join(directory, "received.json");
@@ -1081,7 +1083,7 @@ describe("AppServerHost installed Harness plugins", () => {
     );
     const options = {
       pluginDirectory: directory,
-      environment: { CODEXHOST_DATA_DIR: path.join(directory, "data") },
+      environment: { CLAUDE_IN_CODEX_DATA_DIR: path.join(directory, "data") },
     };
     let fixture = createFixture(options);
     let id = 960;
@@ -1091,8 +1093,8 @@ describe("AppServerHost installed Harness plugins", () => {
       return fixture.collector.waitFor((message) => requestId(message, requestIdValue));
     };
     try {
-      const get = "codexhost/harness/launch-settings/get",
-        set = "codexhost/harness/launch-settings/set";
+      const get = "claude-in-codex/harness/launch-settings/get",
+        set = "claude-in-codex/harness/launch-settings/set";
       expect(await request(get, { harnessId: "sample-agent" })).toMatchObject({
         result: { path: null, restartRequired: false },
       });
@@ -1143,7 +1145,7 @@ describe("AppServerHost installed Harness plugins", () => {
       writeRequest(fixture.desktopInput, {
         id: 913,
         method: "thread/start",
-        params: { model: "codexhost/plugin-v1@invalid", cwd: "/synthetic" },
+        params: { model: "claude-in-codex/plugin-v1@invalid", cwd: "/synthetic" },
       });
       expect(await fixture.collector.waitFor((message) => requestId(message, 913))).toHaveProperty(
         "error",
@@ -1306,142 +1308,6 @@ describe("AppServerHost HarnessAdapter projection", () => {
     }
   });
 
-  describe("Desktop backend proxy", () => {
-    const officialAccount = {
-      account: { type: "chatgpt", email: "native@example.com", futureField: "kept" },
-      requiresOpenaiAuth: false,
-      workspaceRouting: {
-        mode: "workspace",
-        backendOrigin: "https://chatgpt.com",
-        futureField: "kept",
-      },
-    };
-
-    it("publishes the proxy origin as backendOrigin while the proxy is active", async () => {
-      const fixture = createFixture({
-        desktopProxy: { origin: "https://127.0.0.1:44301", active: true },
-        environment: { CODEXHOST_NATIVE_PICKER_TRACE: "1" },
-      });
-      try {
-        await fixture.ready;
-        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
-        const official = await readJsonLine(fixture.official.stdin);
-        expect(official).toMatchObject({ method: "account/read", params: {} });
-        expect(String(official.id)).toMatch(/^codexhost:official:/);
-        fixture.official.stdout.write(
-          `${JSON.stringify({ id: official.id, result: officialAccount })}\n`,
-        );
-        await expect(fixture.collector.waitFor((message) => message.id === 912)).resolves.toEqual({
-          id: 912,
-          result: {
-            ...officialAccount,
-            workspaceRouting: {
-              ...officialAccount.workspaceRouting,
-              backendOrigin: "https://127.0.0.1:44301",
-            },
-          },
-        });
-        const trace = readFileSync(
-          path.join(fixture.mappingStoreDirectory, "native-picker-trace.jsonl"),
-          "utf8",
-        );
-        expect(trace).toContain(
-          '"event":"desktop-proxy/account-read","from":"https://chatgpt.com","to":"https://127.0.0.1:44301"',
-        );
-      } finally {
-        await stopFixture(fixture);
-      }
-    });
-
-    it("forwards account/read verbatim while the proxy is inactive", async () => {
-      const fixture = createFixture({
-        desktopProxy: { origin: "https://127.0.0.1:44301", active: false },
-      });
-      try {
-        await fixture.ready;
-        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
-        expect(await readJsonLine(fixture.official.stdin)).toEqual({
-          id: 912,
-          method: "account/read",
-          params: {},
-        });
-        fixture.official.stdout.write(`${JSON.stringify({ id: 912, result: officialAccount })}\n`);
-        await expect(fixture.collector.waitFor((message) => message.id === 912)).resolves.toEqual({
-          id: 912,
-          result: officialAccount,
-        });
-      } finally {
-        await stopFixture(fixture);
-      }
-    });
-
-    it("falls open when the proxy dies mid-flight or routing is absent", async () => {
-      const proxy = { origin: "https://127.0.0.1:44301", active: true };
-      const fixture = createFixture({ desktopProxy: proxy });
-      try {
-        await fixture.ready;
-        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
-        const first = await readJsonLine(fixture.official.stdin);
-        proxy.active = false;
-        fixture.official.stdout.write(
-          `${JSON.stringify({ id: first.id, result: officialAccount })}\n`,
-        );
-        await expect(fixture.collector.waitFor((message) => message.id === 912)).resolves.toEqual({
-          id: 912,
-          result: officialAccount,
-        });
-
-        proxy.active = true;
-        writeRequest(fixture.desktopInput, { id: 913, method: "account/read", params: {} });
-        const second = await readJsonLine(fixture.official.stdin);
-        fixture.official.stdout.write(
-          `${JSON.stringify({ id: second.id, result: { account: null } })}\n`,
-        );
-        await expect(fixture.collector.waitFor((message) => message.id === 913)).resolves.toEqual({
-          id: 913,
-          result: { account: null },
-        });
-
-        writeRequest(fixture.desktopInput, { id: 914, method: "account/read", params: {} });
-        const third = await readJsonLine(fixture.official.stdin);
-        fixture.official.stdout.write(
-          `${JSON.stringify({ id: third.id, error: { code: -32600, message: "native" } })}\n`,
-        );
-        await expect(fixture.collector.waitFor((message) => message.id === 914)).resolves.toEqual({
-          id: 914,
-          error: { code: -32600, message: "native" },
-        });
-      } finally {
-        await stopFixture(fixture);
-      }
-    });
-
-    it("answers -32001 when the official backend is unavailable", async () => {
-      const createOfficialConnection = vi.fn(() => {
-        throw new Error("synthetic startup failure");
-      });
-      const fixture = createFixture({
-        createOfficialConnection,
-        desktopProxy: { origin: "https://127.0.0.1:44301", active: true },
-      });
-      try {
-        const threadId = await startPiThread(fixture);
-        const turnId = await startPiTurn(fixture, threadId);
-        fixture.adapter.sessions[0]?.succeedTurn();
-        await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
-        writeRequest(fixture.desktopInput, { id: 912, method: "account/read", params: {} });
-        await expect(
-          fixture.collector.waitFor((message) => message.id === 912),
-        ).resolves.toMatchObject({ id: 912, error: { code: -32001 } });
-        expect(fixture.desktopInput.destroyed).toBe(false);
-      } finally {
-        fixture.host.close();
-        await fixture.running;
-        rmSync(fixture.mappingStoreDirectory, { recursive: true, force: true });
-      }
-    });
-  });
-
   it("reports Desktop usage per Harness with account telemetry", async () => {
     const adapter = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
     const account = {
@@ -1490,13 +1356,13 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it.each([
-    "codexhost/account/switch",
-    "codexhost/account/logout",
-    "codexhost/account/login/start",
-    "codexhost/account/login/cancel",
-    "codexhost/account/delete",
-    "codexhost/account/recover",
-    "codexhost/account/rate-limit-reset/consume",
+    "claude-in-codex/account/switch",
+    "claude-in-codex/account/logout",
+    "claude-in-codex/account/login/start",
+    "claude-in-codex/account/login/cancel",
+    "claude-in-codex/account/delete",
+    "claude-in-codex/account/recover",
+    "claude-in-codex/account/rate-limit-reset/consume",
   ])("forwards leftover Host account method %s as an unknown method", async (methodName) => {
     const fixture = createFixture();
     try {
@@ -2835,7 +2701,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("can share one initialized Mapping Store across concurrent remote sessions", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-shared-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-shared-"));
     const mappingStore = new MappingStore({ directory });
     await mappingStore.initialize();
     const close = vi.spyOn(mappingStore, "close");
@@ -2911,7 +2777,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const fixture = createFixture();
     writeRequest(fixture.desktopInput, {
       id: 24,
-      method: "codexhost/update/status",
+      method: "claude-in-codex/update/status",
       params: {},
     });
     await expect(
@@ -2932,18 +2798,18 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const adapter = new RecordingAdapter(harnessIdSchema.parse("pi"));
     const fixture = createFixture({
       environment: {
-        CODEXHOST_CLI_PATH: "/opt/codexhost",
-        CODEXHOST_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
-        CODEXHOST_RUNTIME_TOKEN: "token",
+        CLAUDE_IN_CODEX_CLI_PATH: "/opt/claude-in-codex",
+        CLAUDE_IN_CODEX_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
+        CLAUDE_IN_CODEX_RUNTIME_TOKEN: "token",
       },
       externalAdapters: new Map([["pi", adapter]]),
     });
     const threadId = await startPiThread(fixture);
     expect(adapter.openedInputs[0]).toMatchObject({
       environment: {
-        CODEXHOST_CLI_PATH: "/opt/codexhost",
-        CODEXHOST_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
-        CODEXHOST_RUNTIME_TOKEN: "token",
+        CLAUDE_IN_CODEX_CLI_PATH: "/opt/claude-in-codex",
+        CLAUDE_IN_CODEX_RUNTIME_ENDPOINT: "http://127.0.0.1:43123",
+        CLAUDE_IN_CODEX_RUNTIME_TOKEN: "token",
       },
     });
     await stopFixture(fixture);
@@ -3002,7 +2868,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 44,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId: "official-thread" },
     });
     await expect(fixture.collector.waitFor((message) => requestId(message, 44))).resolves.toEqual({
@@ -3071,7 +2937,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     try {
       writeRequest(fixture.desktopInput, {
         id: 46,
-        method: "codexhost/account/usage/inspect",
+        method: "claude-in-codex/account/usage/inspect",
         params: { accountId: "account-b", refresh: true },
       });
       await expect(
@@ -3083,7 +2949,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
       writeRequest(fixture.desktopInput, {
         id: 47,
-        method: "codexhost/account/usage/inspect",
+        method: "claude-in-codex/account/usage/inspect",
         params: { accountId: "account-a" },
       });
       await expect(
@@ -3135,7 +3001,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 45,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId: "official-thread" },
     });
     await expect(fixture.collector.waitFor((message) => requestId(message, 45))).resolves.toEqual({
@@ -3223,14 +3089,15 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(session.snapshotReads).toBe(snapshotReads);
     expect(
       fixture.collector.messages.filter(
-        (message) => typeof message.id === "string" && message.id.startsWith("codexhost:official:"),
+        (message) =>
+          typeof message.id === "string" && message.id.startsWith("claude-in-codex:official:"),
       ),
     ).toEqual([]);
     await stopFixture(fixture);
   });
 
   it("fails the complete aggregated list when Store or official listing fails", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-test-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-test-"));
     const failingStore = new FailingListMappingStore({ directory });
     const storeFailure = createFixture({
       mappingStore: failingStore,
@@ -3392,7 +3259,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
       id: 55,
       method: "thread/list",
       params: {
-        cursor: "codexhost:thread-list:v1:legacy-host-cursor",
+        cursor: "claude-in-codex:thread-list:v1:legacy-host-cursor",
         sectionId: "section-1",
         sortDirection: "asc",
         sortKey: "section_position",
@@ -3466,7 +3333,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("does not emit an archive notification when persistence fails", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-test-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-test-"));
     const mappingStore = new FailingArchiveMappingStore({ directory });
     const fixture = createFixture({ mappingStore, mappingStoreDirectory: directory });
     const threadId = await startPiThread(fixture);
@@ -3489,7 +3356,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("manages persisted External metadata even when its Harness is not registered", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-test-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-test-"));
     const seed = new MappingStore({ directory });
     await seed.initialize();
     const threadId = hostThreadIdSchema.parse("unregistered-external");
@@ -4277,7 +4144,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 62,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId: claudeThreadId, refresh: "exact" },
     });
     await fixture.collector.waitFor((message) => requestId(message, 62));
@@ -4286,7 +4153,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 63,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId: piThreadId, refresh: "newer" },
     });
     await expect(
@@ -4337,7 +4204,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 72,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId: claudeThreadId, refresh: "exact" },
     });
     await expect(fixture.collector.waitFor((message) => requestId(message, 72))).resolves.toEqual({
@@ -4358,7 +4225,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 73,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId: "official-thread", refresh: "exact" },
     });
     await expect(
@@ -4694,7 +4561,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         threadId,
         threadSettings: {
           cwd: "/synthetic",
-          modelProvider: "codexhost",
+          modelProvider: "claude-in-codex",
           collaborationMode: { mode: "plan", settings: {} },
         },
       },
@@ -4846,7 +4713,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("keeps the current Session authoritative when last-Turn persistence fails", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-last-turn-failure-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-last-turn-failure-"));
     let failRollbackCommit = false;
     const mappingStore = new MappingStore({
       directory,
@@ -5040,7 +4907,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("reads and updates persisted external metadata without restoring history", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-metadata-test-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-metadata-test-"));
     const adapter = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
     const opened = await adapter.open({ kind: "create", cwd: "/persisted" });
     if (!opened.ok || !opened.value.initialState.nativeRef) {
@@ -5107,7 +4974,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("restores Store-owned external read, resume, and Fork on demand", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-restart-test-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-restart-test-"));
     const adapter = new FakeHarnessAdapter(
       harnessIdSchema.parse("pi"),
       undefined,
@@ -5206,7 +5073,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
 
     writeRequest(fixture.desktopInput, {
       id: 64,
-      method: "codexhost/thread/usage/inspect",
+      method: "claude-in-codex/thread/usage/inspect",
       params: { threadId },
     });
     await expect(
@@ -5375,7 +5242,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("projects a failed terminal when live Turn identity persistence fails", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-write-failure-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-write-failure-"));
     let failTurnCommit = false;
     const mappingStore = new MappingStore({
       directory,
@@ -5410,7 +5277,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("closes and hides a derived runtime when Fork commit fails", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-fork-failure-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-fork-failure-"));
     let failForkCommit = false;
     const mappingStore = new MappingStore({
       directory,
@@ -5442,7 +5309,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
   });
 
   it("keeps the temporary derived Session authoritative when rollback commit fails", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "codexhost-host-rollback-failure-"));
+    const directory = mkdtempSync(path.join(tmpdir(), "claude-in-codex-host-rollback-failure-"));
     let failRollbackCommit = false;
     const mappingStore = new MappingStore({
       directory,
@@ -6555,9 +6422,9 @@ describe("AppServerHost HarnessAdapter projection", () => {
     const fixture = createFixture({
       environment: {
         VISIBLE_TO_OFFICIAL: "yes",
-        CODEXHOST_DATA_DIR: "/synthetic/codexhost-data",
-        CODEXHOST_ENABLE_CLAUDE_CODE: "1",
-        CODEXHOST_CLAUDE_COMMAND: "/synthetic/claude",
+        CLAUDE_IN_CODEX_DATA_DIR: "/synthetic/claude-in-codex-data",
+        CLAUDE_IN_CODEX_ENABLE_CLAUDE_CODE: "1",
+        CLAUDE_IN_CODEX_CLAUDE_COMMAND: "/synthetic/claude",
       },
     });
 

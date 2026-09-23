@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import type { JsonObject } from "@codexhost/shared-contracts";
+import type { JsonObject } from "@claude-in-codex/shared-contracts";
 
 const object = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);

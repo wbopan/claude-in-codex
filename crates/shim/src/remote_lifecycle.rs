@@ -6,7 +6,7 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use codexhost_platform::{
+use claude_in_codex_platform::{
     ProcessSnapshot, process_snapshot, process_snapshots, terminate_process_instance,
 };
 
@@ -187,7 +187,9 @@ fn has_default_listener(arguments: &[String]) -> bool {
 }
 
 fn is_managed_remote_listener_service(arguments: &[String]) -> bool {
-    arguments == ["codexhost remote app-server listener"]
+    arguments == ["claude-in-codex remote app-server listener"]
+        // Listener title of a Remote Host installed before the rename.
+        || arguments == ["codexhost remote app-server listener"]
         || arguments == ["codex app-server desktop-ssh-websocket-v0.sock"]
 }
 
@@ -287,7 +289,7 @@ pub fn existing_listener_is_reusable(
         ),
         _ => {
             return Err(
-                "CODEXHOST_HOST_NODE_PATH and CODEXHOST_HOST_RUNTIME_PATH must be configured together"
+                "CLAUDE_IN_CODEX_HOST_NODE_PATH and CLAUDE_IN_CODEX_HOST_RUNTIME_PATH must be configured together"
                     .into(),
             );
         }
@@ -413,6 +415,9 @@ mod tests {
             "app-server",
             "--listen",
             "unix:///tmp/custom.sock",
+        ])));
+        assert!(is_managed_remote_listener_service(&arguments(&[
+            "claude-in-codex remote app-server listener",
         ])));
         assert!(is_managed_remote_listener_service(&arguments(&[
             "codexhost remote app-server listener",

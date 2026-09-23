@@ -6,7 +6,7 @@ import { build as esbuildBuild } from "esbuild";
 
 const forbiddenInputFragments = [
   "/packages/adapters/",
-  "/node_modules/@codexhost/adapter-",
+  "/node_modules/@claude-in-codex/adapter-",
   "/node_modules/@anthropic-ai/",
   "/node_modules/@agentclientprotocol/",
   "/node_modules/@deepseek-ai/",
@@ -74,7 +74,7 @@ export function auditHostBundleSource(source) {
   if (forbidden.length > 0) {
     throw new Error(`release Host Bundle contains forbidden references: ${forbidden.join(", ")}`);
   }
-  if (source.includes("--codexhost-compatibility-update")) {
+  if (source.includes("--claude-in-codex-compatibility-update")) {
     throw new Error("release Host Bundle contains the removed compatibility update command");
   }
 }
@@ -97,7 +97,7 @@ export async function buildReleaseHostBundle({ repositoryRoot, outputPath }) {
     charset: "utf8",
     legalComments: "none",
     banner: {
-      js: 'import { createRequire as __codexhostCreateRequire } from "node:module"; const require = __codexhostCreateRequire(import.meta.url);',
+      js: 'import { createRequire as __claudeInCodexCreateRequire } from "node:module"; const require = __claudeInCodexCreateRequire(import.meta.url);',
     },
     logLevel: "silent",
   });
@@ -119,7 +119,9 @@ if (invoked === import.meta.url) {
   const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
   buildReleaseHostBundle({ repositoryRoot, outputPath: parseOutput(process.argv.slice(2)) }).catch(
     (error) => {
-      console.error(`codexhost Host Bundle: ${error instanceof Error ? error.message : error}`);
+      console.error(
+        `claude-in-codex Host Bundle: ${error instanceof Error ? error.message : error}`,
+      );
       process.exitCode = 1;
     },
   );

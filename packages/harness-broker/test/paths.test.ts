@@ -1,3 +1,5 @@
+import path from "node:path";
+import { platformDataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 import { describe, expect, it } from "vitest";
 import {
   defaultHarnessBrokerDescriptorPath,
@@ -8,7 +10,7 @@ describe("instance broker paths", () => {
   it("isolates every harness socket and descriptor together", () => {
     const environment = {
       HOME: "/Users/example",
-      CODEXHOST_HARNESS_BROKER_DIR: "/private/debug/broker",
+      CLAUDE_IN_CODEX_HARNESS_BROKER_DIR: "/private/debug/broker",
     };
     for (const id of ["claude-code", "codebuddy"]) {
       expect(defaultHarnessBrokerDescriptorPath(environment, id)).toBe(
@@ -19,10 +21,14 @@ describe("instance broker paths", () => {
       );
     }
     expect(defaultHarnessBrokerSocketPath({ HOME: "/Users/example" })).toBe(
-      "/Users/example/.codexhost/harness-broker/claude-code-broker-v1.sock",
+      path.join(
+        platformDataDirectory({ HOME: "/Users/example" }),
+        "broker",
+        "claude-code-broker-v1.sock",
+      ),
     );
     expect(() =>
-      defaultHarnessBrokerSocketPath({ CODEXHOST_HARNESS_BROKER_DIR: "relative" }),
+      defaultHarnessBrokerSocketPath({ CLAUDE_IN_CODEX_HARNESS_BROKER_DIR: "relative" }),
     ).toThrow("absolute");
   });
 });

@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
-import type { HarnessOutput, HarnessSession } from "@codexhost/harness-adapter";
-import { hostTurnIdSchema } from "@codexhost/shared-contracts";
+import type { HarnessOutput, HarnessSession } from "@claude-in-codex/harness-adapter";
+import { hostTurnIdSchema } from "@claude-in-codex/shared-contracts";
 
 import { ClaudeCodeAdapter } from "../src/index.js";
 
-const RUN_REAL = process.env.CODEXHOST_RUN_CLAUDE_ADAPTER_REAL === "1";
+const RUN_REAL = process.env.CLAUDE_IN_CODEX_RUN_CLAUDE_ADAPTER_REAL === "1";
 const REAL_TIMEOUT_MS = 180_000;
 
 class OutputCollector {
@@ -64,7 +64,7 @@ describe.skipIf(!RUN_REAL)("ClaudeCodeAdapter real SDK integration", () => {
   it(
     "round-trips native AskUserQuestion and continues the Session",
     async () => {
-      const workspace = path.resolve(".codexhost", "claude-question-real", "workspace");
+      const workspace = path.resolve(".dev", "claude-question-real", "workspace");
       await fs.mkdir(workspace, { recursive: true });
       const adapter = new ClaudeCodeAdapter({ closeTimeoutMs: 10_000 });
       try {
@@ -146,7 +146,7 @@ describe.skipIf(!RUN_REAL)("ClaudeCodeAdapter real SDK integration", () => {
   it(
     "cancels a pending native AskUserQuestion before the Turn terminal",
     async () => {
-      const workspace = path.resolve(".codexhost", "claude-question-cancel-real", "workspace");
+      const workspace = path.resolve(".dev", "claude-question-cancel-real", "workspace");
       await fs.mkdir(workspace, { recursive: true });
       const adapter = new ClaudeCodeAdapter({ closeTimeoutMs: 10_000 });
       try {
@@ -200,13 +200,13 @@ describe.skipIf(!RUN_REAL)("ClaudeCodeAdapter real SDK integration", () => {
   it(
     "reads history, resumes, cancels authoritatively, and continues the Session",
     async () => {
-      const workspace = path.resolve(".codexhost", "claude-adapter-real", "workspace");
+      const workspace = path.resolve(".dev", "claude-adapter-real", "workspace");
       await fs.mkdir(workspace, { recursive: true });
       const prompts = {
-        first: "Reply with exactly CODEXHOST_CLAUDE_ADAPTER_OK.",
+        first: "Reply with exactly CLAUDE_IN_CODEX_CLAUDE_ADAPTER_OK.",
         cancel: "Write the integers from 1 through 10000, one integer per line.",
-        continuation: "Reply with exactly CODEXHOST_CLAUDE_ADAPTER_CONTINUED.",
-        resumed: "Reply with exactly CODEXHOST_CLAUDE_ADAPTER_RESUMED.",
+        continuation: "Reply with exactly CLAUDE_IN_CODEX_CLAUDE_ADAPTER_CONTINUED.",
+        resumed: "Reply with exactly CLAUDE_IN_CODEX_CLAUDE_ADAPTER_RESUMED.",
       };
       await fs.writeFile(
         path.join(workspace, "prompts.local.json"),

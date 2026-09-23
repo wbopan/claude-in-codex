@@ -3,10 +3,7 @@ import path from "node:path";
 
 export const LINUX_GLIBC_BASELINE = "2.35";
 
-export const LINUX_NATIVE_EXECUTABLES = Object.freeze([
-  "bin/codexhost",
-  "libexec/codexhost-shim",
-]);
+export const LINUX_NATIVE_EXECUTABLES = Object.freeze(["libexec/claude-in-codex-shim"]);
 
 function compareVersion(left, right) {
   const leftParts = left.split(".").map(Number);

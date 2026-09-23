@@ -3,11 +3,11 @@ import {
   defaultHarnessBrokerSocketPath,
   startHarnessBrokerServer,
   type HarnessBrokerServer,
-} from "@codexhost/harness-broker";
+} from "@claude-in-codex/harness-broker";
 
 import { loadHarnessPlugins } from "./harness-plugin-loader.js";
 import { installedHarnessPluginOptions } from "./installed-harness-plugins.js";
-import { harnessPluginIdSchema } from "@codexhost/shared-contracts";
+import { harnessPluginIdSchema } from "@claude-in-codex/shared-contracts";
 
 export async function runClaudeAquaHarnessBroker(
   environment: NodeJS.ProcessEnv = process.env,
@@ -44,10 +44,10 @@ export async function runClaudeAquaHarnessBroker(
     await adapter.close().catch(() => undefined);
     throw error;
   }
-  process.title = `codexhost ${harnessId} Aqua harness broker`;
+  process.title = `claude-in-codex ${harnessId} Aqua harness broker`;
   process.stdout.write(
     `${JSON.stringify({
-      method: "codexhost/harness-broker/ready",
+      method: "claude-in-codex/harness-broker/ready",
       params: { protocolVersion: 1, harnessId },
     })}\n`,
   );

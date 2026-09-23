@@ -1,5 +1,5 @@
 {
-  "name": "@codexhost/mapping-store",
+  "name": "@claude-in-codex/mapping-store",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@codexhost/shared-contracts": "0.0.0",
+    "@claude-in-codex/shared-contracts": "0.0.0",
     "zod": "4.4.3"
   }
 }

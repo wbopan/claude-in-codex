@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { HostSubagentState, HostThreadSnapshot } from "@codexhost/harness-adapter";
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
-import { projectHistoricalTurn, type JsonObject } from "@codexhost/protocol-core";
-import { hostThreadIdSchema, type NativeSessionRef } from "@codexhost/shared-contracts";
+import type { HostSubagentState, HostThreadSnapshot } from "@claude-in-codex/harness-adapter";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
+import { projectHistoricalTurn, type JsonObject } from "@claude-in-codex/protocol-core";
+import { hostThreadIdSchema, type NativeSessionRef } from "@claude-in-codex/shared-contracts";
 
 import type { ExternalThreadStore } from "./external-thread-repository.js";
 

@@ -15,4 +15,7 @@ export {
 export { startHarnessBrokerServer } from "./server.js";
 export type { HarnessBrokerServer } from "./server.js";
 
-export const packageMetadata = { name: "@codexhost/harness-broker", protocolVersion: 1 } as const;
+export const packageMetadata = {
+  name: "@claude-in-codex/harness-broker",
+  protocolVersion: 1,
+} as const;

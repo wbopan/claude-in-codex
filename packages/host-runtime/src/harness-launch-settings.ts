@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   harnessLaunchPathSchema,
   harnessPluginIdSchema,
   type HarnessLaunchSettings,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
+import { dataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 
 /** Per-plugin files avoid lost updates between independently running Host connections. */
 export class HarnessLaunchSettingsStore {
@@ -14,12 +14,7 @@ export class HarnessLaunchSettingsStore {
   readonly #initial = new Map<string, Promise<string | null>>();
 
   constructor(environment: NodeJS.ProcessEnv) {
-    this.#directory = path.join(
-      environment.CODEXHOST_DATA_DIR
-        ? path.resolve(environment.CODEXHOST_DATA_DIR)
-        : path.join(os.homedir(), ".codexhost"),
-      "harness-launch-settings",
-    );
+    this.#directory = path.join(dataDirectory(environment), "harness-launch-settings");
   }
 
   #file(id: string): string {

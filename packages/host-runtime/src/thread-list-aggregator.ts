@@ -1,4 +1,4 @@
-import type { StoredThreadRecordV1 } from "@codexhost/mapping-store";
+import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import {
   decodeOfficialThreadListPage,
   encodeHostThreadListCursor,
@@ -9,7 +9,7 @@ import {
   type ThreadListExternalAnchor,
   type ThreadListSortDirection,
   type ThreadListSortKey,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 import {
   compareThreadListEntries,

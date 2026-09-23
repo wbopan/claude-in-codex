@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "@codexhost/shared-contracts";
+import type { JsonObject } from "@claude-in-codex/shared-contracts";
 import type { OfficialRuntimeScope } from "../src/codex-runtime/official-runtime-scope.js";
 import { OfficialDesktopTools } from "../src/official-desktop-tools.js";
 

@@ -8,14 +8,14 @@ import {
   HarnessOutputChannel,
   type HarnessOutput,
   type HarnessSession,
-} from "@codexhost/harness-adapter";
-import { FakeHarnessAdapter, FakeHarnessSession } from "@codexhost/harness-adapter/testing";
+} from "@claude-in-codex/harness-adapter";
+import { FakeHarnessAdapter, FakeHarnessSession } from "@claude-in-codex/harness-adapter/testing";
 import {
   harnessIdSchema,
   hostTurnIdSchema,
   harnessPermissionModeIdSchema,
   harnessPermissionModeCatalogSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { BrokeredHarnessAdapter, startHarnessBrokerServer } from "../src/index.js";
 import { consumeBrokerFrames } from "../src/framing.js";
 import { harnessBrokerServerFrameSchema } from "../src/protocol.js";
@@ -126,7 +126,7 @@ describe("broker recovery ownership", () => {
     const created = await client.open({
       kind: "create",
       cwd: f.root,
-      environment: { CODEXHOST_THREAD_ID: "parent" },
+      environment: { CLAUDE_IN_CODEX_THREAD_ID: "parent" },
     });
     if (!created.ok) throw Error(created.error.message);
     const session = created.value,
@@ -177,7 +177,7 @@ describe("broker recovery ownership", () => {
       cwd: f.root,
       model,
       permissionModeId: "plan",
-      environment: { CODEXHOST_THREAD_ID: "parent" },
+      environment: { CLAUDE_IN_CODEX_THREAD_ID: "parent" },
     });
   });
   it.each([true, false])(
@@ -202,10 +202,10 @@ describe("broker recovery ownership", () => {
       cleanup.push(() => client.close());
       const sessions: HarnessSession[] = [];
       const environments = ["first-parent", "second-parent"].map((threadId) => ({
-        CODEXHOST_THREAD_ID: threadId,
-        CODEXHOST_CLI_PATH: path.join(f.root, "codexhost"),
-        CODEXHOST_RUNTIME_ENDPOINT: "synthetic-runtime",
-        CODEXHOST_RUNTIME_TOKEN: "synthetic-token",
+        CLAUDE_IN_CODEX_THREAD_ID: threadId,
+        CLAUDE_IN_CODEX_CLI_PATH: path.join(f.root, "claude-in-codex"),
+        CLAUDE_IN_CODEX_RUNTIME_ENDPOINT: "synthetic-runtime",
+        CLAUDE_IN_CODEX_RUNTIME_TOKEN: "synthetic-token",
       }));
       for (const environment of environments) {
         const created = await client.open({

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { HostQuestionInteraction } from "@codexhost/harness-adapter";
+import type { HostQuestionInteraction } from "@claude-in-codex/harness-adapter";
 import {
   hostInteractionIdSchema,
   hostItemIdSchema,
   hostTurnIdSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { projectCodexQuestionRequest } from "../src/index.js";
 

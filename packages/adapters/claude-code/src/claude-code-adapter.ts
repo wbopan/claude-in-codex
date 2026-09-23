@@ -1,4 +1,4 @@
-import type { HarnessClientTools, HarnessInstallation } from "@codexhost/harness-adapter";
+import type { HarnessClientTools, HarnessInstallation } from "@claude-in-codex/harness-adapter";
 import { randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -51,7 +51,7 @@ import {
   type TurnOutcome,
   type TurnStartAccepted,
   type TurnStartCommand,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   harnessCommandCatalogSchema,
   harnessIdSchema,
@@ -68,7 +68,7 @@ import {
   type HostInteractionId,
   type NativeSessionRef,
   type NativeTurnRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
 import { exportClaudeMemoryToCodex } from "./codex-memory-export.js";

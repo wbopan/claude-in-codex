@@ -1,4 +1,8 @@
-import type { ExternalHarnessId, JsonRpcRequest, RoutedHarnessId } from "@codexhost/protocol-core";
+import type {
+  ExternalHarnessId,
+  JsonRpcRequest,
+  RoutedHarnessId,
+} from "@claude-in-codex/protocol-core";
 
 export type RouteModelCarrier = "official-model" | `${ExternalHarnessId}-transport`;
 

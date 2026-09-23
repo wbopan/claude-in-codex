@@ -1,4 +1,4 @@
-import type { HarnessClientTools } from "@codexhost/harness-adapter";
+import type { HarnessClientTools } from "@claude-in-codex/harness-adapter";
 import { createClaudeClientTools } from "./client-tools.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
@@ -12,8 +12,11 @@ import {
   type SDKUserMessage,
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
-import { sanitizeDiagnosticTail } from "@codexhost/harness-adapter";
-import type { HarnessAccountSnapshot, HarnessThinkingOptionId } from "@codexhost/shared-contracts";
+import { sanitizeDiagnosticTail } from "@claude-in-codex/harness-adapter";
+import type {
+  HarnessAccountSnapshot,
+  HarnessThinkingOptionId,
+} from "@claude-in-codex/shared-contracts";
 import { projectClaudeAccountUsage } from "./account-usage.js";
 
 import { resolveClaudeCodeExecutable, withNodeRuntimeOnPath } from "./command.js";
@@ -44,10 +47,10 @@ import type {
   ClaudeTurnTransport,
 } from "./transport.js";
 
-const CLIENT_APP = "codexhost-claude-code-adapter/0.0.0";
+const CLIENT_APP = "claude-in-codex-claude-code-adapter/0.0.0";
 // Claude Code hides generic SDK entrypoints from its native Session picker. Keep persisted
-// CodexHost Sessions discoverable without misidentifying their transport as interactive CLI.
-const SESSION_ENTRYPOINT = "codexhost-sdk";
+// ClaudeInCodex Sessions discoverable without misidentifying their transport as interactive CLI.
+const SESSION_ENTRYPOINT = "claude-in-codex-sdk";
 const APPROVAL_TITLE_MAX_LENGTH = 120;
 const APPROVAL_DESCRIPTION_MAX_LENGTH = 500;
 const DEFAULT_ABORT_TIMEOUT_MS = 2_000;
@@ -511,7 +514,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
             ...this.#environment,
             CLAUDE_CODE_ENTRYPOINT: SESSION_ENTRYPOINT,
             CLAUDE_AGENT_SDK_CLIENT_APP: CLIENT_APP,
-            CODEXHOST_MCP_ELICITATION: "1",
+            CLAUDE_IN_CODEX_MCP_ELICITATION: "1",
           }),
           spawnClaudeCodeProcess: (options) => this.#spawn(options),
         },

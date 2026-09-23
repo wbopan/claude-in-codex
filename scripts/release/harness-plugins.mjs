@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import {
   harnessPluginConfigurationSchema,
   harnessPluginManifestSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { buildHarnessPlugin } from "../../packages/harness-adapter/scripts/build-plugin.mjs";
 
 const defaultRoot = path.resolve(import.meta.dirname, "../..");

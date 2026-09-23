@@ -8,10 +8,12 @@ import {
   type HarnessModelRef,
   type HarnessPermissionModeId,
   type HarnessThinkingOptionId,
+  normalizeRouteId,
+  ROUTE_PREFIX,
   type JsonRpcRequest,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
-export const CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID = "codexhost/claude-code-native";
+export const CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID = `${ROUTE_PREFIX}claude-code-native`;
 export const CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_PREFIX = `${CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID}@`;
 /** Open identity space; the Host Registry, not this legacy list, validates installation. */
 export type ExternalHarnessId = string;
@@ -79,8 +81,9 @@ export function encodeClaudeTransportModel(
 }
 
 export function decodeClaudeTransportSelection(
-  value: unknown,
+  input: unknown,
 ): ExternalConfigurationSelection | null {
+  const value = normalizeRouteId(input);
   if (value === CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID) return {};
   if (typeof value !== "string" || !value.startsWith(CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_PREFIX)) {
     return null;
@@ -175,6 +178,8 @@ export function decodeCreateRoute(request: JsonRpcRequest): CreateRoute | null {
   if (typeof request.params.model !== "string") {
     throw new Error("thread/start params.model must be text or null");
   }
+  // A Desktop that outlived a pre-rename Host may still send its route ids.
+  request.params.model = normalizeRouteId(request.params.model);
 
   const pluginRoute = decodeHarnessPluginRoute(request.params.model);
   if (pluginRoute) {

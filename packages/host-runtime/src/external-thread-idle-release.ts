@@ -3,7 +3,7 @@ import {
   idleReleaseSettingsSchema,
   type IdleReleaseSettings,
   type LoadedSession,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import type { ExternalThread } from "./external-thread-runtime.js";
 import type { DesktopRequestQueue } from "./desktop-request-queue.js";
 

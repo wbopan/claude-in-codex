@@ -1,4 +1,7 @@
-import type { HostQuestionInteraction, HostQuestionResponse } from "@codexhost/harness-adapter";
+import type {
+  HostQuestionInteraction,
+  HostQuestionResponse,
+} from "@claude-in-codex/harness-adapter";
 
 import type { ClaudeInteractionResponse, ClaudePlanApprovalRequest } from "./transport.js";
 

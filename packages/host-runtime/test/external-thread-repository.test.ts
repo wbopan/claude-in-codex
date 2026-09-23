@@ -2,8 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { HostThreadSnapshot } from "@codexhost/harness-adapter";
-import { MappingStore, type StoredTurnMappingV1 } from "@codexhost/mapping-store";
+import type { HostThreadSnapshot } from "@claude-in-codex/harness-adapter";
+import { MappingStore, type StoredTurnMappingV1 } from "@claude-in-codex/mapping-store";
 import {
   harnessIdSchema,
   hostItemIdSchema,
@@ -11,7 +11,7 @@ import {
   hostTurnIdSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ExternalThreadRepository } from "../src/external-thread-repository.js";
@@ -26,7 +26,7 @@ const nativeSessionRef = nativeSessionRefSchema.parse({
 });
 
 async function temporaryStoreDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "codexhost-repository-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-repository-"));
   temporaryDirectories.push(directory);
   return directory;
 }
@@ -77,7 +77,7 @@ describe("ExternalThreadRepository", () => {
       harnessId,
       cwd: "/synthetic",
       title: "Parent",
-      transportModelId: "codexhost/claude-code-native",
+      transportModelId: "claude-in-codex/claude-code-native",
       ephemeral: false,
       historyMode: "paginated" as const,
     };
@@ -134,7 +134,7 @@ describe("ExternalThreadRepository", () => {
       harnessId,
       cwd: "/synthetic",
       title: "Parent",
-      transportModelId: "codexhost/claude-code-native",
+      transportModelId: "claude-in-codex/claude-code-native",
       ephemeral: false,
       historyMode: "paginated",
     });
@@ -204,7 +204,7 @@ describe("ExternalThreadRepository", () => {
       harnessId,
       cwd: "/synthetic",
       title: "Claude Thread",
-      transportModelId: "codexhost/claude-code-native",
+      transportModelId: "claude-in-codex/claude-code-native",
       ephemeral: false,
       historyMode: "legacy",
     });
@@ -246,7 +246,7 @@ describe("ExternalThreadRepository", () => {
       harnessId,
       cwd: "/synthetic",
       title: "Grok Thread",
-      transportModelId: "codexhost/grok-native",
+      transportModelId: "claude-in-codex/grok-native",
       ephemeral: false,
       historyMode: "legacy",
     });
@@ -283,7 +283,7 @@ describe("ExternalThreadRepository", () => {
       harnessId,
       cwd: "/synthetic",
       title: "Claude Thread",
-      transportModelId: "codexhost/claude-code-native",
+      transportModelId: "claude-in-codex/claude-code-native",
       ephemeral: false,
       historyMode: "legacy",
     });
@@ -331,7 +331,7 @@ describe("ExternalThreadRepository", () => {
       harnessId,
       cwd: "/synthetic",
       title: "Claude Thread",
-      transportModelId: "codexhost/claude-code-native",
+      transportModelId: "claude-in-codex/claude-code-native",
       ephemeral: false,
       historyMode: "legacy",
     });

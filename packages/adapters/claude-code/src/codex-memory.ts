@@ -3,7 +3,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 
 /** Set to `0` to keep the Codex memory summary out of Claude Sessions. */
-export const CODEX_MEMORY_ENV = "CODEXHOST_CODEX_MEMORY";
+export const CODEX_MEMORY_ENV = "CLAUDE_IN_CODEX_CODEX_MEMORY";
 
 /** Skysight keeps the summary small; the cap only guards against a runaway file. */
 const MAX_SUMMARY_BYTES = 64 * 1024;

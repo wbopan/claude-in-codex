@@ -14,12 +14,16 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { platformDataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 
 const MANIFEST_FORMAT = 1;
 // Kept only so status/install can identify and migrate preview installs.
-const WRAPPER_MARKER = "# codexhost remote SSH wrapper v1";
-const PROFILE_START = "# >>> codexhost remote SSH >>>";
-const PROFILE_END = "# <<< codexhost remote SSH <<<";
+const WRAPPER_MARKER = "# claude-in-codex remote SSH wrapper v1";
+const PROFILE_START = "# >>> claude-in-codex remote SSH >>>";
+const PROFILE_END = "# <<< claude-in-codex remote SSH <<<";
+/** Markers of the block a pre-rename install wrote; install and uninstall remove it. */
+const LEGACY_PROFILE_START = "# >>> codexhost remote SSH >>>";
+const LEGACY_PROFILE_END = "# <<< codexhost remote SSH <<<";
 
 export interface RemoteHostManifestV1 {
   format: 1;
@@ -72,7 +76,13 @@ function resolvePaths(options: RemoteHostInstallOptions): ResolvedRemoteHostPath
   if (!home || home === path.parse(home).root) {
     throw new Error("A non-root HOME is required for remote Host installation");
   }
-  const installRoot = path.resolve(options.installRoot ?? path.join(home, ".codexhost", "remote"));
+  const installRoot = path.resolve(
+    options.installRoot ??
+      path.join(
+        platformDataDirectory({ ...environment, HOME: home }, options.platform ?? process.platform),
+        "remote",
+      ),
+  );
   const profilePath = path.resolve(
     options.profilePath ??
       path.join(
@@ -204,19 +214,23 @@ async function writeAtomicExecutable(filePath: string, sourcePath: string): Prom
   }
 }
 
-function managedBlockRange(contents: string): { start: number; end: number } | null {
-  const start = contents.indexOf(PROFILE_START);
-  const endMarker = contents.indexOf(PROFILE_END);
+function managedBlockRange(
+  contents: string,
+  startMarker = PROFILE_START,
+  endMarkerText = PROFILE_END,
+): { start: number; end: number } | null {
+  const start = contents.indexOf(startMarker);
+  const endMarker = contents.indexOf(endMarkerText);
   if (start < 0 && endMarker < 0) return null;
   if (
     start < 0 ||
     endMarker < start ||
-    contents.indexOf(PROFILE_START, start + PROFILE_START.length) >= 0 ||
-    contents.indexOf(PROFILE_END, endMarker + PROFILE_END.length) >= 0
+    contents.indexOf(startMarker, start + startMarker.length) >= 0 ||
+    contents.indexOf(endMarkerText, endMarker + endMarkerText.length) >= 0
   ) {
     throw new MalformedManagedProfileBlockError();
   }
-  let end = endMarker + PROFILE_END.length;
+  let end = endMarker + endMarkerText.length;
   if (contents.slice(end, end + 2) === "\r\n") end += 2;
   else if (contents[end] === "\n") end += 1;
   return { start, end };
@@ -224,14 +238,42 @@ function managedBlockRange(contents: string): { start: number; end: number } | n
 
 class MalformedManagedProfileBlockError extends Error {
   constructor() {
-    super("Shell profile contains a malformed codexhost remote SSH block");
+    super("Shell profile contains a malformed claude-in-codex remote SSH block");
     this.name = "MalformedManagedProfileBlockError";
   }
 }
 
 function removeManagedProfileBlock(contents: string): string {
-  const range = managedBlockRange(contents);
-  return range ? `${contents.slice(0, range.start)}${contents.slice(range.end)}` : contents;
+  let result = contents;
+  for (const [start, end] of [
+    [PROFILE_START, PROFILE_END],
+    [LEGACY_PROFILE_START, LEGACY_PROFILE_END],
+  ] as const) {
+    const range = managedBlockRange(result, start, end);
+    if (range) result = `${result.slice(0, range.start)}${result.slice(range.end)}`;
+  }
+  return result;
+}
+
+/**
+ * Adopts an install made before the rename: its Remote data moves to the new data folder
+ * unless one already exists, and the rest of `~/.codexhost/remote` is removed. The legacy
+ * profile block is removed with the current one.
+ */
+async function adoptLegacyInstall(paths: ResolvedRemoteHostPaths): Promise<void> {
+  const legacyRoot = path.join(paths.home, ".codexhost", "remote");
+  if (legacyRoot === paths.installRoot) return;
+  const legacy = await lstat(legacyRoot).catch(() => null);
+  if (!legacy?.isDirectory()) return;
+  const legacyData = path.join(legacyRoot, "data");
+  if ((await lstat(legacyData).catch(() => null))?.isDirectory()) {
+    if ((await lstat(paths.dataDirectory).catch(() => null)) === null) {
+      await mkdir(path.dirname(paths.dataDirectory), { recursive: true, mode: 0o700 });
+      await rename(legacyData, paths.dataDirectory);
+    }
+  }
+  await rm(legacyRoot, { recursive: true, force: true });
+  await rmdir(path.dirname(legacyRoot)).catch(() => undefined);
 }
 
 function installManagedProfileBlock(contents: string, manifest: RemoteHostManifestV1): string {
@@ -239,14 +281,14 @@ function installManagedProfileBlock(contents: string, manifest: RemoteHostManife
   const environment = [
     `export CODEX_INSTALL_DIR=${shellQuote(path.dirname(manifest.wrapperPath))}`,
     `export PATH=${shellQuote(path.dirname(manifest.wrapperPath))}:${shellQuote(path.dirname(manifest.nodePath))}:${shellQuote(path.dirname(manifest.stockCodexPath))}:"\${PATH:-/usr/local/bin:/usr/bin:/bin}"`,
-    `export CODEXHOST_STOCK_CODEX_PATH=${shellQuote(manifest.stockCodexPath)}`,
-    `export CODEXHOST_HOST_NODE_PATH=${shellQuote(manifest.nodePath)}`,
-    `export CODEXHOST_HOST_RUNTIME_PATH=${shellQuote(manifest.hostRuntimePath)}`,
-    `export CODEXHOST_DATA_DIR=${shellQuote(manifest.dataDirectory)}`,
-    "export CODEXHOST_DEFAULT_AGENT='codex'",
-    "export CODEXHOST_REMOTE_SSH_MANAGED='1'",
+    `export CLAUDE_IN_CODEX_STOCK_CODEX_PATH=${shellQuote(manifest.stockCodexPath)}`,
+    `export CLAUDE_IN_CODEX_HOST_NODE_PATH=${shellQuote(manifest.nodePath)}`,
+    `export CLAUDE_IN_CODEX_HOST_RUNTIME_PATH=${shellQuote(manifest.hostRuntimePath)}`,
+    `export CLAUDE_IN_CODEX_DATA_DIR=${shellQuote(manifest.dataDirectory)}`,
+    "export CLAUDE_IN_CODEX_DEFAULT_AGENT='codex'",
+    "export CLAUDE_IN_CODEX_REMOTE_SSH_MANAGED='1'",
     ...(manifest.claudeCommand
-      ? [`export CODEXHOST_CLAUDE_COMMAND=${shellQuote(manifest.claudeCommand)}`]
+      ? [`export CLAUDE_IN_CODEX_CLAUDE_COMMAND=${shellQuote(manifest.claudeCommand)}`]
       : []),
   ];
   const block = [
@@ -363,7 +405,7 @@ async function backupProfile(
   action: string,
 ): Promise<string> {
   const timestamp = new Date().toISOString().replaceAll(/[-:.TZ]/gu, "");
-  const backupPath = `${profilePath}.codexhost-${action}-${timestamp}.bak`;
+  const backupPath = `${profilePath}.claude-in-codex-${action}-${timestamp}.bak`;
   const metadata = await stat(profilePath).catch(() => null);
   await writeAtomic(backupPath, contents, metadata?.mode ?? 0o600);
   return backupPath;
@@ -432,8 +474,11 @@ export async function installRemoteHost(
     );
   }
   const nodePath = await executable(options.nodePath, "Node runtime");
-  const shimPath = await executable(options.shimPath, "codexhost Shim");
-  const hostRuntimePath = await existingFile(options.hostRuntimePath, "codexhost Host Runtime");
+  const shimPath = await executable(options.shimPath, "claude-in-codex Shim");
+  const hostRuntimePath = await existingFile(
+    options.hostRuntimePath,
+    "claude-in-codex Host Runtime",
+  );
   const discoveredClaude =
     options.claudeCommand ??
     previousManifest?.claudeCommand ??
@@ -467,6 +512,7 @@ export async function installRemoteHost(
       manifest = { ...manifest, profileBackupPath };
       await writeAtomic(profilePath, nextProfile, profileMetadata?.mode ?? 0o600);
     }
+    if (options.installRoot === undefined) await adoptLegacyInstall(paths);
     await mkdir(paths.dataDirectory, { recursive: true, mode: 0o700 });
     await chmod(paths.dataDirectory, 0o700);
     await writeAtomicExecutable(paths.wrapperPath, manifest.shimPath);

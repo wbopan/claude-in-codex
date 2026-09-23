@@ -1,4 +1,4 @@
-import type { HarnessSessionState } from "@codexhost/harness-adapter";
+import type { HarnessSessionState } from "@claude-in-codex/harness-adapter";
 
 interface StateWaiter {
   afterRevision: number;

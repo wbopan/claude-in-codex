@@ -9,12 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: [
-      "packages/**/test/**/*.test.ts",
-      "packages/repository-automation/test/**/*.test.mjs",
-      "tests/release/**/*.test.mjs",
-      "tools/**/*.test.mjs",
-    ],
+    include: ["packages/**/test/**/*.test.ts", "tools/**/*.test.mjs"],
     maxWorkers: 4,
     passWithNoTests: false,
   },

@@ -1,11 +1,11 @@
-import type { HostTurnId } from "@codexhost/shared-contracts";
-import type { JsonObject } from "@codexhost/protocol-core";
+import type { HostTurnId } from "@claude-in-codex/shared-contracts";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 import type {
   HarnessResult,
   TurnCancelAccepted,
   TurnCancelCommand,
   TurnOutcome,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 
 import type { TurnProjectionGate } from "./external-thread-runtime.js";
 

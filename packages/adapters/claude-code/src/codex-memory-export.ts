@@ -15,7 +15,7 @@ export const CODEX_MEMORY_EXTENSION = "claude_code";
 export const CODEX_MEMORY_EXTENSION_INSTRUCTIONS = `# Claude Code memories
 
 Claude Code sessions (including Claude Threads run inside Codex Desktop) save durable lessons as
-one Markdown file per topic in a per-project memory directory. codexhost mirrors those files here
+one Markdown file per topic in a per-project memory directory. claude-in-codex mirrors those files here
 so they take part in memory consolidation.
 
 ## Folder structure

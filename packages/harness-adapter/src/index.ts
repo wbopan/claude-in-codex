@@ -1,4 +1,4 @@
-import { WORKSPACE_CONTRACT_VERSION } from "@codexhost/shared-contracts";
+import { WORKSPACE_CONTRACT_VERSION } from "@claude-in-codex/shared-contracts";
 
 export type {
   HarnessClientTool,
@@ -104,6 +104,6 @@ export type {
 } from "./text-session.js";
 
 export const packageMetadata = {
-  name: "@codexhost/harness-adapter",
+  name: "@claude-in-codex/harness-adapter",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;

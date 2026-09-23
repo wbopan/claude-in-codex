@@ -5,11 +5,12 @@ import {
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
+  normalizeRouteId,
   type HarnessId,
   type HostThreadId,
   type HostTurnId,
   type NativeSessionRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { z } from "zod";
 
 const nonBlankTextSchema = z.string().refine((value) => value.trim().length > 0, {
@@ -45,7 +46,8 @@ export const storedThreadRecordV1Schema = z
     cwd: nonBlankTextSchema.max(16_384),
     title: z.string().max(4_096),
     archived: z.boolean(),
-    transportModelId: nonBlankTextSchema.max(1_024),
+    // Threads stored before the rename carry the legacy route prefix.
+    transportModelId: nonBlankTextSchema.max(1_024).transform(normalizeRouteId),
     ephemeral: z.boolean(),
     historyMode: z.enum(["legacy", "paginated"]),
     forkSource: z

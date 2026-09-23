@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountRateLimits } from "../src/codex-runtime/account-rate-limits.js";
-import type { JsonObject } from "@codexhost/protocol-core";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 
 const response = (usedPercent: number): JsonObject => ({
   result: { rateLimits: { primary: { usedPercent, windowDurationMins: 300 } } },

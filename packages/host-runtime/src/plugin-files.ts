@@ -6,7 +6,7 @@ import {
   HARNESS_PLUGIN_MANIFEST_MAX_BYTES,
   harnessPluginConfigurationSchema,
   type HarnessPluginConfiguration,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 function inside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);

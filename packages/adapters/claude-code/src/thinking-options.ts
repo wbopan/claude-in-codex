@@ -2,7 +2,7 @@ import {
   harnessThinkingOptionIdSchema,
   type HarnessThinkingOption,
   type HarnessThinkingOptionId,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 const option = (id: string, label: string): HarnessThinkingOption => ({
   id: harnessThinkingOptionIdSchema.parse(id),

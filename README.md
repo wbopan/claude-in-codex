@@ -1,31 +1,48 @@
-# Codex Host
+# Claude in Codex
 
-在正常启动的 Codex App（`/Applications/ChatGPT.app`）中使用 Claude。日常入口是 **Codex Host.app**，一个 macOS 菜单栏应用。
+在正常启动的 Codex App（`/Applications/ChatGPT.app`）中使用 Claude。日常入口是 **Claude in Codex.app**，一个 macOS 菜单栏应用。
 
 ## 使用
 
-1. 正常打开 `/Applications/ChatGPT.app`，然后打开 `Codex Host.app`。
+App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
+
+1. 正常打开 `/Applications/ChatGPT.app`，然后打开 Claude in Codex。
 2. 菜单栏的括号图标中间变成实心圆，表示已接入。原生模型选择器会增加本机 Claude 模型。
-3. 选择「断开（等待任务完成）」或「退出 Codex Host」，等待正在执行的外部任务和后台任务完成。等待期间可以取消断开，也可以明确选择停止外部任务。
+3. 选择「断开（等待任务完成）」或「退出 Claude in Codex」，等待正在执行的外部任务和后台任务完成。等待期间可以取消断开，也可以明确选择停止外部任务。
 4. Codex App 和 GPT 任务继续运行。重新打开 Host 或选择「接入 Codex App」即可再次接入。
 
 目前支持 macOS 14+，已验证官方 Desktop **26.915.31945**、**26.917.51856**。接入前只校验 OpenAI 签名，并在运行时检查内部连接结构；结构对不上时停止接入并显示原因。Host 使用已安装、已登录的 Claude Code。打包后的 App 自带 Node 和插件。
 
 如果当前 Desktop 是旧 launcher 启动的，需要先自行退出旧实例，再从 Finder 正常打开 Codex App。Host 会识别旧的 `CODEX_CLI_PATH` 并拒绝叠加接入。
 
+本项目原名 Codex Host。如果旧版 Codex Host.app 还在运行，Claude in Codex 启动时会提示先退出它，并在它退出后自动继续启动；两者不会同时接入同一个 Codex App。
+
 ## 菜单与 Dashboard
 
 图标由两个开放括号和连接点组成，适配系统明暗主题。空心点表示未接入，实心点表示已接入，省略号表示接入或排空中，感叹号表示错误。
 
-下拉菜单只放简要状态：接入状态、运行中的任务数、各额度窗口的剩余量（小进度条，悬停可见百分比和重置时间），以及接入/断开、Dashboard 和退出。
+下拉菜单只放简要状态：接入状态、运行中的任务数、各额度窗口的剩余量（小进度条，悬停可见百分比和重置时间），以及接入/断开、Dashboard、设置、关于和退出。
+
+同一时间只运行一个 Host。再次打开 Claude in Codex.app（包括其他路径下的副本）时，新实例不会启动 Host，而是让已运行的实例打开 Dashboard 后退出；在 Finder 中重新打开正在运行的 App 同样会打开 Dashboard。
 
 Dashboard 的标题栏右侧有打开 Codex App、查看诊断日志和接入/断开按钮，内容分三块：
 
-- 组件：Codex App、Claude Code CLI、Codex Host 三张卡片，各带图标、版本和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。
+- 组件：Codex App、Claude Code CLI、Claude in Codex 三张卡片，各带图标、版本和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。
 - 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），与 Codex App 用量菜单共用 90 秒缓存。
 - 外部任务：每个会话一行，显示标题、所在项目和当前活动（思考、运行命令、等待批准等）及已运行时长，不显示提示词、命令或输出内容。
 
 Claude Code CLI 版本、进程数和用量在接入后读取。
+
+## 设置与关于
+
+在菜单或 Dashboard 中按 ⌘, 打开设置：
+
+- 登录时启动：通过系统登录项注册 App。如果系统要求批准，设置中会提示并提供「打开登录项设置…」。
+- 启动时自动接入 Codex App：默认开启。关闭后启动 Host 但保持未接入，需要时从菜单选择「接入 Codex App」。
+- 启动时打开 Dashboard：默认关闭。
+- Codex App、数据目录和日志的位置，可以在 Finder 中显示或直接打开日志。
+
+「关于 Claude in Codex」显示版本号，以及构建时写入的 Git 修订和构建时间。
 
 ## 构建
 
@@ -33,25 +50,44 @@ Claude Code CLI 版本、进程数和用量在接入后读取。
 
 ```sh
 npm ci
-npm run menubar:build
-open '.codexhost/menubar/Codex Host.app'
+npm run app:install
+open '/Applications/Claude in Codex.app'
 ```
 
-也可以用 `CODEXHOST_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标、进行本地 ad-hoc 签名并检查签名。运行中的构建不能被原地覆盖。
+`npm run app:install` 先构建到 `.dev/app/Claude in Codex.app`，再替换 `/Applications` 中的 App。正在运行的 App 不会被覆盖：先从菜单退出（等待任务完成），再安装。只构建不安装用 `npm run app:build`。
 
-开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](docs/menubar-migration.md)。`CODEXHOST_DESKTOP_APP` 可以指定测试副本，`CODEXHOST_DATA_DIR` 指定 Host 数据目录。普通使用不需要这些环境变量。
+也可以用 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标、进行本地 ad-hoc 签名并检查签名。
+
+仓库内的开发产物（构建、工具链、验收记录）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
+
+开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](docs/menubar-migration.md)。`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定测试副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_SETTINGS=1`、`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 在启动时打开设置或关于窗口。普通使用不需要这些环境变量。
+
+已有 Claude in Codex 在运行时，同一 bundle identifier 的新构建会直接交给它并退出。要和正在使用的 Host 并排测试界面，构建一个独立标识的副本，并关闭自动接入：
+
+```sh
+CLAUDE_IN_CODEX_BUNDLE_ID=ai.bytepioneer.claude-in-codex.test CLAUDE_IN_CODEX_APP_NAME='Claude in Codex Test' npm run app:build
+open --env CLAUDE_IN_CODEX_AUTO_ATTACH=0 --env CLAUDE_IN_CODEX_DATA_DIR="$PWD/.dev/test-data" '.dev/app/Claude in Codex Test.app'
+```
+
+测试副本有自己的偏好设置和登录项。
 
 ## 数据与远程连接
 
-本机默认继续使用 `~/.codexhost` 中的模型偏好、映射、标题和归档记录；Claude 的正文和认证仍由原生 Claude Code 管理。接入读取 Desktop 实际使用的 `CODEX_HOME`，保留已有 Codex 记忆导出和注入路径。日志位于 `~/.codexhost/logs/menubar.log`。
+模型偏好、线程映射、标题和归档记录保存在 `~/Library/Application Support/Claude in Codex/`，日志写到 `~/Library/Logs/Claude in Codex/host.log`，设置窗口里都可以打开。Claude 的正文和认证仍由原生 Claude Code 管理。接入读取 Desktop 实际使用的 `CODEX_HOME`，保留已有 Codex 记忆导出和注入路径。
 
-热接入只改变当前 Desktop 的本机 stdio 连接。Cloud GPT、ChatGPT Work 和 SSH 主机的连接及筛选仍由 Codex App 管理。本机 Claude 不会追加到云端模型列表。已有 SSH Remote Host、Aqua broker 和 `codexhost remote install|start|stop|status|uninstall` 保持原有安装与管理方式，MenuBar 不重新安装或重启远端服务。远端部署继续使用原来的平台发行包。
+从 Codex Host 升级时，第一次接入会把 `~/.codexhost` 中的数据移到上述位置，旧日志改名为 `codexhost-*.log` 放进日志目录，旧 launcher 留下的 `desktop-proxy` 被删除；全部移走后删除 `~/.codexhost`。旧 Host 仍持有线程映射时不会迁移，而是显示错误，退出旧 Host 后重新接入即可。旧线程中的 `codexhost/…` 模型标识、旧的 `CODEXHOST_*` 环境变量和旧的 `codexhost/…` 管理方法都继续有效。
+
+热接入只改变当前 Desktop 的本机 stdio 连接。Cloud GPT、ChatGPT Work 和 SSH 主机的连接及筛选仍由 Codex App 管理。本机 Claude 不会追加到云端模型列表。已有 SSH Remote Host、Aqua broker 和 `claude-in-codex remote install|start|stop|status|uninstall` 保持原有管理方式，菜单栏 App 不重新安装或重启远端服务。
+
+远端只通过 npm 包 `@claude-in-codex/cli` 发行：在 SSH 目标机上执行 `npm install -g @claude-in-codex/cli`，再执行 `claude-in-codex remote install`。包内只有 Host Runtime（`app/host-runtime.mjs`，由当前 Node.js 运行）、预装的 Harness 插件和 Rust Shim（`libexec/claude-in-codex-shim`）。安装把 Shim 复制为 `<数据目录>/remote/bin/codex`（macOS 为 `~/Library/Application Support/Claude in Codex`，Linux 为 `$XDG_DATA_HOME/claude-in-codex`，默认 `~/.local/share/claude-in-codex`），并在登录配置中写入仅对 SSH 会话生效的段落。重新安装会接管改名前的 `~/.codexhost/remote`：迁移其中的数据，删除旧入口，并替换登录配置中的旧段落；macOS 上旧的 `ai.bytepioneer.codexhost.*` LaunchAgent 也会被移除。Shim 只把 Codex Desktop 托管的 `app-server --listen unix://` 监听交给 Host Runtime，其余调用（包括 stdio `app-server`）都原样转给官方 Codex CLI。macOS 上的 Aqua broker 由 Shim 的隐藏命令 `--claude-in-codex-broker` 安装和管理，`remote install|status|uninstall` 会自动调用，也可用 `claude-in-codex broker install|status|stop|uninstall` 单独管理。旧的 launcher、DMG 安装包和本机 stdio Host 已删除。
+
+本地打包验证：`npm run release:npm -- --pack` 生成当前平台包，`npm run release:npm:meta -- --version <版本> --pack` 生成入口包，输出位于 `build/npm/`。
 
 ## 开发验证
 
 ```sh
 npm run test:typescript
-cargo test --workspace --locked --features codexhost-shim/test-utils
+cargo test --workspace --locked --features claude-in-codex-shim/test-utils
 ```
 
-热接入代码在 `packages/host-runtime/src/hot-attach/`，原生菜单在 `apps/menubar/main.swift`，打包入口在 `tools/menubar/build.mjs`。协议、适配器、模型投影、权限、历史、工具和远程实现复用现有 Host。
+热接入代码在 `packages/host-runtime/src/hot-attach/`，原生菜单在 `apps/macos/main.swift`，打包和安装入口在 `tools/app/`。数据和日志位置由 `packages/shared-contracts/src/app-paths.ts` 统一解析，改名前的标识符兼容集中在各自的读取入口。协议、适配器、模型投影、权限、历史、工具和远程实现复用现有 Host。

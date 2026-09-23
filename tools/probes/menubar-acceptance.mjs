@@ -6,15 +6,15 @@ import { readFile, writeFile, open, readdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { CdpClient } from "../../packages/desktop-control/dist/index.js";
-import { debugEnvironment } from "../fork/debug.mjs";
-const root = path.resolve(import.meta.dirname, "../../.codexhost/hot-attach-research");
-const resources = path.resolve(root, "../menubar/Codex Host.app/Contents/Resources");
+import { debugEnvironment } from "./fixture-instance.mjs";
+const root = path.resolve(import.meta.dirname, "../../.dev/hot-attach-research");
+const resources = path.resolve(root, "../menubar/Claude in Codex.app/Contents/Resources");
 const state = JSON.parse(await readFile(path.join(root, "probe-state.json"), "utf8"));
 const targets = await fetch("http://127.0.0.1:9229/json/list").then((r) => r.json());
 const cdp = await CdpClient.connect(targets[0].webSocketDebuggerUrl, { commandTimeoutMs: 30_000 });
 assert.equal(await cdp.evaluate("process.pid"), state.probe.pid);
 assert.equal(
-  await cdp.evaluate("!!globalThis.__codexhostHotAttachV1"),
+  await cdp.evaluate("!!globalThis.__claudeInCodexHotAttachV1"),
   false,
   "Detach the MenuBar before running acceptance",
 );
@@ -38,7 +38,9 @@ async function begin(input) {
   const c = globalThis.__cxConnection;
   if (!c) throw new Error("Capture the isolated connection first");
   const model =
-    input.kind === "gpt" ? "gpt-5.6-luna" : "codexhost/claude-code-native@claude-model-v1.aGFpa3U";
+    input.kind === "gpt"
+      ? "gpt-5.6-luna"
+      : "claude-in-codex/claude-code-native@claude-model-v1.aGFpa3U";
   const result = await c.sendAppServerRequest("thread/start", {
     model,
     cwd: input.cwd,
@@ -156,12 +158,12 @@ const replies = new Map();
 function launch() {
   host = spawn(
     path.join(resources, "runtime/node"),
-    [path.join(resources, "host.mjs"), "--codexhost-menubar"],
+    [path.join(resources, "host.mjs"), "--claude-in-codex-menubar"],
     {
       env: {
         ...debugEnvironment(process.env, root),
-        CODEXHOST_DESKTOP_APP: path.join(root, "app/ChatGPT.app"),
-        CODEXHOST_AUTO_ATTACH: "0",
+        CLAUDE_IN_CODEX_DESKTOP_APP: path.join(root, "app/ChatGPT.app"),
+        CLAUDE_IN_CODEX_AUTO_ATTACH: "0",
       },
       stdio: ["pipe", "pipe", log.fd],
     },
@@ -213,11 +215,11 @@ try {
     launch();
     assert.equal((await command("attach")).ok, true);
     const models = (await call("model/list", { limit: 100 })).data;
-    assert(models.some((m) => m.model.startsWith("codexhost/")));
+    assert(models.some((m) => m.model.startsWith("claude-in-codex/")));
     assert(models.some((m) => m.model === "gpt-5.6-luna"));
     evidence("model-union", {
-      native: models.filter((m) => !m.model.startsWith("codexhost/")).length,
-      external: models.filter((m) => m.model.startsWith("codexhost/")).length,
+      native: models.filter((m) => !m.model.startsWith("claude-in-codex/")).length,
+      external: models.filter((m) => m.model.startsWith("claude-in-codex/")).length,
     });
     const before = await finishTurn("gpt-before");
     assert.equal(before.status, "completed");
@@ -253,7 +255,7 @@ try {
     let rejected = false;
     try {
       await call("thread/start", {
-        model: "codexhost/claude-code-native@claude-model-v1.aGFpa3U",
+        model: "claude-in-codex/claude-code-native@claude-model-v1.aGFpa3U",
         cwd: path.join(root, "workspace"),
       });
     } catch (e) {
@@ -315,7 +317,7 @@ try {
     "Host quit",
   );
   const clean = await evaluate(() => ({
-    hook: !!globalThis.__codexhostHotAttachV1,
+    hook: !!globalThis.__claudeInCodexHotAttachV1,
     send: Object.hasOwn(__cxConnection.connection, "send"),
     route: Object.hasOwn(__cxConnection, "routeIncomingMessage"),
   }));

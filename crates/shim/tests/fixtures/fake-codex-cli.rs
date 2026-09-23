@@ -11,8 +11,8 @@ use std::time::Duration;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::os::unix::net::UnixListener;
 
-use codexhost_platform::{CODEX_CLI_PATH_ENV, STOCK_CODEX_PATH_ENV};
-use codexhost_shim::{HOST_NODE_PATH_ENV, HOST_RUNTIME_PATH_ENV};
+use claude_in_codex_platform::CODEX_CLI_PATH_ENV;
+use claude_in_codex_shim::{HOST_NODE_PATH_ENV, HOST_RUNTIME_PATH_ENV};
 
 fn environment_u64(name: &str, default: u64) -> u64 {
     env::var(name)
@@ -98,145 +98,10 @@ fn run_signal_observer() -> bool {
     false
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[allow(clippy::zombie_processes)]
-fn run_orphan_shim_launcher() -> bool {
-    let Some(shim_path) = env::var_os("FAKE_CODEX_ORPHAN_SHIM") else {
-        return false;
-    };
-    let runtime_path =
-        env::var_os("FAKE_CODEX_ORPHAN_RUNTIME").expect("orphan launcher fake runtime path");
-    let data_directory =
-        env::var_os("FAKE_CODEX_ORPHAN_DATA_DIR").expect("orphan launcher data directory");
-    let runtime_ready =
-        env::var_os("FAKE_CODEX_ORPHAN_RUNTIME_READY").expect("orphan launcher runtime ready path");
-    let launcher_ready =
-        env::var_os("FAKE_CODEX_ORPHAN_LAUNCHER_READY").expect("orphan launcher ready path");
-
-    let keep_desktop_alive = env::var_os("FAKE_CODEX_ORPHAN_KEEP_DESKTOP").is_some();
-    let configured_host_runtime = env::var_os("FAKE_CODEX_ORPHAN_USE_HOST_RUNTIME").is_some();
-    let mut command = Command::new(shim_path);
-    command
-        .args(["app-server", "--stdio"])
-        // This fixture plays a Desktop for the proxy topology (the `=0` fallback on macOS).
-        .env("CODEXHOST_NATIVE_APP_TOOLS", "0")
-        .env_remove("FAKE_CODEX_ORPHAN_SHIM")
-        .env_remove("FAKE_CODEX_ORPHAN_RUNTIME")
-        .env_remove("FAKE_CODEX_ORPHAN_DATA_DIR")
-        .env_remove("FAKE_CODEX_ORPHAN_RUNTIME_READY")
-        .env_remove("FAKE_CODEX_ORPHAN_LAUNCHER_READY")
-        .env_remove("FAKE_CODEX_ORPHAN_KEEP_DESKTOP")
-        .env_remove("FAKE_CODEX_ORPHAN_USE_HOST_RUNTIME")
-        .env(STOCK_CODEX_PATH_ENV, &runtime_path)
-        .env("CODEXHOST_DATA_DIR", data_directory)
-        .env("FAKE_CODEX_HOST_RUNTIME_READY", runtime_ready)
-        .stdin(if keep_desktop_alive {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if configured_host_runtime {
-        command
-            .env(HOST_NODE_PATH_ENV, &runtime_path)
-            .env(HOST_RUNTIME_PATH_ENV, &runtime_path);
-    } else {
-        command
-            .env_remove(HOST_NODE_PATH_ENV)
-            .env_remove(HOST_RUNTIME_PATH_ENV);
-    }
-    let mut child = command
-        .spawn()
-        .expect("spawn orphaned fake Host Runtime Shim");
-    write_ready_file(
-        &std::path::PathBuf::from(launcher_ready),
-        &format!("shim={}\n", child.id()),
-    );
-    if keep_desktop_alive {
-        // A real Desktop reaps a rejected Shim while the Desktop itself stays open. Poll both
-        // lifetimes so Linux does not retain the exited child as a zombie until Desktop EOF.
-        let (desktop_eof_sender, desktop_eof_receiver) = std::sync::mpsc::sync_channel(1);
-        thread::spawn(move || {
-            let result = io::stdin().read_to_end(&mut Vec::new());
-            let _ = desktop_eof_sender.send(result);
-        });
-        let mut child_exited = false;
-        loop {
-            if !child_exited {
-                child_exited = child.try_wait().expect("poll fake Desktop child").is_some();
-            }
-            match desktop_eof_receiver.try_recv() {
-                Ok(result) => {
-                    result.expect("wait for fake Desktop stdin EOF");
-                    break;
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    panic!("fake Desktop stdin reader disconnected")
-                }
-            }
-        }
-        if !child_exited {
-            drop(child.stdin.take());
-            child.wait().expect("reap fake Desktop child");
-        }
-    }
-    true
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-fn run_orphan_shim_launcher() -> bool {
-    false
-}
-
 // The root-exit test mode intentionally drops a live child to verify orphan cleanup.
 #[allow(clippy::zombie_processes)]
 fn main() {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
-    #[cfg(target_os = "macos")]
-    if let Some(desktop) = env::var_os("FAKE_CODEX_DETACHED_DESKTOP") {
-        Command::new(desktop)
-            .args(&arguments)
-            .env_remove("FAKE_CODEX_DETACHED_DESKTOP")
-            .env("FAKE_CODEX_WAIT_FOR_REPARENT", "1")
-            .spawn()
-            .expect("launch detached Desktop fixture");
-        return;
-    }
-    #[cfg(target_os = "macos")]
-    if env::var_os("FAKE_CODEX_WAIT_FOR_REPARENT").is_some() {
-        for _ in 0..100 {
-            if nix::unistd::getppid().as_raw() == 1 {
-                break;
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-        assert_eq!(nix::unistd::getppid().as_raw(), 1);
-    }
-    if let Some(shim) = env::var_os("FAKE_CODEX_HELPER_SHIM") {
-        let depth = environment_u64("FAKE_CODEX_HELPER_DEPTH", 0);
-        let mut command = Command::new(if depth == 0 {
-            PathBuf::from(shim)
-        } else {
-            env::var_os("FAKE_CODEX_HELPER_EXECUTABLE")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| env::current_exe().expect("fake helper executable"))
-        });
-        command.args(&arguments);
-        // This fixture plays a Desktop for the proxy topology (the `=0` fallback on macOS).
-        command.env("CODEXHOST_NATIVE_APP_TOOLS", "0");
-        command.env_remove("FAKE_CODEX_WAIT_FOR_REPARENT");
-        if depth == 0 {
-            command.env_remove("FAKE_CODEX_HELPER_SHIM");
-        } else {
-            command.env("FAKE_CODEX_HELPER_DEPTH", (depth - 1).to_string());
-        }
-        let status = command.status().expect("run fake Desktop or helper child");
-        process::exit(status.code().unwrap_or(1));
-    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     if env::var_os("FAKE_CODEX_CRASH").is_some() {
         use std::os::unix::process::CommandExt;
@@ -248,9 +113,6 @@ fn main() {
         return;
     }
     if run_signal_observer() {
-        return;
-    }
-    if run_orphan_shim_launcher() {
         return;
     }
     if let Some(ready_path) = env::var_os("FAKE_CODEX_HOST_RUNTIME_READY") {
@@ -335,18 +197,6 @@ fn main() {
                 eprintln!("{name}={}", value.to_string_lossy());
             }
         }
-    }
-
-    if env::var_os("FAKE_CODEX_ROUTE_RESPONSE").is_some() {
-        io::stdin().read_exact(&mut [0]).expect("routing request");
-        io::stdout()
-            .write_all(b"response")
-            .expect("routing response");
-        io::stdout().flush().expect("flush routing response");
-        io::stdin()
-            .read_to_end(&mut Vec::new())
-            .expect("routing EOF");
-        return;
     }
 
     if env::var_os("FAKE_CODEX_SPAWN_CHILD").is_some() {

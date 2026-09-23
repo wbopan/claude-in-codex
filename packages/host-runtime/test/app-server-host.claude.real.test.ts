@@ -6,20 +6,20 @@ import { PassThrough } from "node:stream";
 import type { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
-import { ClaudeCodeAdapter } from "@codexhost/adapter-claude-code";
-import { MappingStore } from "@codexhost/mapping-store";
-import { hostThreadIdSchema } from "@codexhost/shared-contracts";
+import { ClaudeCodeAdapter } from "@claude-in-codex/adapter-claude-code";
+import { MappingStore } from "@claude-in-codex/mapping-store";
+import { hostThreadIdSchema } from "@claude-in-codex/shared-contracts";
 import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
   type ExternalHarnessId,
   type JsonObject,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 
 import { AppServerHost } from "../src/index.js";
 
 type ClaudeAdapterDependencies = NonNullable<ConstructorParameters<typeof ClaudeCodeAdapter>[1]>;
 
-const RUN_REAL = process.env.CODEXHOST_RUN_CLAUDE_HOST_REAL === "1";
+const RUN_REAL = process.env.CLAUDE_IN_CODEX_RUN_CLAUDE_HOST_REAL === "1";
 const REAL_TIMEOUT_MS = 180_000;
 
 class OfficialProcess extends EventEmitter {
@@ -107,7 +107,7 @@ function writeRequest(input: PassThrough, request: JsonObject): void {
 describe("AppServerHost hermetic Claude projection", () => {
   it("keeps a successful Claude Turn mapped and rereads its Native history", async () => {
     const mappingStoreDirectory = await fs.mkdtemp(
-      path.join(tmpdir(), "codexhost-host-claude-hermetic-"),
+      path.join(tmpdir(), "claude-in-codex-host-claude-hermetic-"),
     );
     let uuid = 0;
     let nativeSessionId: string | undefined;
@@ -206,7 +206,7 @@ describe("AppServerHost hermetic Claude projection", () => {
       desktopInput,
       desktopOutput,
       diagnosticOutput,
-      environment: { CODEXHOST_DATA_DIR: mappingStoreDirectory },
+      environment: { CLAUDE_IN_CODEX_DATA_DIR: mappingStoreDirectory },
       externalAdapters: new Map([["claude-code", claudeAdapter]]),
       mappingStore,
       spawnOfficial: (() =>
@@ -289,9 +289,9 @@ describe.skipIf(!RUN_REAL)("AppServerHost real Claude projection", () => {
   it(
     "projects one real Claude text Turn through the registered external Harness path",
     async () => {
-      const workspace = path.resolve(".codexhost", "claude-host-real", "workspace");
+      const workspace = path.resolve(".dev", "claude-host-real", "workspace");
       await fs.mkdir(workspace, { recursive: true });
-      const prompt = "Reply with exactly CODEXHOST_CLAUDE_HOST_OK.";
+      const prompt = "Reply with exactly CLAUDE_IN_CODEX_CLAUDE_HOST_OK.";
       await fs.writeFile(path.join(workspace, "prompt.local.txt"), `${prompt}\n`, "utf8");
 
       const desktopInput = new PassThrough();

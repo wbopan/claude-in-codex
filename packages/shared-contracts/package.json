@@ -1,5 +1,5 @@
 {
-  "name": "@codexhost/shared-contracts",
+  "name": "@claude-in-codex/shared-contracts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,6 +14,10 @@
     "./version": {
       "types": "./dist/version.d.ts",
       "import": "./dist/version.js"
+    },
+    "./app-paths": {
+      "types": "./dist/app-paths.d.ts",
+      "import": "./dist/app-paths.js"
     }
   },
   "scripts": {

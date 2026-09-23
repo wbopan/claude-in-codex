@@ -4,8 +4,8 @@ import type {
   HostItemOutcome,
   HostSubagentDelegationItem,
   HostSubagentState,
-} from "@codexhost/harness-adapter";
-import type { HostItemId, HostTurnId } from "@codexhost/shared-contracts";
+} from "@claude-in-codex/harness-adapter";
+import type { HostItemId, HostTurnId } from "@claude-in-codex/shared-contracts";
 
 import type { ClaudeTurnEvent } from "./transport.js";
 

@@ -1,10 +1,10 @@
-import { parseHostUsage, type HostUsage } from "@codexhost/harness-adapter";
+import { parseHostUsage, type HostUsage } from "@claude-in-codex/harness-adapter";
 import {
   hostThreadIdSchema,
   hostTurnIdSchema,
   type AccountCreditsSnapshot,
   type HostTurnId,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 interface CodexTokenUsageObservation {
   threadId: string;

@@ -1,5 +1,7 @@
 import { createInterface } from "node:readline";
+import { DATA_DIRECTORY_ENV } from "@claude-in-codex/shared-contracts";
 import { HotAttachController, defaultMenuBarEnvironment } from "./controller.js";
+import { migrateLegacyDataDirectory } from "./legacy-data.js";
 
 /** JSONL control pipe owned by the native MenuBar app. Never publishes an HTTP control port. */
 export async function runMenuBarHost(
@@ -15,8 +17,21 @@ export async function runMenuBarHost(
       process.stdout.write(`${value}\n`);
     }
   };
+  // Only the default data folder adopts ~/.codexhost; an explicit folder is left alone.
+  let migrated = Boolean(environment[DATA_DIRECTORY_ENV]);
+  const prepare = async (): Promise<void> => {
+    if (migrated) return;
+    const migration = await migrateLegacyDataDirectory(environment);
+    migrated = true;
+    if (migration)
+      process.stderr.write(
+        `Moved ${migration.moved.join(", ") || "nothing"} from ~/.codexhost` +
+          (migration.kept.length ? `; kept ${migration.kept.join(", ")}\n` : "\n"),
+      );
+  };
   const controller = new HotAttachController({
-    appPath: environment.CODEXHOST_DESKTOP_APP ?? "/Applications/ChatGPT.app",
+    prepare,
+    appPath: environment.CLAUDE_IN_CODEX_DESKTOP_APP ?? "/Applications/ChatGPT.app",
     environment: defaultMenuBarEnvironment(environment),
     hostRuntimeUrl,
     changed: publish,
@@ -98,7 +113,7 @@ export async function runMenuBarHost(
   process.on("SIGINT", stop);
   publish();
   void controller.refresh().catch(() => {});
-  if (environment.CODEXHOST_AUTO_ATTACH !== "0") void controller.attach().catch(() => {});
+  if (environment.CLAUDE_IN_CODEX_AUTO_ATTACH !== "0") void controller.attach().catch(() => {});
   try {
     await done.promise;
     return 0;

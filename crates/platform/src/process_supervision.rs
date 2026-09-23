@@ -315,7 +315,7 @@ mod tests {
             .expect("system clock is before the Unix epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "codexhost-process-supervision-{}-{unique}",
+            "claude-in-codex-process-supervision-{}-{unique}",
             std::process::id()
         ));
         fs::create_dir(&directory).expect("create temporary directory");
@@ -323,7 +323,7 @@ mod tests {
         let exec_ready = directory.join("exec-ready");
         fs::write(
             &script,
-            "#!/bin/sh\nwhile [ ! -e \"$CODEXHOST_EXEC_READY\" ]; do /bin/sleep 0.01; done\nexec /bin/sleep 30\n",
+            "#!/bin/sh\nwhile [ ! -e \"$CLAUDE_IN_CODEX_EXEC_READY\" ]; do /bin/sleep 0.01; done\nexec /bin/sleep 30\n",
         )
         .expect("write shebang script");
         let mut permissions = fs::metadata(&script)
@@ -333,7 +333,7 @@ mod tests {
         fs::set_permissions(&script, permissions).expect("make shebang script executable");
 
         let mut command = Command::new(&script);
-        command.env("CODEXHOST_EXEC_READY", &exec_ready);
+        command.env("CLAUDE_IN_CODEX_EXEC_READY", &exec_ready);
         let mut child =
             spawn_supervised(&mut command).expect("supervise an interpreter-backed executable");
         fs::write(&exec_ready, b"ready").expect("release the shebang exec transition");

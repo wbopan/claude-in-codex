@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, realpath, stat, writeFile } from "node:fs/pr
 import path from "node:path";
 
 import { build } from "esbuild";
-import { harnessPluginManifestSchema } from "@codexhost/shared-contracts";
+import { harnessPluginManifestSchema } from "@claude-in-codex/shared-contracts";
 
 async function resource(root, relative) {
   const resolved = await realpath(path.join(root, relative));
@@ -43,7 +43,7 @@ export async function buildHarnessPlugin({ pluginRoot, outputRoot, allowedRuntim
     charset: "utf8",
     legalComments: "none",
     banner: {
-      js: 'import { createRequire as __codexhostCreateRequire } from "node:module"; const require = __codexhostCreateRequire(import.meta.url);',
+      js: 'import { createRequire as __claudeInCodexCreateRequire } from "node:module"; const require = __claudeInCodexCreateRequire(import.meta.url);',
     },
     logLevel: "silent",
   });

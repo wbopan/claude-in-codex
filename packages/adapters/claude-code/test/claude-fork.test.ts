@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { nativeCheckpointRefSchema, nativeSessionRefSchema } from "@codexhost/shared-contracts";
+import {
+  nativeCheckpointRefSchema,
+  nativeSessionRefSchema,
+} from "@claude-in-codex/shared-contracts";
 
 import { forkClaudeSession } from "../src/claude-fork.js";
 import { ClaudePendingSessions } from "../src/pending-session.js";

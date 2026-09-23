@@ -36,6 +36,9 @@ export type {
 
 export {
   HARNESS_PLUGIN_ROUTE_PREFIX,
+  LEGACY_ROUTE_PREFIX,
+  ROUTE_PREFIX,
+  normalizeRouteId,
   decodeHarnessPluginRoute,
   encodeHarnessPluginRoute,
   harnessPluginRouteSchema,
@@ -61,7 +64,7 @@ export type {
   HarnessPluginManifest,
 } from "./harness-plugins.js";
 export * from "./harness-launch-settings.js";
-export { codexhostErrorSchema } from "./errors.js";
+export { claudeInCodexErrorSchema } from "./errors.js";
 export {
   codexAccountUsageParamsSchema,
   codexAccountUsageResultSchema,
@@ -80,7 +83,7 @@ export type {
   CodexAccountPlanType,
   CodexAccountSummary,
 } from "./codex-accounts.js";
-export type { CodexhostError } from "./errors.js";
+export type { ClaudeInCodexError } from "./errors.js";
 export {
   externalThreadForkParamsSchema,
   externalThreadForkResultSchema,
@@ -240,6 +243,17 @@ export { WORKSPACE_CONTRACT_VERSION } from "./version.js";
 export const workspaceContractVersionSchema = z.literal(WORKSPACE_CONTRACT_VERSION);
 
 export const packageMetadata = {
-  name: "@codexhost/shared-contracts",
+  name: "@claude-in-codex/shared-contracts",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;
+export {
+  APP_NAME,
+  APP_SLUG,
+  DATA_DIRECTORY_ENV,
+  ENVIRONMENT_PREFIX,
+  LEGACY_ENVIRONMENT_PREFIX,
+  LEGACY_MODEL_PROVIDER,
+  MODEL_PROVIDER,
+  adoptLegacyEnvironment,
+  isAppEnvironmentVariable,
+} from "./app-identity.js";

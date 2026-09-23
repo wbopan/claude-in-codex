@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "@codexhost/protocol-core";
-import type { CodexAccountListResult } from "@codexhost/shared-contracts";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
+import type { CodexAccountListResult } from "@claude-in-codex/shared-contracts";
 import { OfficialWorkGate } from "../src/codex-runtime/official-work-gate.js";
 import { NativeAccountObserver } from "../src/native-account-observer.js";
 
@@ -44,7 +44,7 @@ describe("native Account observation", () => {
     expect(f.notify).not.toHaveBeenCalled();
     collected.resolve(f.snapshot);
     await vi.waitFor(() =>
-      expect(f.notify).toHaveBeenCalledWith("codexhost/account/changed", f.snapshot),
+      expect(f.notify).toHaveBeenCalledWith("claude-in-codex/account/changed", f.snapshot),
     );
     expect(f.controlRequest).not.toHaveBeenCalled();
   });
@@ -118,7 +118,7 @@ describe("native Account observation", () => {
       const f = fixture();
       f.observer.observe({ method, params: { futureField: true } });
       await vi.waitFor(() =>
-        expect(f.notify).toHaveBeenCalledWith("codexhost/account/changed", f.snapshot),
+        expect(f.notify).toHaveBeenCalledWith("claude-in-codex/account/changed", f.snapshot),
       );
       expect(f.refresh).toHaveBeenCalledOnce();
       expect(f.controlRequest).not.toHaveBeenCalled();

@@ -1,16 +1,13 @@
-import type { ChildProcess, spawn } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "@codexhost/protocol-core";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 
 import {
   OfficialRuntimeOwner,
   type OwnedOfficialBackend,
 } from "../src/codex-runtime/official-runtime-owner.js";
 import { OfficialWorkGate } from "../src/codex-runtime/official-work-gate.js";
-import { createOwnedLoopbackBackend } from "../src/codex-runtime/owned-official-backends.js";
 import type { OfficialAppServerExit } from "../src/official-app-server-connection.js";
 
 function fixture() {
@@ -153,55 +150,6 @@ const initialization = {
   clientInfo: { name: "synthetic", version: "1" },
   capabilities: { experimentalApi: true },
 };
-
-describe("owned loopback backend", () => {
-  it("requires readiness, hashes capability authentication, and discards managed stderr", async () => {
-    const child = Object.assign(new EventEmitter(), {
-      pid: 123,
-      stderr: new PassThrough(),
-      kill: vi.fn(() => {
-        queueMicrotask(() => child.emit("exit", null, "SIGTERM"));
-        return true;
-      }),
-    });
-    const spawnOfficial = vi.fn(() => child as unknown as ChildProcess) as unknown as typeof spawn;
-    const backend = createOwnedLoopbackBackend({
-      stockCodexPath: "/synthetic/codex",
-      arguments: ["app-server"],
-      environment: { CODEX_HOME: "/synthetic/home" },
-      spawnOfficial,
-    });
-    const stderr = vi.spyOn(process.stderr, "write");
-    try {
-      await expect(backend.connect()).rejects.toThrow("not ready");
-      const starting = backend.start();
-      child.stderr.write("synthetic credential-bearing failure\n");
-      child.stderr.write("listening on: ws://127.0.0.1:43821\n");
-      await starting;
-      expect(stderr).not.toHaveBeenCalled();
-      expect(spawnOfficial).toHaveBeenCalledWith(
-        "/synthetic/codex",
-        [
-          "app-server",
-          "--listen",
-          "ws://127.0.0.1:0",
-          "--ws-auth",
-          "capability-token",
-          "--ws-token-sha256",
-          expect.stringMatching(/^[a-f0-9]{64}$/),
-        ],
-        expect.objectContaining({ env: { CODEX_HOME: "/synthetic/home" } }),
-      );
-      expect(backend.processId).toBe(123);
-      await backend.stop();
-      await expect(backend.closed).resolves.toEqual({ code: null, signal: "SIGTERM" });
-      await expect(backend.connect()).rejects.toThrow("not ready");
-    } finally {
-      stderr.mockRestore();
-      await backend.stop();
-    }
-  });
-});
 
 describe("single official runtime owner", () => {
   it.each([

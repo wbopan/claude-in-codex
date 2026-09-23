@@ -11,7 +11,7 @@ export interface VersionManagerContext {
 /**
  * Directories where a Node.js version manager keeps globally installed
  * binaries. A harness installed under a runtime that is not currently active
- * lives here and is invisible to PATH, which is the whole point: codexhost and
+ * lives here and is invisible to PATH, which is the whole point: claude-in-codex and
  * the harness are routinely installed under different Node.js versions.
  *
  * Concrete version directories are listed before shim directories because a

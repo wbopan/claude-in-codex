@@ -1,5 +1,8 @@
 import type { AccountInfo, SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
-import type { HarnessAccountSnapshot, AccountCreditsSnapshot } from "@codexhost/shared-contracts";
+import type {
+  HarnessAccountSnapshot,
+  AccountCreditsSnapshot,
+} from "@claude-in-codex/shared-contracts";
 
 /** Only native plan limits are account quota; session cost is deliberately ignored. */
 export function projectClaudeAccountUsage(

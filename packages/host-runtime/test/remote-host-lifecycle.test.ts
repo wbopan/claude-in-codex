@@ -7,6 +7,7 @@ import type {
   RemoteHostManifestV1,
 } from "../src/remote-host-install.js";
 import {
+  classifyLegacyRemoteHostProbeResponse,
   classifyRemoteHostProbeResponse,
   inspectRemoteHost,
   setRemoteHostLifecycleDependenciesForTest,
@@ -19,13 +20,13 @@ const home = "/home/developer";
 const socketPath = path.join(home, ".codex", "app-server-control", "app-server-control.sock");
 const manifest: RemoteHostManifestV1 = {
   format: 1,
-  wrapperPath: "/home/developer/.codexhost/remote/bin/codex",
+  wrapperPath: "/home/developer/.local/share/claude-in-codex/remote/bin/codex",
   profilePath: "/home/developer/.bashrc",
   stockCodexPath: "/opt/codex/bin/codex",
   nodePath: "/opt/node/bin/node",
-  shimPath: "/opt/codexhost/bin/codexhost-shim",
-  hostRuntimePath: "/opt/codexhost/app/host-runtime.mjs",
-  dataDirectory: "/home/developer/.codexhost/remote/data",
+  shimPath: "/opt/claude-in-codex/bin/claude-in-codex-shim",
+  hostRuntimePath: "/opt/claude-in-codex/app/host-runtime.mjs",
+  dataDirectory: "/home/developer/.local/share/claude-in-codex/remote/data",
 };
 const readyInstallation: RemoteHostInstallationStatus = {
   state: "ready",
@@ -48,20 +49,42 @@ function runtime(
 }
 
 describe("remote Host lifecycle", () => {
+  it("tells a pre-rename Host apart from stock Codex", () => {
+    const stock = runtime("conflict", "stock-codex");
+    expect(
+      classifyLegacyRemoteHostProbeResponse(stock, {
+        id: 2,
+        error: { code: -32090, message: "Application updates are unavailable" },
+      }),
+    ).toMatchObject({
+      state: "conflict",
+      protocol: "unknown",
+      message: expect.stringContaining("codexhost remote stop"),
+    });
+    expect(
+      classifyLegacyRemoteHostProbeResponse(stock, {
+        id: 2,
+        error: { code: -32600, message: "unknown variant `codexhost/update/status`" },
+      }),
+    ).toBe(stock);
+    const current = runtime("running", "claude-in-codex");
+    expect(classifyLegacyRemoteHostProbeResponse(current, { id: 2 })).toBe(current);
+  });
+
   it("uses the lightweight update status method to identify the managed Host", () => {
     expect(
       classifyRemoteHostProbeResponse(
         { id: 1, error: { code: -32090, message: "Application updates are unavailable" } },
         socketPath,
       ),
-    ).toEqual({ state: "running", socketPath, protocol: "codexhost" });
+    ).toEqual({ state: "running", socketPath, protocol: "claude-in-codex" });
     expect(
       classifyRemoteHostProbeResponse(
         {
           id: 1,
           error: {
             code: -32600,
-            message: "Invalid request: unknown variant `codexhost/update/status`",
+            message: "Invalid request: unknown variant `claude-in-codex/update/status`",
           },
         },
         socketPath,
@@ -92,7 +115,7 @@ describe("remote Host lifecycle", () => {
     const terminate = vi.fn();
     restore = setRemoteHostLifecycleDependenciesForTest({
       inspectInstallation: vi.fn().mockResolvedValue(readyInstallation),
-      probeProtocol: vi.fn().mockResolvedValue(runtime("running", "codexhost")),
+      probeProtocol: vi.fn().mockResolvedValue(runtime("running", "claude-in-codex")),
       launch,
       runTerminator: terminate,
     });
@@ -115,7 +138,7 @@ describe("remote Host lifecycle", () => {
       launch: vi.fn(() => operations.push("launch")),
       waitForRuntime: vi.fn(async () => {
         operations.push("ready");
-        return runtime("running", "codexhost");
+        return runtime("running", "claude-in-codex");
       }),
     });
 
@@ -159,7 +182,7 @@ describe("remote Host lifecycle", () => {
     const terminate = vi.fn();
     restore = setRemoteHostLifecycleDependenciesForTest({
       inspectInstallation: vi.fn().mockResolvedValue(readyInstallation),
-      probeProtocol: vi.fn().mockResolvedValue(runtime("running", "codexhost")),
+      probeProtocol: vi.fn().mockResolvedValue(runtime("running", "claude-in-codex")),
       runTerminator: terminate,
       socketExists: vi.fn().mockResolvedValue(false),
     });
@@ -185,7 +208,7 @@ describe("remote Host lifecycle", () => {
 
     await expect(
       stopRemoteHost({ platform: "linux", environment: { HOME: home } }),
-    ).rejects.toThrow("not owned by codexhost");
+    ).rejects.toThrow("not owned by claude-in-codex");
     expect(terminate).not.toHaveBeenCalled();
   });
 });

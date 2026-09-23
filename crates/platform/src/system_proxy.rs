@@ -19,7 +19,7 @@ pub struct SystemProxySettings {
 }
 
 pub fn system_proxy_settings() -> Result<SystemProxySettings, PlatformError> {
-    let store = SCDynamicStoreBuilder::new("codexhost")
+    let store = SCDynamicStoreBuilder::new("claude-in-codex")
         .build()
         .ok_or_else(|| {
             PlatformError::Invalid("could not open the macOS system configuration store".into())

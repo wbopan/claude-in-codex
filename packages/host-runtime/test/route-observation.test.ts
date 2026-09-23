@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject, JsonRpcRequest } from "@codexhost/protocol-core";
+import type { JsonObject, JsonRpcRequest } from "@claude-in-codex/protocol-core";
 
 import {
   classifyThreadPurpose,

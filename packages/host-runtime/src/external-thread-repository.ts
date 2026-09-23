@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import os from "node:os";
+import { dataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 import path from "node:path";
 
-import type { HostSubagentState, HostThreadSnapshot } from "@codexhost/harness-adapter";
+import type { HostSubagentState, HostThreadSnapshot } from "@claude-in-codex/harness-adapter";
 import {
   MappingStore,
   type CommitReadyThreadInput,
@@ -16,8 +16,8 @@ import {
   type StoredDelegationRecordV1,
   type StoredThreadRecordV1,
   type StoredTurnMappingV1,
-} from "@codexhost/mapping-store";
-import type { JsonObject } from "@codexhost/protocol-core";
+} from "@claude-in-codex/mapping-store";
+import type { JsonObject } from "@claude-in-codex/protocol-core";
 import {
   hostThreadIdSchema,
   hostTurnIdSchema,
@@ -25,11 +25,12 @@ import {
   type NativeCheckpointRef,
   type NativeSessionRef,
   type NativeTurnRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import {
   materializeExternalSubagent,
   projectExternalSnapshot,
 } from "./external-subagent-threads.js";
+import { MODEL_PROVIDER } from "@claude-in-codex/shared-contracts";
 
 export interface ExternalThreadStore {
   initialize(): Promise<void>;
@@ -87,11 +88,7 @@ function sameMapping(left: StoredTurnMappingV1, right: StoredTurnMappingV1): boo
 }
 
 export function defaultMappingStoreDirectory(environment: NodeJS.ProcessEnv): string {
-  const dataDirectory = environment.CODEXHOST_DATA_DIR;
-  return path.join(
-    dataDirectory ? path.resolve(dataDirectory) : path.join(os.homedir(), ".codexhost"),
-    "mapping-store",
-  );
+  return path.join(dataDirectory(environment), "mapping-store");
 }
 
 export function createProductionExternalThreadStore(
@@ -536,8 +533,8 @@ export function externalThreadValue(input: {
         }
       : "vscode",
     threadSource: record.subagent ? "subAgentThreadSpawn" : null,
-    modelProvider: "codexhost",
-    cliVersion: "codexhost",
+    modelProvider: MODEL_PROVIDER,
+    cliVersion: "claude-in-codex",
     createdAt,
     updatedAt,
     recencyAt: updatedAt,

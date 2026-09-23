@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 function fakeExecutable(): { directory: string; executable: string } {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codexhost-claude-adapter-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-adapter-"));
   directories.push(directory);
   const executable = path.join(directory, process.platform === "win32" ? "claude.exe" : "claude");
   fs.writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
@@ -71,7 +71,7 @@ describe("Claude Code executable resolution", () => {
   });
 
   it("finds a user npm installation when a Finder-style PATH omits it", () => {
-    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "codexhost-claude-home-"));
+    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-home-"));
     directories.push(homeDirectory);
     const executable = path.join(homeDirectory, ".npm-global", "bin", "claude");
     fs.mkdirSync(path.dirname(executable), { recursive: true });
@@ -87,7 +87,7 @@ describe("Claude Code executable resolution", () => {
   });
 
   it("finds a user NVM installation when a Finder-style PATH omits it", () => {
-    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "codexhost-claude-home-"));
+    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-home-"));
     directories.push(homeDirectory);
     const executable = path.join(
       homeDirectory,
@@ -111,7 +111,7 @@ describe("Claude Code executable resolution", () => {
   });
 
   it("fails without substituting the SDK bundled binary", () => {
-    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "codexhost-claude-home-"));
+    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-home-"));
     directories.push(homeDirectory);
     expect(() =>
       resolveClaudeCodeExecutable({

@@ -7,7 +7,7 @@ import type {
   HarnessResult,
   HostThreadSnapshot,
   HostTurnSnapshot,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
@@ -15,7 +15,7 @@ import {
   type HarnessConfigurationState,
   type NativeCheckpointRef,
   type NativeSessionRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import { mapClaudeSnapshot } from "./claude-history.js";
 import type { ClaudePendingSessions } from "./pending-session.js";

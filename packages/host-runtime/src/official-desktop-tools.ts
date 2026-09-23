@@ -1,5 +1,5 @@
-import type { HarnessClientTool, HarnessClientTools } from "@codexhost/harness-adapter";
-import type { JsonObject } from "@codexhost/shared-contracts";
+import type { HarnessClientTool, HarnessClientTools } from "@claude-in-codex/harness-adapter";
+import type { JsonObject } from "@claude-in-codex/shared-contracts";
 import type { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
 import type { OfficialClientSession } from "./codex-runtime/official-runtime-owner.js";
 import { OfficialRequestBroker } from "./official-request-broker.js";
@@ -120,7 +120,7 @@ class OfficialDesktopToolSession {
     });
     this.#client = client;
     await client.initialize({
-      clientInfo: { name: "codexhost_desktop_tools", version: "1" },
+      clientInfo: { name: "claude_in_codex_desktop_tools", version: "1" },
       capabilities: { experimentalApi: true },
     });
     const started = await this.#request("thread/start", {

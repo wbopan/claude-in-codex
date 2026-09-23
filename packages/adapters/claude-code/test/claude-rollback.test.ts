@@ -4,8 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hostTurnIdSchema, nativeSessionRefSchema } from "@codexhost/shared-contracts";
-import type { HarnessSession } from "@codexhost/harness-adapter";
+import { hostTurnIdSchema, nativeSessionRefSchema } from "@claude-in-codex/shared-contracts";
+import type { HarnessSession } from "@claude-in-codex/harness-adapter";
 
 import { ClaudeCodeAdapter } from "../src/claude-code-adapter.js";
 import { encodeClaudeModelRef } from "../src/model-catalog.js";

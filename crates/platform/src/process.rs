@@ -1,9 +1,5 @@
-use super::{DesktopInstallation, PlatformError};
-use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
-use std::thread;
-#[cfg(target_os = "macos")]
-use std::time::{Duration, Instant};
+use super::PlatformError;
+use std::path::PathBuf;
 
 #[cfg(target_os = "linux")]
 static LINUX_CLOCK_TICKS_PER_SECOND: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
@@ -175,54 +171,6 @@ pub(crate) fn descendant_snapshots(
             return descendants;
         }
     }
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn desktop_process_tree_from_snapshots(
-    desktop_executable: &Path,
-    snapshots: &[ProcessSnapshot],
-) -> Vec<ProcessSnapshot> {
-    let matching_ids = snapshots
-        .iter()
-        .filter(|process| process.executable == desktop_executable)
-        .map(|process| process.id)
-        .collect::<Vec<_>>();
-    let roots = snapshots
-        .iter()
-        .filter(|process| {
-            process.executable == desktop_executable && !matching_ids.contains(&process.parent_id)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let root_ids = roots.iter().map(|process| process.id).collect::<Vec<_>>();
-    let mut tree = roots;
-    tree.extend(descendant_snapshots(&root_ids, snapshots));
-    tree.sort_by_key(|process| process.id);
-    tree
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub(crate) fn desktop_root_snapshots(
-    desktop_executable: &Path,
-    snapshots: &[ProcessSnapshot],
-) -> Vec<ProcessSnapshot> {
-    let tree = desktop_process_tree_from_snapshots(desktop_executable, snapshots);
-    let tree_ids = tree.iter().map(|process| process.id).collect::<Vec<_>>();
-    tree.into_iter()
-        .filter(|process| {
-            process.executable == desktop_executable && !tree_ids.contains(&process.parent_id)
-        })
-        .collect()
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn desktop_process_tree(
-    installation: &DesktopInstallation,
-) -> Result<Vec<ProcessSnapshot>, PlatformError> {
-    Ok(desktop_process_tree_from_snapshots(
-        &installation.desktop_executable,
-        &process_snapshots()?,
-    ))
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -408,43 +356,6 @@ impl ObservedProcessTree {
             .collect())
     }
 
-    pub(crate) fn root_is_current(&self) -> Result<bool, PlatformError> {
-        let current = match unix_process_snapshot(self.root.id) {
-            Ok(current) => current,
-            Err(PlatformError::NotFound(_)) => return Ok(false),
-            Err(error) => return Err(error),
-        };
-        if !same_process_instance(&self.root, &current) {
-            return Err(PlatformError::Invalid(format!(
-                "PID {} was reused while observing the process tree",
-                self.root.id
-            )));
-        }
-        if current.executable != self.root.executable
-            && matches!(self.root_executable_policy, RootExecutablePolicy::Fixed)
-        {
-            return Err(PlatformError::Invalid(format!(
-                "Desktop root PID {} changed executable identity",
-                self.root.id
-            )));
-        }
-        Ok(true)
-    }
-
-    pub(crate) fn escaped(&mut self) -> Result<Vec<ProcessSnapshot>, PlatformError> {
-        let live = self.observe()?;
-        let descendants = descendant_snapshots(&[self.root.id], &live);
-        Ok(live
-            .into_iter()
-            .filter(|process| {
-                process.id != self.root.id
-                    && !descendants
-                        .iter()
-                        .any(|descendant| descendant.id == process.id)
-            })
-            .collect())
-    }
-
     pub(crate) fn signal_processes(
         &self,
         processes: &[ProcessSnapshot],
@@ -525,143 +436,6 @@ impl ObservedProcessTree {
         }
         Ok(())
     }
-
-    pub(crate) fn signal_exact(
-        &mut self,
-        signal: nix::sys::signal::Signal,
-    ) -> Result<(), PlatformError> {
-        let live = self.observe()?;
-        self.signal_processes(&live, signal)
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn signal_processes_exact(
-    processes: &[ProcessSnapshot],
-    signal: nix::sys::signal::Signal,
-) -> Result<(), PlatformError> {
-    let snapshots = process_snapshots()?;
-    let live = processes
-        .iter()
-        .filter_map(
-            |expected| match snapshots.iter().find(|current| current.id == expected.id) {
-                Some(current) if same_process_instance(expected, current) => {
-                    Some(Ok(expected.clone()))
-                }
-                Some(_) => Some(Err(PlatformError::Invalid(format!(
-                    "PID {} was reused before cleanup",
-                    expected.id
-                )))),
-                None => None,
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
-    let Some(root) = live.first().cloned() else {
-        return Ok(());
-    };
-    // This is a one-shot exact-identity operation rather than supervision of
-    // a new process group. Do not discover additional same-PGID processes.
-    ObservedProcessTree::new_with_process_group(root, None, None).signal_processes(&live, signal)
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn desktop_process_ids_for_installation(
-    installation: &DesktopInstallation,
-) -> Result<Vec<u32>, PlatformError> {
-    Ok(desktop_process_tree(installation)?
-        .into_iter()
-        .filter(|process| process.executable == installation.desktop_executable)
-        .map(|process| process.id)
-        .collect())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn desktop_process_ids_for_installation(
-    _installation: &DesktopInstallation,
-) -> Result<Vec<u32>, PlatformError> {
-    Err(PlatformError::Unsupported(
-        "Desktop process discovery currently supports macOS and Linux only",
-    ))
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn desktop_root_snapshots_for_installation(
-    installation: &DesktopInstallation,
-) -> Result<Vec<ProcessSnapshot>, PlatformError> {
-    Ok(desktop_root_snapshots(
-        &installation.desktop_executable,
-        &process_snapshots()?,
-    ))
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn desktop_root_process_ids_for_installation(
-    installation: &DesktopInstallation,
-) -> Result<Vec<u32>, PlatformError> {
-    Ok(desktop_root_snapshots_for_installation(installation)?
-        .into_iter()
-        .map(|process| process.id)
-        .collect())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn desktop_root_process_ids_for_installation(
-    _installation: &DesktopInstallation,
-) -> Result<Vec<u32>, PlatformError> {
-    Err(PlatformError::Unsupported(
-        "Desktop process discovery currently supports macOS and Linux only",
-    ))
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn descendant_executable_exists(
-    root_process_id: u32,
-    executable: &Path,
-) -> Result<bool, PlatformError> {
-    let snapshots = process_snapshots()?;
-    Ok(descendant_snapshots(&[root_process_id], &snapshots)
-        .iter()
-        .any(|process| process.executable == executable))
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn descendant_executable_exists(
-    _root_process_id: u32,
-    _executable: &Path,
-) -> Result<bool, PlatformError> {
-    Err(PlatformError::Unsupported(
-        "descendant process discovery currently supports macOS and Linux only",
-    ))
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn parent_process_id(process_id: u32) -> Result<Option<u32>, PlatformError> {
-    unix_process_snapshot(process_id).map(|process| Some(process.parent_id))
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn parent_process_id(_process_id: u32) -> Result<Option<u32>, PlatformError> {
-    Err(PlatformError::Unsupported(
-        "parent process discovery currently supports macOS and Linux only",
-    ))
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn process_executable_path(process_id: u32) -> Result<PathBuf, PlatformError> {
-    process_snapshot(process_id).map(|process| process.executable)
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn process_executable_path(_process_id: u32) -> Result<PathBuf, PlatformError> {
-    Err(PlatformError::Unsupported(
-        "process executable discovery currently supports macOS and Linux only",
-    ))
-}
-
-pub fn terminate_process_by_id(_process_id: u32) -> Result<(), PlatformError> {
-    Err(PlatformError::Unsupported(
-        "process termination by ID is currently supported on macOS and Linux only",
-    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -685,51 +459,6 @@ pub fn process_exists(process_id: u32) -> bool {
     }
 }
 
-/// Forcefully stop an unmanaged macOS Desktop process tree, verifying every
-/// process identity before signal delivery.
-#[cfg(target_os = "macos")]
-pub fn force_stop_desktop(
-    installation: &DesktopInstallation,
-    grace: Duration,
-) -> Result<(), PlatformError> {
-    let tree = desktop_process_tree(installation)?;
-    if tree.is_empty() {
-        return Ok(());
-    }
-    let mut observed = ObservedProcessTree::new(tree[0].clone());
-    observed.signal_processes(&tree, nix::sys::signal::Signal::SIGTERM)?;
-    let started = Instant::now();
-    let survivors = loop {
-        let survivors = observed.observe()?;
-        if survivors.is_empty() {
-            return Ok(());
-        }
-        if started.elapsed() >= grace {
-            break survivors;
-        }
-        thread::sleep(Duration::from_millis(20));
-    };
-    observed.signal_processes(&survivors, nix::sys::signal::Signal::SIGKILL)?;
-    let forced_at = Instant::now();
-    loop {
-        let still_alive = observed.observe()?;
-        if still_alive.is_empty() {
-            return Ok(());
-        }
-        if forced_at.elapsed() >= grace {
-            return Err(PlatformError::Invalid(format!(
-                "Desktop processes remained after forced termination: {}",
-                still_alive
-                    .iter()
-                    .map(|process| process.id.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )));
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn process_exists(_process_id: u32) -> bool {
     false
@@ -737,12 +466,8 @@ pub fn process_exists(_process_id: u32) -> bool {
 
 #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod tests {
-    use std::path::Path;
 
-    use super::{
-        ObservedProcessTree, ProcessSnapshot, desktop_process_tree_from_snapshots,
-        desktop_root_snapshots, process_snapshot, same_process_instance,
-    };
+    use super::{ObservedProcessTree, ProcessSnapshot, process_snapshot, same_process_instance};
 
     fn snapshot(
         id: u32,
@@ -767,62 +492,6 @@ mod tests {
         assert!(snapshot.process_group_id > 0);
         assert!(snapshot.executable.is_absolute());
         assert!(snapshot.started_at_micros > 0);
-    }
-
-    #[test]
-    fn checks_the_owned_root_without_refreshing_the_full_process_tree() {
-        use std::io::{BufRead, BufReader};
-        use std::process::Stdio;
-
-        // Bind the image only after fixture code is executing, not in the
-        // transient spawn/exec observation window. The shell stays in read.
-        let mut child = std::process::Command::new("/bin/sh")
-            .args(["-c", "printf 'ready\\n'; read -r token"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("spawn root fixture");
-        let mut ready = String::new();
-        BufReader::new(child.stdout.take().expect("fixture stdout"))
-            .read_line(&mut ready)
-            .expect("read fixture readiness");
-        assert_eq!(ready, "ready\n");
-        let root = process_snapshot(child.id()).expect("snapshot root fixture");
-        let tree = ObservedProcessTree::new(root);
-
-        assert!(tree.root_is_current().expect("check live root"));
-        child.kill().expect("stop root fixture");
-        child.wait().expect("reap root fixture");
-        assert!(!tree.root_is_current().expect("check exited root"));
-    }
-
-    #[test]
-    fn selects_only_the_target_desktop_root_and_its_descendants() {
-        let target = "/Applications/Codex.app/Contents/MacOS/ChatGPT";
-        let snapshots = [
-            snapshot(10, 1, target, 100),
-            snapshot(11, 10, target, 101),
-            snapshot(
-                12,
-                11,
-                "/Applications/Codex.app/Contents/Resources/codex",
-                102,
-            ),
-            snapshot(20, 1, "/tmp/Other.app/Contents/MacOS/ChatGPT", 90),
-            snapshot(21, 20, "/tmp/unrelated-child", 91),
-        ];
-        let tree = desktop_process_tree_from_snapshots(Path::new(target), &snapshots);
-        assert_eq!(
-            tree.iter().map(|process| process.id).collect::<Vec<_>>(),
-            [10, 11, 12]
-        );
-        assert_eq!(
-            desktop_root_snapshots(Path::new(target), &snapshots)
-                .iter()
-                .map(|process| process.id)
-                .collect::<Vec<_>>(),
-            [10]
-        );
     }
 
     #[test]

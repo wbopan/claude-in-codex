@@ -13,7 +13,7 @@ pub(crate) struct ProxySettings {
     pub(crate) exceptions: Vec<String>,
 }
 
-/// Returns the proxy environment that should be passed to a codexhost child.
+/// Returns the proxy environment that should be passed to a claude-in-codex child.
 ///
 /// Explicit environment variables always win. On macOS, missing variables are
 /// filled from the operating system's static proxy configuration. Linux does
@@ -26,13 +26,13 @@ pub fn proxy_environment() -> Vec<(OsString, OsString)> {
         Ok(settings) => {
             if settings.automatic_configuration {
                 eprintln!(
-                    "codexhost: automatic macOS proxy configuration cannot be represented in child-process environment variables"
+                    "claude-in-codex: automatic macOS proxy configuration cannot be represented in child-process environment variables"
                 );
             }
             Some(proxy_settings(&settings))
         }
         Err(error) => {
-            eprintln!("codexhost: could not read macOS system proxy settings: {error}");
+            eprintln!("claude-in-codex: could not read macOS system proxy settings: {error}");
             None
         }
     };

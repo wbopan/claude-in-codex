@@ -9,7 +9,7 @@ import {
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MappingStore } from "../src/index.js";
@@ -40,7 +40,7 @@ async function fixture() {
   const input = {
     harnessId,
     cwd: "/synthetic",
-    transportModelId: "codexhost/antigravity-native",
+    transportModelId: "claude-in-codex/antigravity-native",
     ephemeral: false,
     historyMode: "paginated" as const,
   };

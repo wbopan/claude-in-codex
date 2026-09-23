@@ -2,20 +2,20 @@ import type {
   HarnessAdapter,
   HarnessSession,
   HarnessSessionState,
-} from "@codexhost/harness-adapter";
+} from "@claude-in-codex/harness-adapter";
 import {
   mapExternalThreadHarnessError,
   type DecodedThreadRollbackRequest,
   type ExternalHarnessId,
   type ExternalThreadRpcError,
   type JsonObject,
-} from "@codexhost/protocol-core";
+} from "@claude-in-codex/protocol-core";
 import {
   permissionModeFixedAtCreate,
   type HostTurnId,
   type NativeCheckpointRef,
   type NativeSessionRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 import {
   externalThreadValue,

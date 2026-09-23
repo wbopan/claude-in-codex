@@ -8,7 +8,6 @@ export interface HarnessPluginContext {
   readonly platform: string;
   readonly managedRemoteHost: boolean;
   readonly brokerDescriptorPath?: string;
-  readonly openLocalUrl?: (url: string) => Promise<void>;
 }
 
 /** A loaded module supplies a factory, not a global registration side effect. */

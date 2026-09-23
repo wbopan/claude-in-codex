@@ -47,7 +47,7 @@ function fixture() {
     context,
     install,
     timers,
-    handle: () => context.__codexhostModelHookProbeV1,
+    handle: () => context.__claudeInCodexModelHookProbeV1,
     advance(ms) {
       now += ms;
       for (const timer of [...timers]) timer.callback();
@@ -67,7 +67,7 @@ test("only local model responses change, with original messages and models prese
   const source = modelResponse();
   const changed = c.routeResponse(source);
   assert.equal(changed.result.data.length, 2);
-  assert.equal(changed.result.data[1].id, "codexhost-hook-probe");
+  assert.equal(changed.result.data[1].id, "claude-in-codex-hook-probe");
   assert.equal(changed.result.data[1].isDefault, false);
   assert.equal(source.result.data.length, 1);
   assert.equal(changed.result.data[0], source.result.data[0]);

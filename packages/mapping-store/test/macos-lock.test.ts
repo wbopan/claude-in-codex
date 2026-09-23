@@ -21,7 +21,7 @@ describe.skipIf(process.platform !== "darwin")("macOS Mapping Store lock ownersh
   let processStartedAt: string;
 
   beforeEach(async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), "codexhost-macos-lock-"));
+    directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-macos-lock-"));
     // Use another real process: the current-PID shortcut already checks start time.
     owner = spawn(
       process.execPath,

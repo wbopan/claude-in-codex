@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { codexhostErrorSchema } from "./errors.js";
+import { claudeInCodexErrorSchema } from "./errors.js";
 import {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
@@ -246,7 +246,7 @@ const readyHarnessInspectionSchema = z
 const failedHarnessInspectionSchema = z
   .object({
     status: z.enum(["notInstalled", "unavailable", "error"]),
-    error: codexhostErrorSchema,
+    error: claudeInCodexErrorSchema,
   })
   .strict();
 

@@ -81,7 +81,7 @@ describe("Codex-compatible JSON-RPC envelope contracts", () => {
   it("accepts unknown methods and preserves envelope and error extensions", () => {
     const request = {
       id: "opaque-id",
-      method: "codexhost/future-method",
+      method: "claude-in-codex/future-method",
       params: { supported: true },
       traceContext: { sequence: 3 },
     };

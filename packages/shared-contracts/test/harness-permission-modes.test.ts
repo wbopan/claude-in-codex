@@ -8,7 +8,7 @@ import {
   harnessPermissionModeIdSchema,
   permissionModeFixedAtCreate,
   threadPermissionModeSelectParamsSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 const permissionModes = {
   modes: [

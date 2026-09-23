@@ -2,10 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { HostThreadSnapshot, HostTurnSnapshot } from "@codexhost/harness-adapter";
-import { FakeHarnessAdapter } from "@codexhost/harness-adapter/testing";
-import { MappingStore } from "@codexhost/mapping-store";
-import { decodeThreadListRequest } from "@codexhost/protocol-core";
+import type { HostThreadSnapshot, HostTurnSnapshot } from "@claude-in-codex/harness-adapter";
+import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
+import { MappingStore } from "@claude-in-codex/mapping-store";
+import { decodeThreadListRequest } from "@claude-in-codex/protocol-core";
 import {
   harnessIdSchema,
   hostItemIdSchema,
@@ -13,7 +13,7 @@ import {
   nativeSessionRefSchema,
   nativeTurnRefSchema,
   type NativeSessionRef,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listExternalThreadMetadata } from "../src/external-thread-list.js";
@@ -71,7 +71,7 @@ async function fixture() {
     harnessId,
     cwd: "/synthetic",
     title: "Parent",
-    transportModelId: "codexhost/antigravity-native",
+    transportModelId: "claude-in-codex/antigravity-native",
     ephemeral: false,
     historyMode: "paginated" as const,
   };

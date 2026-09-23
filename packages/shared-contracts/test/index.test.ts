@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  codexhostErrorSchema,
+  claudeInCodexErrorSchema,
   harnessIdSchema,
   harnessInspectionSchema,
   harnessModelRefSchema,
@@ -13,7 +13,7 @@ import {
   packageMetadata,
   WORKSPACE_CONTRACT_VERSION,
   workspaceContractVersionSchema,
-} from "@codexhost/shared-contracts";
+} from "@claude-in-codex/shared-contracts";
 
 describe("shared-contracts public package", () => {
   it("exports the unchanged workspace contract version", () => {
@@ -70,7 +70,7 @@ describe("shared-contracts public package", () => {
       }),
     ).toEqual({ harnessId: "pi", nativeSessionId: "synthetic-session", formatVersion: 1 });
     expect(
-      codexhostErrorSchema.parse({
+      claudeInCodexErrorSchema.parse({
         code: "SYNTHETIC",
         message: "Synthetic error.",
         retryable: false,
