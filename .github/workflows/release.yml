@@ -1,0 +1,92 @@
+name: Release
+
+# Pushing a tag v<version> that matches package.json builds, notarizes and publishes the App to
+# the public releases repository, where installed copies pick it up as an update.
+# Secrets: MACOS_CERTIFICATE_P12 (base64 Developer ID Application identity),
+# MACOS_CERTIFICATE_PASSWORD, NOTARY_KEY_P8 (base64 App Store Connect API key), NOTARY_KEY_ID,
+# NOTARY_ISSUER, SPARKLE_PRIVATE_KEY and RELEASES_TOKEN (contents write on the releases repository).
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Check the tag names the package version
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+      # A release published from a Mac with npm run release:app -- --publish is left alone.
+      - name: Check whether this version is already published
+        id: existing
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://api.github.com/repos/wbopan/claude-in-codex-releases/releases/tags/$GITHUB_REF_NAME")
+          if [ "$status" = 200 ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$GITHUB_REF_NAME is already published; nothing to do"
+          fi
+      - run: npm ci
+        if: steps.existing.outputs.published != 'true'
+      - name: Import the signing identity
+        if: steps.existing.outputs.published != 'true'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -hex 24)
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/identity.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/identity.p12"
+          security find-identity -v -p codesigning "$keychain"
+      - name: Write the notary key
+        if: steps.existing.outputs.published != 'true'
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          chmod 600 "$RUNNER_TEMP/notary.p8"
+      - name: Build, notarize and publish
+        if: steps.existing.outputs.published != 'true'
+        env:
+          NOTARY_KEY_PATH: ${{ runner.temp }}/notary.p8
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: npm run release:app -- --publish
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.existing.outputs.published != 'true'
+        with:
+          name: app-release
+          path: build/app-release/
+          if-no-files-found: ignore
+      - name: Remove the signing keychain and notary key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8"

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  appendFile,
   chmod,
   copyFile,
   mkdir,
@@ -9,15 +10,29 @@ import {
   writeFile,
   lstat,
   readlink,
+  realpath,
 } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { buildReleaseHostBundle } from "../../packages/host-runtime/scripts/build-release.mjs";
 import { buildPreinstalledHarnessPlugins } from "../../scripts/release/harness-plugins.mjs";
+import { writeThirdPartyNotices } from "../../scripts/release/prepare-npm.mjs";
+import {
+  ensureSparkle,
+  feedUrl,
+  minimumSystemVersion,
+  releaseVersion,
+  sparkle as sparkleRelease,
+  sparklePublicKey,
+  updateCheckInterval,
+} from "./distribution.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 if (process.platform !== "darwin") throw new Error("App builds require macOS");
+// --release builds what tools/app/release.mjs ships: it requires a Developer ID identity and the
+// Node license, and turns on automatic update checks. Development builds check only on request.
+const release = process.argv.includes("--release");
 // The App's identity; apps/macos/main.swift keeps the same defaults and reads the rest from Info.plist.
 // CLAUDE_IN_CODEX_BUNDLE_ID with CLAUDE_IN_CODEX_APP_NAME builds a separately identified copy for development.
 const defaultAppName = "Claude in Codex";
@@ -33,6 +48,13 @@ if (!/^[\w .-]+$/.test(appName) || !/^[\w.-]+$/.test(bundleIdentifier))
   throw new Error(
     "Use plain letters, digits, spaces, dots and dashes in the App name and bundle identifier",
   );
+// The default App reads the public appcast. A test copy updates only from
+// CLAUDE_IN_CODEX_FEED_URL, e.g. a local feed for exercising an update end to end.
+const updateFeed =
+  appName === defaultAppName ? feedUrl : (process.env.CLAUDE_IN_CODEX_FEED_URL ?? null);
+if (release && appName !== defaultAppName)
+  throw new Error("Release builds use the default App identity");
+const appVersion = await releaseVersion(root);
 const publishedApp = path.join(root, `.dev/app/${appName}.app`);
 const processes = execFileSync("/bin/ps", ["-axo", "comm="], { encoding: "utf8" }).split("\n");
 if (processes.some((command) => command.trim().startsWith(`${publishedApp}/Contents/`)))
@@ -88,7 +110,7 @@ try {
     resources = path.join(contents, "Resources");
   await mkdir(path.join(contents, "MacOS"), { recursive: true });
   await mkdir(path.join(resources, "runtime"), { recursive: true });
-  const node = process.env.CLAUDE_IN_CODEX_NODE_BINARY ?? process.execPath;
+  const node = await realpath(process.env.CLAUDE_IN_CODEX_NODE_BINARY ?? process.execPath);
   const version = execFileSync(node, ["--version"], { encoding: "utf8" }).trim();
   const [major, minor] = version.slice(1).split(".").map(Number);
   if (!(major === 24 || (major === 22 && minor >= 19)))
@@ -103,6 +125,16 @@ try {
     repositoryRoot: root,
     outputDirectory: path.join(resources, "plugins"),
   });
+  // Sparkle, trimmed to what a non-sandboxed App uses: the framework, Autoupdate and Updater.app.
+  // The XPC services serve sandboxed Apps only; headers and modules are for compiling.
+  const sparkle = await ensureSparkle(root);
+  const frameworks = path.join(contents, "Frameworks");
+  const framework = path.join(frameworks, "Sparkle.framework");
+  await mkdir(frameworks, { recursive: true });
+  execFileSync("/usr/bin/ditto", [path.join(sparkle, "Sparkle.framework"), framework]);
+  for (const entry of ["XPCServices", "Headers", "PrivateHeaders", "Modules"])
+    for (const name of [path.join(framework, entry), path.join(framework, "Versions/B", entry)])
+      await rm(name, { recursive: true, force: true });
   const executable = path.join(contents, "MacOS", executableName);
   execFileSync(
     "/usr/bin/xcrun",
@@ -117,6 +149,14 @@ try {
       "AppKit",
       "-framework",
       "ServiceManagement",
+      "-F",
+      sparkle,
+      "-framework",
+      "Sparkle",
+      "-Xlinker",
+      "-rpath",
+      "-Xlinker",
+      "@executable_path/../Frameworks",
       path.join(root, "apps/macos/main.swift"),
       "-o",
       executable,
@@ -204,14 +244,52 @@ try {
 <key>CFBundleExecutable</key><string>${executableName}</string>
 <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>${appVersion}</string>
+<key>CFBundleVersion</key><string>${appVersion}</string>
 <key>CFBundleIconFile</key><string>${iconFile}</string>
-${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMinimumSystemVersion</key><string>14.0</string>
+${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMinimumSystemVersion</key><string>${minimumSystemVersion}</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
-</dict></plist>\n`,
+${
+  updateFeed
+    ? `<key>SUFeedURL</key><string>${updateFeed}</string>
+<key>SUPublicEDKey</key><string>${sparklePublicKey}</string>
+<key>SUEnableAutomaticChecks</key>${release ? "<true/>" : "<false/>"}
+<key>SUScheduledCheckInterval</key><integer>${updateCheckInterval}</integer>
+`
+    : ""
+}</dict></plist>\n`,
   );
+  // Notices for everything the App carries: the bundled npm packages, Node.js and Sparkle.
+  await writeThirdPartyNotices(root, resources, "Claude in Codex third-party notices");
+  const licenses = path.join(resources, "licenses");
+  const nodeLicense = path.resolve(path.dirname(node), "../LICENSE");
+  const notices = [];
+  if (await lstat(nodeLicense).catch(() => null)) {
+    await copyFile(nodeLicense, path.join(licenses, "Node.js-LICENSE.txt"));
+    notices.push(
+      `Node.js ${version}`,
+      "License: MIT and bundled licenses",
+      "License text: licenses/Node.js-LICENSE.txt",
+      "",
+    );
+  } else if (release) {
+    throw new Error(
+      `No Node.js LICENSE next to ${node}; build releases with an official Node.js distribution`,
+    );
+  }
+  await copyFile(path.join(sparkle, "LICENSE"), path.join(licenses, "Sparkle-LICENSE.txt"));
+  notices.push(
+    `Sparkle ${sparkleRelease.version}`,
+    "License: MIT",
+    "License text: licenses/Sparkle-LICENSE.txt",
+    "",
+  );
+  await appendFile(
+    path.join(resources, "THIRD_PARTY_NOTICES.txt"),
+    `\n${notices.join("\n").trimEnd()}\n`,
+  );
+  await copyFile(path.join(root, "LICENSE"), path.join(resources, "LICENSE.txt"));
   if (
     (await sourceDigest()) !== digest ||
     execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim() !== revision
@@ -221,6 +299,7 @@ ${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMi
     path.join(resources, "build.json"),
     JSON.stringify(
       {
+        version: appVersion,
         revision,
         sourceDigest: digest,
         node: version,
@@ -235,6 +314,8 @@ ${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMi
   // makes the designated requirement name the team rather than one build's cdhash, so privacy
   // grants such as Accessibility survive rebuilds; an ad hoc build loses them on every rebuild.
   const identity = signingIdentity();
+  if (release && !identity?.name.startsWith("Developer ID Application:"))
+    throw new Error("Release builds need a Developer ID Application identity in the keychain");
   if (!identity)
     console.warn(
       "No Developer ID Application or Apple Development certificate in the keychain; signing ad hoc, so macOS privacy grants reset on every rebuild",
@@ -247,14 +328,20 @@ ${actool ? "<key>CFBundleIconName</key><string>Claude</string>\n" : ""}<key>LSMi
         "--options",
         "runtime",
         ...(identity?.name.startsWith("Developer ID Application:") ? ["--timestamp"] : []),
-        "--entitlements",
-        path.join(root, "apps/macos/entitlements", entitlements),
+        ...(entitlements
+          ? ["--entitlements", path.join(root, "apps/macos/entitlements", entitlements)]
+          : []),
         "--sign",
         identity?.hash ?? "-",
         target,
       ],
       { stdio: "inherit" },
     );
+  // Sparkle's helpers before the framework that contains them, as Sparkle documents.
+  const sparkleVersion = path.join(framework, "Versions/B");
+  sign(path.join(sparkleVersion, "Autoupdate"));
+  sign(path.join(sparkleVersion, "Updater.app"));
+  sign(framework);
   sign(path.join(resources, "runtime/node"), "node.plist");
   sign(app, "app.plist");
   execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
