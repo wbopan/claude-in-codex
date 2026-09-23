@@ -1,20 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import type { HarnessAdapter } from "@claude-in-codex/harness-adapter";
 import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
 import {
   CLAUDE_CODE_NATIVE_TRANSPORT_MODEL_ID,
-  encodeExternalTransportSelection,
   type ExternalHarnessId,
   type JsonObject,
 } from "@claude-in-codex/protocol-core";
 import {
   harnessIdSchema,
-  harnessInspectionSchema,
   hostThreadIdSchema,
   hostTurnIdSchema,
 } from "@claude-in-codex/shared-contracts";
 
-import type { HarnessUsageReport } from "../../../src/desktop-usage-buckets.js";
 import type { CodexAccountControl } from "../../../src/account/codex-account-control.js";
 
 import {
@@ -36,54 +32,6 @@ import {
 } from "./json-rpc.js";
 
 describe("AppServerHost HarnessAdapter projection", () => {
-  it("reports Desktop usage per Harness with account telemetry", async () => {
-    const adapter: FakeHarnessAdapter & Pick<HarnessAdapter, "inspectAccount"> =
-      new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
-    const account = {
-      email: "pi@example.com",
-      credits: {
-        usedPercent: 30,
-        periodType: "five_hour" as const,
-        resetsAt: "2026-09-22T07:30:00Z",
-        productUsage: [{ product: "7-day window", usagePercent: 12 }],
-      },
-    };
-    adapter.inspectAccount = async () => account;
-    let source: (() => Promise<HarnessUsageReport[]>) | undefined;
-    const fixture = createFixture({
-      externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([["pi", adapter]]),
-      desktopUsage: {
-        attach: (value) => {
-          source = value;
-        },
-      },
-    });
-    try {
-      await fixture.ready;
-      if (!source) throw new Error("usage source was not attached");
-      const reports = await source();
-      const catalog = harnessInspectionSchema.parse(await adapter.inspect({}));
-      if (catalog.status !== "ready") throw new Error("fake catalog not ready");
-      expect(reports).toEqual([
-        {
-          harnessName: "pi",
-          limitNames: [
-            encodeExternalTransportSelection("pi", {}),
-            ...catalog.catalog.models.map((model) =>
-              encodeExternalTransportSelection("pi", { model: model.ref }),
-            ),
-          ],
-          account,
-        },
-      ]);
-
-      delete (adapter as { inspectAccount?: unknown }).inspectAccount;
-      await expect(source()).resolves.toEqual([]);
-    } finally {
-      await stopFixture(fixture);
-    }
-  });
-
   it("projects official Codex token Usage and account rate limits for inspection", async () => {
     const fixture = createFixture();
     fixture.official.stdin.on("data", (chunk: Buffer) => {

@@ -4,7 +4,7 @@ import type { Socket } from "node:net";
 import type { JsonObject } from "@claude-in-codex/protocol-core";
 import { AppServerHost } from "../app-server-host.js";
 import { OfficialRuntimeScope } from "../codex-runtime/official-runtime-scope.js";
-import { DesktopUsagePublisher, desktopUiLanguage } from "../desktop-usage-buckets.js";
+import { DesktopProfileSubtextPublisher } from "../desktop-profile-subtext.js";
 import { codexUsageMeters, type UsageMeter } from "./usage-meters.js";
 import { installedHarnessPluginOptions } from "../installed-harness-plugins.js";
 import { BorrowedDesktopBackend } from "./borrowed-backend.js";
@@ -32,7 +32,7 @@ export class HotAttachSession extends EventEmitter {
   readonly #input = new PassThrough();
   readonly #backend: BorrowedDesktopBackend;
   readonly #scope: OfficialRuntimeScope;
-  readonly #usage: DesktopUsagePublisher;
+  readonly #subtext = new DesktopProfileSubtextPublisher();
   /** The Codex windows from the Desktop's latest `/wham/usage` poll. */
   codexUsage: { meters: UsageMeter[]; observedAt: string } | null = null;
   #closing: Promise<void> | undefined;
@@ -113,7 +113,6 @@ export class HotAttachSession extends EventEmitter {
       },
     });
     const environment = { ...input.environment, CODEX_HOME: hello.codexHome };
-    this.#usage = new DesktopUsagePublisher({ language: desktopUiLanguage(environment) });
     this.host = new AppServerHost({
       stockCodexPath: input.stockCodexPath,
       arguments: [],
@@ -121,7 +120,6 @@ export class HotAttachSession extends EventEmitter {
       environment,
       desktopInput: this.#input,
       desktopOutput: output,
-      desktopUsage: this.#usage,
       officialRuntimeScope: this.#scope,
       accountControl,
       ...installedHarnessPluginOptions(environment, false, input.hostRuntimeUrl),
@@ -177,16 +175,12 @@ export class HotAttachSession extends EventEmitter {
       } catch {
         // Only the Desktop's own response shape is read; anything else keeps the last snapshot.
       }
-      void this.#usage
-        .rewrite({
-          status: 200,
-          headers: { "content-type": "application/json" },
-          body: Buffer.from(value.body),
-        })
-        .then((body) =>
-          this.send({ type: "usage", id: value.id, body: body?.toString("utf8") ?? null }),
-        )
-        .catch(() => this.send({ type: "usage", id: value.id, body: null }));
+      const body = this.#subtext.rewrite({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: Buffer.from(value.body),
+      });
+      this.send({ type: "usage", id: value.id, body: body?.toString("utf8") ?? null });
     } else if (value.type === "desktop") {
       const message = value.message as JsonObject;
       if (message.id !== undefined && typeof message.method === "string")
@@ -200,12 +194,9 @@ export class HotAttachSession extends EventEmitter {
       void this.#refreshIdentity().catch(() =>
         process.stderr.write("Codex Account identity could not be read\n"),
       );
-      void this.#usage
-        .warmup()
-        .then(() => {
-          if (this.attached && !this.#closing) this.send({ type: "usage-ready" });
-        })
-        .catch(() => {});
+      // The footer subtext appears once the Desktop re-reads its usage query.
+      this.#subtext.attach();
+      this.send({ type: "usage-ready" });
     } else if (value.type === "heartbeat") this.#pending = Number(value.pending) || 0;
     else if (value.type === "detached") {
       this.attached = false;
@@ -232,7 +223,7 @@ export class HotAttachSession extends EventEmitter {
         } finally {
           try {
             this.#identityReader?.close();
-            this.#usage.detach();
+            this.#subtext.detach();
             if (notify) {
               this.send({ type: "detach", reason: "requested" });
               await Promise.race([

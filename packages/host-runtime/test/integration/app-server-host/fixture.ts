@@ -16,7 +16,6 @@ import {
 import { harnessIdSchema } from "@claude-in-codex/shared-contracts";
 
 import { AppServerHost } from "../../../src/app-server-host.js";
-import type { HarnessUsageReport } from "../../../src/desktop-usage-buckets.js";
 import type { CodexAccountControl } from "../../../src/account/codex-account-control.js";
 import type { OfficialRuntimeScope } from "../../../src/codex-runtime/official-runtime-scope.js";
 import type { OfficialAppServerConnection } from "../../../src/official-app-server-connection.js";
@@ -46,7 +45,6 @@ export function createFixture(
       OfficialAppServerConnection | Promise<OfficialAppServerConnection>;
     accountControl?: CodexAccountControl;
     officialRuntimeScope?: OfficialRuntimeScope;
-    desktopUsage?: { attach(source: () => Promise<HarnessUsageReport[]>): void };
   } = {},
 ) {
   const adapter =
@@ -98,7 +96,6 @@ export function createFixture(
       : {}),
     ...(options.accountControl ? { accountControl: options.accountControl } : {}),
     ...(options.officialRuntimeScope ? { officialRuntimeScope: options.officialRuntimeScope } : {}),
-    ...(options.desktopUsage ? { desktopUsage: options.desktopUsage } : {}),
   });
   const running = host.run();
   void running.then(

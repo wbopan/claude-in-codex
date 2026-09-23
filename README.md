@@ -7,7 +7,7 @@
 App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 
 1. 正常打开 `/Applications/ChatGPT.app`，然后打开 Claude in Codex。
-2. 菜单栏的云朵图标变成实心并睁开眼睛，表示已接入。原生模型选择器会增加本机 Claude 模型。
+2. 菜单栏的云朵图标变成实心并睁开眼睛，表示已接入。原生模型选择器会增加本机 Claude 模型，侧栏左下角账户名下方显示「Claude Connected」。
 3. 选择「断开」或「退出 Claude in Codex」，等待正在执行的 Claude Code Session 和后台任务完成。等待期间可以取消断开，也可以明确选择停止 Session。
 4. Codex App 和 GPT 任务继续运行。重新打开 Host 或选择「接入 Codex App」即可再次接入。
 
@@ -30,7 +30,7 @@ App 安装在 `/Applications/Claude in Codex.app`（见「构建」）。
 **概览**
 
 - 组件：Codex App、Claude Code CLI、Claude in Codex 三张卡片，各带图标和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。图标都是不带底色的图形：Codex 云朵从 Codex App 自带的图标中取出，Claude Code CLI 用 Clawd 像素图，Claude in Codex 用 Claude 云朵。
-- 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），与 Codex App 用量菜单共用 90 秒缓存。
+- 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），缓存 90 秒。Codex App 自己的用量菜单保持原生，不再显示 Claude 额度。
 - Claude Code Session：每个 Session 一行，显示标题和当前活动（思考、运行命令、等待批准等）及已运行时长，悬停可见所在目录。不显示提示词、命令或输出内容。
 
 Claude Code CLI 进程数和用量在接入后读取。

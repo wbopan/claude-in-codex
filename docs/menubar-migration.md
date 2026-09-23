@@ -35,12 +35,12 @@ The native app's ordinary quit waits for this drain. Losing the native app's con
 | Native app tools and Computer Use | Borrowed signed backend, ephemeral tool contexts, native elicitations and `turn_ended` | Tool suites and isolated live calls |
 | Child tasks, steering and queues | Existing session/child projection and thread queue | Host, subagent and queue suites |
 | History, titles, archive and memory | Same mapping store and Claude transcript/native memory adapters | History/memory suites; history read after detach/reattach |
-| Quota | Same usage publisher, fed from the native authenticated usage response | Live Codex/Claude/Fable rows and usage suites |
+| Quota | Read from the native authenticated usage response for the menu bar only; the Desktop's usage menu stays native | Live Codex/Claude/Fable rows in the App and usage suites |
 | Remote lifecycle and macOS broker | Existing remote lifecycle; shipped only as the npm `@claude-in-codex/cli` Remote Host, whose Shim also manages the broker (`--claude-in-codex-broker`) | Full existing TypeScript/Rust remote tests |
 
 External catalog entries are added only to the local connection. Native cloud membership and filters are left to the original connection and renderer. Detach invalidates local model/config queries and the exact `rate-limit-status` query, restoring their native values without page reload or persistent app changes.
 
-The usage hook only extends successful JSON GET responses for `/backend-api/wham/usage`. The native network implementation retains authentication, workspace routing and TLS. A 1.5-second fallback returns the original response when external usage is unavailable. Attach prewarms the quota source and refreshes the query once ready.
+The usage hook only touches successful JSON GET responses for `/backend-api/wham/usage`: Host reads the Codex quota from them for the menu bar and sets `ambient_usage.default.profile_subtext` to "Claude Connected", the line under the account name in the sidebar footer. Quota rows and per-Model limits stay native. The native network implementation retains authentication, workspace routing and TLS. A 1.5-second fallback returns the original response when Host does not answer. Attach refreshes the usage query so the subtext appears without a reload.
 
 ## Menu and package
 

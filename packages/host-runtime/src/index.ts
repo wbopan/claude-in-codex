@@ -19,11 +19,10 @@ export {
 } from "./app-server-host.js";
 export type { AppServerHostOptions } from "./app-server-host.js";
 export {
-  DesktopUsagePublisher,
-  harnessUsageBuckets,
-  harnessUsageRows,
-} from "./desktop-usage-buckets.js";
-export type { HarnessUsageReport } from "./desktop-usage-buckets.js";
+  DESKTOP_PROFILE_SUBTEXT,
+  DesktopProfileSubtextPublisher,
+  withProfileSubtext,
+} from "./desktop-profile-subtext.js";
 export type { CodexAccountControl } from "./account/codex-account-control.js";
 export { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
 export { CodexRuntime } from "./codex-runtime/codex-runtime.js";

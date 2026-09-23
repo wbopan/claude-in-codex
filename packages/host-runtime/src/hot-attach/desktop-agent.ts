@@ -200,7 +200,7 @@ export function installDesktopAgent(config) {
         },
     );
     // The Desktop's native HTTP transport retains auth, routing and TLS. Only a successful
-    // usage payload is extended, using the same publisher as the legacy launch proxy.
+    // usage payload is passed to Host, which reads the Codex quota and sets the footer subtext.
     patch(
       electron.net,
       "fetch",

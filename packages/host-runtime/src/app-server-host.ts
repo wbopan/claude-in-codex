@@ -4,7 +4,6 @@ import {
   OfficialDesktopTools,
   type DesktopToolServerStatus,
 } from "./official-desktop-tools.js";
-import type { DesktopUsagePublisher, HarnessUsageReport } from "./desktop-usage-buckets.js";
 import {
   DATA_DIRECTORY_ENV,
   isAppEnvironmentVariable,
@@ -219,8 +218,6 @@ export interface AppServerHostOptions {
   officialRuntimeScope?: OfficialRuntimeScope;
   onCreateRequestRoute?: (observation: CreateRequestRouteObservation) => void;
   onRequestRoute?: (observation: RequestRouteObservation) => void;
-  /** Receives the Harness buckets appended to the Desktop's `/wham/usage` response. */
-  desktopUsage?: Pick<DesktopUsagePublisher, "attach">;
 }
 
 interface TurnProjectionGate {
@@ -478,8 +475,8 @@ export class AppServerHost {
   #pluginDescriptors: HarnessPluginDescriptor[] = [];
   readonly #launchSettings: HarnessLaunchSettingsStore;
   readonly #accountInspections = new HarnessAccountInspectionCache();
-  /** The Desktop polls usage every 30s; Claude account inspection spawns a process, so cache longer. */
-  readonly #desktopUsageInspections = new HarnessAccountInspectionCache(90_000);
+  /** The App reads quota on every refresh; Claude account inspection spawns a process, so cache longer. */
+  readonly #quotaInspections = new HarnessAccountInspectionCache(90_000);
   #externalRuntime: ExternalThreadRuntime;
   #desktopTools: OfficialDesktopTools;
   readonly #externalSteering = new ExternalTurnSteering();
@@ -524,7 +521,6 @@ export class AppServerHost {
       ...options,
     };
     this.#writer = new OrderedWriter(this.#options.desktopOutput);
-    this.#options.desktopUsage?.attach(() => this.#desktopUsageReports());
     const environment = this.#options.environment ?? process.env;
     this.#launchSettings = new HarnessLaunchSettingsStore(
       this.#options.pluginContext?.environment ?? environment,
@@ -764,7 +760,7 @@ export class AppServerHost {
     );
   }
 
-  /** Each Harness's quota snapshot, sharing the Desktop usage cache so both surfaces agree. */
+  /** Each Harness's quota snapshot for the App's usage rows. */
   async harnessAccounts(): Promise<
     { harnessId: ExternalHarnessId; account: HarnessAccountSnapshot | null }[]
   > {
@@ -773,10 +769,7 @@ export class AppServerHost {
     for (const [harnessId, adapter] of this.#externalAdapters) {
       if (!adapter.inspectAccount) continue;
       try {
-        const { account } = await this.#desktopUsageInspections.inspect(
-          adapter,
-          this.#pluginDescriptors,
-        );
+        const { account } = await this.#quotaInspections.inspect(adapter, this.#pluginDescriptors);
         accounts.push({ harnessId, account });
       } catch (error) {
         this.#diagnose(error);
@@ -1651,48 +1644,6 @@ export class AppServerHost {
       id: request.id,
       result: { ...result, data: [...result.data, ...projected] },
     });
-  }
-
-  /**
-   * One report per ready Harness with account telemetry: its `model/list` route ids (plus the
-   * bare transport id) and its account snapshot, formatted by the Desktop usage publisher.
-   * Bounded wait: a usage poll during startup answers with what is ready.
-   */
-  async #desktopUsageReports(): Promise<HarnessUsageReport[]> {
-    let timer: NodeJS.Timeout | undefined;
-    await Promise.race([
-      this.#waitForPlugins(),
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, 3_000);
-      }),
-    ]);
-    clearTimeout(timer);
-    const reports: HarnessUsageReport[] = [];
-    for (const [harnessId, adapter] of this.#externalAdapters) {
-      if (!adapter.inspectAccount) continue;
-      try {
-        const inspection = harnessInspectionSchema.safeParse(await adapter.inspect({}));
-        if (!inspection.success || inspection.data.status !== "ready") continue;
-        const limitNames = [
-          encodeExternalTransportSelection(harnessId, {}),
-          ...inspection.data.catalog.models.map((model) =>
-            encodeExternalTransportSelection(harnessId, { model: model.ref }),
-          ),
-        ];
-        const { harnessName, account } = await this.#desktopUsageInspections.inspect(
-          adapter,
-          this.#pluginDescriptors,
-        );
-        reports.push({ harnessName, limitNames, account });
-      } catch (error) {
-        this.#diagnose(error);
-      }
-    }
-    this.#traceNativePicker({
-      event: "desktop-proxy/usage",
-      harnesses: reports.map((report) => `${report.harnessName}:${report.account ? "ok" : "none"}`),
-    });
-    return reports;
   }
 
   async #readNativeConfig(request: JsonRpcRequest): Promise<void> {
