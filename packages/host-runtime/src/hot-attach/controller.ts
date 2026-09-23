@@ -36,9 +36,10 @@ export function desktopProcesses(appPath: string): DesktopProcess[] {
   return execFileSync("/bin/ps", ["-axo", "pid=,lstart=,comm="], { encoding: "utf8" })
     .split("\n")
     .flatMap((line) => {
-      const match = line.trim().match(/^(\d+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(.*)$/);
-      return match?.[3] === executable
-        ? [{ pid: Number(match[1]), started: match[2]!, executable }]
+      const [, pid, started, command] =
+        line.trim().match(/^(\d+)\s+(\w+\s+\w+\s+\d+\s+[\d:]+\s+\d+)\s+(.*)$/) ?? [];
+      return command === executable && pid && started
+        ? [{ pid: Number(pid), started, executable }]
         : [];
     });
 }
@@ -243,14 +244,13 @@ export class HotAttachController {
       openedInspector = false,
       agentToken: string | undefined;
     try {
-      const targets = desktopProcesses(this.options.appPath);
-      if (targets.length !== 1)
+      const [target, ...others] = desktopProcesses(this.options.appPath);
+      if (!target || others.length)
         throw new Error(
-          targets.length
+          target
             ? "Multiple Codex App instances are running; keep only one open"
             : "Open the Codex App first",
         );
-      const target = targets[0]!;
       this.#target = target;
       // Any genuinely signed Desktop is accepted; the injected agent verifies the connection
       // layout at runtime and refuses to patch anything it does not recognize.
@@ -293,9 +293,10 @@ export class HotAttachController {
         if (discovered?.length) break;
         await pause(100);
       }
-      if (discovered?.length !== 1 || inspectorOwners().some((pid) => pid !== target.pid))
+      const [inspector] = discovered?.length === 1 ? discovered : [];
+      if (!inspector || inspectorOwners().some((pid) => pid !== target.pid))
         throw new Error("Cannot identify Desktop inspector");
-      const endpoint = new URL(discovered[0]!.webSocketDebuggerUrl);
+      const endpoint = new URL(inspector.webSocketDebuggerUrl);
       if (
         endpoint.protocol !== "ws:" ||
         endpoint.hostname !== "127.0.0.1" ||
@@ -318,7 +319,7 @@ export class HotAttachController {
       await chmod(this.#directory, 0o700);
       const socketPath = path.join(this.#directory, "bridge.sock");
       const accepted = Promise.withResolvers<HotAttachSession>();
-      this.#server = createServer((socket) => {
+      const server = createServer((socket) => {
         if (this.#session) {
           socket.destroy();
           return;
@@ -378,10 +379,11 @@ export class HotAttachController {
         });
         socket.once("close", () => clearTimeout(timeout));
       });
+      this.#server = server;
       await new Promise<void>((resolve, reject) => {
-        this.#server!.once("error", reject);
-        this.#server!.listen(socketPath, () => {
-          this.#server!.removeListener("error", reject);
+        server.once("error", reject);
+        server.listen(socketPath, () => {
+          server.removeListener("error", reject);
           resolve();
         });
       });
@@ -441,8 +443,9 @@ export class HotAttachController {
         const targets = (await fetch("http://127.0.0.1:9229/json/list", {
           signal: AbortSignal.timeout(1000),
         }).then((response) => response.json())) as { webSocketDebuggerUrl: string }[];
-        if (targets.length !== 1) throw new Error("Unknown inspector");
-        const endpoint = new URL(targets[0]!.webSocketDebuggerUrl);
+        const [inspector] = targets.length === 1 ? targets : [];
+        if (!inspector) throw new Error("Unknown inspector");
+        const endpoint = new URL(inspector.webSocketDebuggerUrl);
         if (
           endpoint.protocol !== "ws:" ||
           endpoint.hostname !== "127.0.0.1" ||
@@ -513,8 +516,8 @@ export class HotAttachController {
       await session?.close();
     } finally {
       try {
-        if (this.#server)
-          await new Promise<void>((resolve) => this.#server!.close(() => resolve()));
+        const server = this.#server;
+        if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
       } finally {
         this.#server = undefined;
         const directory = this.#directory;

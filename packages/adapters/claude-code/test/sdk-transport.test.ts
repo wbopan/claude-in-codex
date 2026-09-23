@@ -1,7 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -15,6 +14,7 @@ import {
   type ClaudeSdkTransportOptions,
 } from "../src/sdk-transport.js";
 import type { ClaudeTransportTurnResult, ClaudeTurnEvent } from "../src/transport.js";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 class FakeQuery {
   readonly accountInfo = vi.fn(async () => ({ apiProvider: "firstParty" as const }));
@@ -1178,30 +1178,22 @@ describe("ClaudeSdkTransport Model control", () => {
   it("detects Model selection without probing Context Usage", async () => {
     const value = fixture();
     value.fakeQuery.getContextUsage.mockRejectedValueOnce(new Error("must not be called"));
-    const configDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "claude-in-codex-claude-inspect-"),
-    );
-    try {
-      const inspector = new ClaudeSdkModelInspector({
-        command: process.execPath,
-        environment: { CLAUDE_CONFIG_DIR: configDirectory, PATH: process.env.PATH },
-        cwd: process.cwd(),
-        closeTimeoutMs: 100,
-        queryFactory: value.queryFactory,
-      });
+    const configDirectory = await tempDir("claude-in-codex-claude-inspect-");
+    const inspector = new ClaudeSdkModelInspector({
+      command: process.execPath,
+      environment: { CLAUDE_CONFIG_DIR: configDirectory, PATH: process.env.PATH },
+      cwd: process.cwd(),
+      closeTimeoutMs: 100,
+      queryFactory: value.queryFactory,
+    });
 
-      await expect(inspector.inspect()).resolves.toMatchObject({ canSelectModel: true });
-      expect(value.fakeQuery.getContextUsage).not.toHaveBeenCalled();
-    } finally {
-      await rm(configDirectory, { recursive: true, force: true });
-    }
+    await expect(inspector.inspect()).resolves.toMatchObject({ canSelectModel: true });
+    expect(value.fakeQuery.getContextUsage).not.toHaveBeenCalled();
   });
 
   it("inspects initialization Models with persistence disabled", async () => {
     const value = fixture();
-    const configDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "claude-in-codex-claude-inspect-"),
-    );
+    const configDirectory = await tempDir("claude-in-codex-claude-inspect-");
     const inspector = new ClaudeSdkModelInspector({
       command: process.execPath,
       environment: { CLAUDE_CONFIG_DIR: configDirectory, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
@@ -1210,34 +1202,30 @@ describe("ClaudeSdkTransport Model control", () => {
       queryFactory: value.queryFactory,
     });
 
-    try {
-      await expect(inspector.inspect()).resolves.toEqual({
-        models: [
-          {
-            value: "default",
-            displayName: "Default",
-            description: "Default",
-            supportsAutoMode: true,
-          },
-        ],
-        canSelectModel: true,
-        canSelectPermissionMode: true,
-      });
-      expect(value.fakeQuery.getContextUsage).not.toHaveBeenCalled();
-      expect(options(value)).toMatchObject({
-        persistSession: false,
-        includePartialMessages: false,
-        tools: [],
-        settingSources: ["user"],
-      });
-      expect(options(value).env?.PATH?.split(path.delimiter)).toContain(
-        path.dirname(process.execPath),
-      );
-      expect(options(value)).not.toHaveProperty("sessionId");
-      expect(options(value)).not.toHaveProperty("resume");
-    } finally {
-      await rm(configDirectory, { recursive: true, force: true });
-    }
+    await expect(inspector.inspect()).resolves.toEqual({
+      models: [
+        {
+          value: "default",
+          displayName: "Default",
+          description: "Default",
+          supportsAutoMode: true,
+        },
+      ],
+      canSelectModel: true,
+      canSelectPermissionMode: true,
+    });
+    expect(value.fakeQuery.getContextUsage).not.toHaveBeenCalled();
+    expect(options(value)).toMatchObject({
+      persistSession: false,
+      includePartialMessages: false,
+      tools: [],
+      settingSources: ["user"],
+    });
+    expect(options(value).env?.PATH?.split(path.delimiter)).toContain(
+      path.dirname(process.execPath),
+    );
+    expect(options(value)).not.toHaveProperty("sessionId");
+    expect(options(value)).not.toHaveProperty("resume");
   });
 
   it("merges user modelPicker.options into the inspected Model catalog", async () => {
@@ -1264,62 +1252,58 @@ describe("ClaudeSdkTransport Model control", () => {
         },
       ],
     });
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-picker-"));
-    try {
-      await writeFile(
-        path.join(configDirectory, "settings.json"),
-        JSON.stringify({
-          modelPicker: {
-            replaceBuiltInOptions: true,
-            options: [
-              {
-                model: "glm-glm-5.3-cp[1m]",
-                label: "glm-glm-5.3-cp (1M)",
-                description: "custom gateway",
-              },
-              {
-                model: "deepseek-v4-pro-saas[1m]",
-                label: "deepseek-v4-pro-saas (1M)",
-                description: "custom gateway",
-                behavesAs: "sonnet",
-              },
-            ],
-          },
-        }),
-      );
-      const inspector = new ClaudeSdkModelInspector({
-        command: process.execPath,
-        environment: { CLAUDE_CONFIG_DIR: configDirectory, PATH: process.env.PATH },
-        cwd: process.cwd(),
-        closeTimeoutMs: 100,
-        queryFactory: value.queryFactory,
-      });
-      await expect(inspector.inspect()).resolves.toEqual({
-        models: [
-          {
-            value: "default",
-            displayName: "Default",
-            description: "Default",
-            supportsAutoMode: true,
-          },
-          {
-            value: "glm-glm-5.3-cp[1m]",
-            displayName: "glm-glm-5.3-cp (1M)",
-            description: "custom gateway",
-          },
-          {
-            value: "deepseek-v4-pro-saas[1m]",
-            displayName: "deepseek-v4-pro-saas (1M)",
-            description: "custom gateway",
-            resolvedModel: "sonnet",
-          },
-        ],
-        canSelectModel: true,
-        canSelectPermissionMode: true,
-      });
-    } finally {
-      await rm(configDirectory, { recursive: true, force: true });
-    }
+    const configDirectory = await tempDir("claude-in-codex-claude-picker-");
+    await writeFile(
+      path.join(configDirectory, "settings.json"),
+      JSON.stringify({
+        modelPicker: {
+          replaceBuiltInOptions: true,
+          options: [
+            {
+              model: "glm-glm-5.3-cp[1m]",
+              label: "glm-glm-5.3-cp (1M)",
+              description: "custom gateway",
+            },
+            {
+              model: "deepseek-v4-pro-saas[1m]",
+              label: "deepseek-v4-pro-saas (1M)",
+              description: "custom gateway",
+              behavesAs: "sonnet",
+            },
+          ],
+        },
+      }),
+    );
+    const inspector = new ClaudeSdkModelInspector({
+      command: process.execPath,
+      environment: { CLAUDE_CONFIG_DIR: configDirectory, PATH: process.env.PATH },
+      cwd: process.cwd(),
+      closeTimeoutMs: 100,
+      queryFactory: value.queryFactory,
+    });
+    await expect(inspector.inspect()).resolves.toEqual({
+      models: [
+        {
+          value: "default",
+          displayName: "Default",
+          description: "Default",
+          supportsAutoMode: true,
+        },
+        {
+          value: "glm-glm-5.3-cp[1m]",
+          displayName: "glm-glm-5.3-cp (1M)",
+          description: "custom gateway",
+        },
+        {
+          value: "deepseek-v4-pro-saas[1m]",
+          displayName: "deepseek-v4-pro-saas (1M)",
+          description: "custom gateway",
+          resolvedModel: "sonnet",
+        },
+      ],
+      canSelectModel: true,
+      canSelectPermissionMode: true,
+    });
   });
 });
 
@@ -1383,7 +1367,7 @@ describe("ClaudeSdkTransport abort", () => {
         task_id,
       } as unknown as SDKMessage);
     }
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(value.transport.backgroundTaskCount).toBe(2));
     await value.transport.stopTask("agent-one");
     expect(value.transport.backgroundTaskCount).toBe(1);
     expect(value.fakeQuery.stopTask).toHaveBeenCalledExactlyOnceWith("agent-one");
@@ -2226,7 +2210,7 @@ describe("Claude history replacement fence", () => {
       subtype: "task_started",
       task_id: "still-running",
     } as unknown as SDKMessage);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(value.transport.backgroundTaskCount).toBe(1));
     await expect(value.transport.close()).rejects.toThrow("shutdown could not be confirmed");
     expect(value.fakeQuery.stopTask).toHaveBeenCalledWith("still-running");
   });
@@ -2598,6 +2582,7 @@ describe("MCP approval elicitation", () => {
     const turn = value.transport.runTurn("desktop test", "elicitation-turn", (e) => events.push(e));
     const pending = elicitationCallback(value)(request, {
       signal: new AbortController().signal,
+      requestId: "sdk-elicitation-1",
     });
     expect(events).toEqual([
       {
@@ -2640,8 +2625,14 @@ describe("MCP approval elicitation", () => {
     const events: ClaudeTurnEvent[] = [];
     const turn = value.transport.runTurn("desktop test", "elicitation-turn", (e) => events.push(e));
     const controller = new AbortController();
-    const first = elicitationCallback(value)(request, { signal: controller.signal });
-    const second = elicitationCallback(value)(request, { signal: new AbortController().signal });
+    const first = elicitationCallback(value)(request, {
+      signal: controller.signal,
+      requestId: "sdk-elicitation-1",
+    });
+    const second = elicitationCallback(value)(request, {
+      signal: new AbortController().signal,
+      requestId: "sdk-elicitation-2",
+    });
     controller.abort();
     await expect(first).resolves.toEqual({ action: "cancel" });
     completeTurn(value.fakeQuery);
@@ -2675,7 +2666,10 @@ describe("MCP approval elicitation", () => {
     ];
     for (const input of variants)
       await expect(
-        elicitationCallback(value)(input, { signal: new AbortController().signal }),
+        elicitationCallback(value)(input, {
+          signal: new AbortController().signal,
+          requestId: "sdk-elicitation-1",
+        }),
       ).resolves.toEqual({ action: "cancel" });
     expect(events).toEqual([]);
     completeTurn(value.fakeQuery);
@@ -2686,7 +2680,10 @@ describe("MCP approval elicitation", () => {
     const value = fixture();
     await value.transport.start();
     await expect(
-      elicitationCallback(value)(request, { signal: new AbortController().signal }),
+      elicitationCallback(value)(request, {
+        signal: new AbortController().signal,
+        requestId: "sdk-elicitation-1",
+      }),
     ).resolves.toEqual({ action: "cancel" });
     await value.transport.close();
   });
@@ -2722,72 +2719,60 @@ describe("Claude SDK official Desktop MCP", () => {
   it.each(["create", "resume"] as const)(
     "appends the Codex memory summary to the preset system prompt (%s)",
     async (mode) => {
-      const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-memory-"));
+      const codexHome = await tempDir("claude-in-codex-claude-memory-");
       await mkdir(path.join(codexHome, "memories"), { recursive: true });
       await writeFile(
         path.join(codexHome, "memories", "memory_summary.md"),
         "v1\n\n## User Profile\n\nPrefers evidence over vibes.\n",
       );
-      try {
-        const f = fixture(mode, "default", harnessThinkingOptionIdSchema.parse("auto"), {
-          CODEX_HOME: codexHome,
-          CLAUDE_IN_CODEX_DATA_DIR: codexHome,
-          PATH: process.env.PATH ?? "",
-        });
-        await f.transport.start();
-        const options = f.queryInput().options;
-        expect(options?.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" });
-        const append = (options?.systemPrompt as { append?: string }).append ?? "";
-        expect(append).toContain("<codex-memory source=");
-        expect(append).toContain("Prefers evidence over vibes.");
-        expect(options?.settingSources).toEqual(["user"]);
-        await f.transport.close();
-      } finally {
-        await rm(codexHome, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it("leaves the Codex memory summary out of a Session started with the switch off", async () => {
-    const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-memory-off-"));
-    await mkdir(path.join(codexHome, "memories"), { recursive: true });
-    await writeFile(path.join(codexHome, "memories", "memory_summary.md"), "Prefers tea.\n");
-    await writeFile(path.join(codexHome, "features.json"), JSON.stringify({ codexMemory: false }));
-    try {
-      const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
+      const f = fixture(mode, "default", harnessThinkingOptionIdSchema.parse("auto"), {
         CODEX_HOME: codexHome,
         CLAUDE_IN_CODEX_DATA_DIR: codexHome,
         PATH: process.env.PATH ?? "",
       });
       await f.transport.start();
-      expect(f.queryInput().options?.systemPrompt).toEqual({
-        type: "preset",
-        preset: "claude_code",
-      });
+      const options = f.queryInput().options;
+      expect(options?.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" });
+      const append = (options?.systemPrompt as { append?: string }).append ?? "";
+      expect(append).toContain("<codex-memory source=");
+      expect(append).toContain("Prefers evidence over vibes.");
+      expect(options?.settingSources).toEqual(["user"]);
       await f.transport.close();
-    } finally {
-      await rm(codexHome, { recursive: true, force: true });
-    }
+    },
+  );
+
+  it("leaves the Codex memory summary out of a Session started with the switch off", async () => {
+    const codexHome = await tempDir("claude-in-codex-memory-off-");
+    await mkdir(path.join(codexHome, "memories"), { recursive: true });
+    await writeFile(path.join(codexHome, "memories", "memory_summary.md"), "Prefers tea.\n");
+    await writeFile(path.join(codexHome, "features.json"), JSON.stringify({ codexMemory: false }));
+    const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
+      CODEX_HOME: codexHome,
+      CLAUDE_IN_CODEX_DATA_DIR: codexHome,
+      PATH: process.env.PATH ?? "",
+    });
+    await f.transport.start();
+    expect(f.queryInput().options?.systemPrompt).toEqual({
+      type: "preset",
+      preset: "claude_code",
+    });
+    await f.transport.close();
   });
 
   it("always requests the Claude Code preset system prompt, without an append when no summary exists", async () => {
-    const codexHome = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-no-memory-"));
-    try {
-      const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
-        CODEX_HOME: codexHome,
-        PATH: process.env.PATH ?? "",
-      });
-      await f.transport.start();
-      // An omitted systemPrompt is an empty custom prompt to the SDK, which strips the preset
-      // (task guidance, tone, auto-memory); the preset must be requested explicitly.
-      expect(f.queryInput().options?.systemPrompt).toEqual({
-        type: "preset",
-        preset: "claude_code",
-      });
-      await f.transport.close();
-    } finally {
-      await rm(codexHome, { recursive: true, force: true });
-    }
+    const codexHome = await tempDir("claude-in-codex-claude-no-memory-");
+    const f = fixture("create", "default", harnessThinkingOptionIdSchema.parse("auto"), {
+      CODEX_HOME: codexHome,
+      PATH: process.env.PATH ?? "",
+    });
+    await f.transport.start();
+    // An omitted systemPrompt is an empty custom prompt to the SDK, which strips the preset
+    // (task guidance, tone, auto-memory); the preset must be requested explicitly.
+    expect(f.queryInput().options?.systemPrompt).toEqual({
+      type: "preset",
+      preset: "claude_code",
+    });
+    await f.transport.close();
   });
 
   it("does not start native work after closure during client tool discovery", async () => {

@@ -40,7 +40,7 @@ export async function runMenuBarHost(
   let ownerGone = false;
   let finished = false;
   const input = createInterface({ input: process.stdin });
-  const done = Promise.withResolvers<void>();
+  const done: PromiseWithResolvers<void> = Promise.withResolvers();
   const finish = () => {
     finished = true;
     input.close();

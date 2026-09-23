@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
 import {
   harnessIdSchema,
   hostThreadIdSchema,
@@ -10,11 +6,12 @@ import {
   nativeSessionRefSchema,
   nativeTurnRefSchema,
 } from "@claude-in-codex/shared-contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { MappingStore } from "../src/index.js";
 
-const directories: string[] = [];
 const harnessId = harnessIdSchema.parse("antigravity");
 const parentId = hostThreadIdSchema.parse("parent");
 const childId = hostThreadIdSchema.parse("child");
@@ -33,8 +30,7 @@ const rebind = {
 };
 
 async function fixture() {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "mapping-subagents-"));
-  directories.push(directory);
+  const directory = await tempDir("mapping-subagents-");
   const store = new MappingStore({ directory });
   await store.initialize();
   const input = {
@@ -68,12 +64,6 @@ async function fixture() {
   });
   return { store, child };
 }
-
-afterEach(async () => {
-  await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
 
 describe("Native child Session rebinding", () => {
   it("atomically preserves child and Turn identities while rebinding native refs and request lookup", async () => {

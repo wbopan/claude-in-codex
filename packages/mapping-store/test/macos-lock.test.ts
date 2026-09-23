@@ -1,11 +1,12 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import type * as ChildProcessModule from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { MappingStore } from "../src/index.js";
 
@@ -21,7 +22,7 @@ describe.skipIf(process.platform !== "darwin")("macOS Mapping Store lock ownersh
   let processStartedAt: string;
 
   beforeEach(async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-macos-lock-"));
+    directory = await tempDir("claude-in-codex-macos-lock-");
     // Use another real process: the current-PID shortcut already checks start time.
     owner = spawn(
       process.execPath,
@@ -45,7 +46,6 @@ describe.skipIf(process.platform !== "darwin")("macOS Mapping Store lock ownersh
       owner.kill();
       await exited;
     }
-    await rm(directory, { recursive: true, force: true });
   });
 
   async function writeLock(startedAt: string | undefined): Promise<string> {

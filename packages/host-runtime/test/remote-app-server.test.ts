@@ -308,8 +308,7 @@ describe("remote SSH app-server transport", () => {
       client.close();
       await once(client, "close");
 
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      expect(disconnectSession).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(disconnectSession).toHaveBeenCalledOnce());
       expect(closeSession).not.toHaveBeenCalled();
       await expect(inputEnded.promise).resolves.toBeUndefined();
       await expect(listener.close()).resolves.toBeUndefined();
@@ -594,15 +593,10 @@ describe("remote SSH app-server transport", () => {
         firstClosing = first.close();
         await firstClientClosed;
 
-        let inactive = false;
-        for (let attempt = 0; attempt < 100; attempt += 1) {
-          if (!(await socketAcceptsConnections(socketPath))) {
-            inactive = true;
-            break;
-          }
-          await new Promise<void>((resolve) => setTimeout(resolve, 10));
-        }
-        expect(inactive).toBe(true);
+        await vi.waitFor(
+          async () => expect(await socketAcceptsConnections(socketPath)).toBe(false),
+          { timeout: 5_000, interval: 10 },
+        );
         await replacement.listen();
 
         finishFirstSession();

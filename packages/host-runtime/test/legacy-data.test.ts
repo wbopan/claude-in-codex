@@ -1,18 +1,15 @@
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { logDirectory, platformDataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 import { migrateLegacyDataDirectory } from "../src/hot-attach/legacy-data.js";
 
 let home: string;
 beforeEach(async () => {
-  home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-legacy-data-"));
-});
-afterEach(async () => {
-  await rm(home, { recursive: true, force: true });
+  home = await tempDir("claude-in-codex-legacy-data-");
 });
 
 async function legacyFile(relative: string, contents = "{}\n"): Promise<void> {

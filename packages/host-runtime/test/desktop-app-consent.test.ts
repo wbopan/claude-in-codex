@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { appConsentEnabled, consentedApp } from "../src/desktop-app-consent.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 const request = (overrides: Record<string, unknown> = {}, meta: Record<string, unknown> = {}) => ({
   serverName: "cua_repl",
@@ -41,23 +41,16 @@ describe("standing Computer Use app consent", () => {
     expect(consentedApp(request({}, { tool_params: { app: "../evil" } }), "context")).toBeNull();
   });
 
-  it("is off unless the Claude profile opts in", () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "app-consent-"));
-    try {
-      const environment = { CLAUDE_CONFIG_DIR: directory };
-      expect(appConsentEnabled(environment)).toBe(false);
-      writeFileSync(
-        path.join(directory, "codex-desktop.json"),
-        '{"version":1,"appApprovals":"ask"}',
-      );
-      expect(appConsentEnabled(environment)).toBe(false);
-      writeFileSync(
-        path.join(directory, "codex-desktop.json"),
-        '{"version":1,"appApprovals":"allow"}',
-      );
-      expect(appConsentEnabled(environment)).toBe(true);
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
+  it("is off unless the Claude profile opts in", async () => {
+    const directory = await tempDir("app-consent-");
+    const environment = { CLAUDE_CONFIG_DIR: directory };
+    expect(appConsentEnabled(environment)).toBe(false);
+    writeFileSync(path.join(directory, "codex-desktop.json"), '{"version":1,"appApprovals":"ask"}');
+    expect(appConsentEnabled(environment)).toBe(false);
+    writeFileSync(
+      path.join(directory, "codex-desktop.json"),
+      '{"version":1,"appApprovals":"allow"}',
+    );
+    expect(appConsentEnabled(environment)).toBe(true);
   });
 });

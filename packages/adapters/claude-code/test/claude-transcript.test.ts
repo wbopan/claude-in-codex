@@ -1,20 +1,12 @@
-import { appendFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nativeSessionRefSchema } from "@claude-in-codex/shared-contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ClaudeCodeAdapter } from "../src/claude-code-adapter.js";
 import { mapClaudeSnapshot } from "../src/claude-history.js";
 import { readClaudeTranscript } from "../src/claude-transcript.js";
-
-const directories: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
-  );
-});
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 function projectDirectoryName(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/gu, "-");
@@ -36,8 +28,7 @@ describe("Claude transcript reader", () => {
   ])(
     "restores every Subagent tool call across attachment records ($subdirectory)",
     async ({ project, subdirectory }) => {
-      const configDirectory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-"));
-      directories.push(configDirectory);
+      const configDirectory = await tempDir("claude-in-codex-claude-");
       const cwd = "/work/project";
       const sessionId = "session-1";
       const nativeSubagentId = "native-agent-1";
@@ -164,8 +155,7 @@ describe("Claude transcript reader", () => {
   );
 
   it("does not substitute a parent transcript when the Subagent transcript is absent", async () => {
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-"));
-    directories.push(configDirectory);
+    const configDirectory = await tempDir("claude-in-codex-claude-");
     const cwd = "/work/project";
     const directory = path.join(configDirectory, "projects", projectDirectoryName(cwd));
     await mkdir(directory, { recursive: true });
@@ -184,8 +174,7 @@ describe("Claude transcript reader", () => {
   });
 
   it("reads all main-session messages in append order instead of following one parent branch", async () => {
-    const configDirectory = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-claude-"));
-    directories.push(configDirectory);
+    const configDirectory = await tempDir("claude-in-codex-claude-");
     const cwd = "/work/project";
     const transcriptDirectory = path.join(configDirectory, "projects", projectDirectoryName(cwd));
     await mkdir(transcriptDirectory, { recursive: true });

@@ -1,35 +1,28 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { readClaudeCodeVersion, resolveClaudeCodeExecutable } from "../src/command.js";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
-const directories: string[] = [];
-afterEach(() => {
-  for (const directory of directories.splice(0))
-    fs.rmSync(directory, { recursive: true, force: true });
-});
-
-function fakeExecutable(): { directory: string; executable: string } {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-adapter-"));
-  directories.push(directory);
+async function fakeExecutable(): Promise<{ directory: string; executable: string }> {
+  const directory = await tempDir("claude-in-codex-claude-adapter-");
   const executable = path.join(directory, process.platform === "win32" ? "claude.exe" : "claude");
   fs.writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   return { directory, executable };
 }
 
 describe("Claude Code executable resolution", () => {
-  it("uses an explicit command", () => {
-    const { executable } = fakeExecutable();
+  it("uses an explicit command", async () => {
+    const { executable } = await fakeExecutable();
     expect(
       resolveClaudeCodeExecutable({ command: executable, environment: {}, platform: "darwin" }),
     ).toBe(executable);
   });
 
-  it("resolves from PATH", () => {
-    const { directory, executable } = fakeExecutable();
+  it("resolves from PATH", async () => {
+    const { directory, executable } = await fakeExecutable();
     expect(
       resolveClaudeCodeExecutable({
         environment: { PATH: directory, PATHEXT: ".exe" },
@@ -70,9 +63,8 @@ describe("Claude Code executable resolution", () => {
     ).toThrow("not installed");
   });
 
-  it("finds a user npm installation when a Finder-style PATH omits it", () => {
-    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-home-"));
-    directories.push(homeDirectory);
+  it("finds a user npm installation when a Finder-style PATH omits it", async () => {
+    const homeDirectory = await tempDir("claude-in-codex-claude-home-");
     const executable = path.join(homeDirectory, ".npm-global", "bin", "claude");
     fs.mkdirSync(path.dirname(executable), { recursive: true });
     fs.writeFileSync(executable, "#!/usr/bin/env node\nexit 0\n", { mode: 0o700 });
@@ -86,9 +78,8 @@ describe("Claude Code executable resolution", () => {
     ).toBe(executable);
   });
 
-  it("finds a user NVM installation when a Finder-style PATH omits it", () => {
-    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-home-"));
-    directories.push(homeDirectory);
+  it("finds a user NVM installation when a Finder-style PATH omits it", async () => {
+    const homeDirectory = await tempDir("claude-in-codex-claude-home-");
     const executable = path.join(
       homeDirectory,
       ".nvm",
@@ -110,9 +101,8 @@ describe("Claude Code executable resolution", () => {
     ).toBe(executable);
   });
 
-  it("fails without substituting the SDK bundled binary", () => {
-    const homeDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-in-codex-claude-home-"));
-    directories.push(homeDirectory);
+  it("fails without substituting the SDK bundled binary", async () => {
+    const homeDirectory = await tempDir("claude-in-codex-claude-home-");
     expect(() =>
       resolveClaudeCodeExecutable({
         environment: { PATH: "" },
@@ -125,7 +115,7 @@ describe("Claude Code executable resolution", () => {
 
 describe.skipIf(process.platform === "win32")("readClaudeCodeVersion", () => {
   it("returns the bare version the CLI reports and null when it fails", async () => {
-    const { directory, executable } = fakeExecutable();
+    const { directory, executable } = await fakeExecutable();
     fs.writeFileSync(executable, '#!/bin/sh\necho "2.3.14 (Claude Code)"\n', { mode: 0o700 });
     await expect(readClaudeCodeVersion(executable, {})).resolves.toBe("2.3.14");
     const broken = path.join(directory, "broken");

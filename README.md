@@ -56,7 +56,7 @@ Claude Code CLI 版本、进程数和用量在接入后读取。
 
 ## 构建
 
-需要 Node 22.19+ 或 24、npm，以及 Xcode Command Line Tools。使用当前机器的架构构建。
+需要 Node 22.19+ 或 24（开发默认用 `.node-version` 中的版本）、npm，以及 Xcode Command Line Tools。使用当前机器的架构构建。
 
 ```sh
 npm ci
@@ -95,9 +95,25 @@ open --env CLAUDE_IN_CODEX_AUTO_ATTACH=0 --env CLAUDE_IN_CODEX_DATA_DIR="$PWD/.d
 
 ## 开发验证
 
+`.node-version` 固定开发用的 Node 版本（与 `npm run bootstrap` 下载的一致），`fnm use` 或 `nvm use` 会读取它；`.npmrc` 开启了 `engine-strict`，版本不符时 `npm ci` 直接失败。`npm ci` 同时通过 lefthook 安装 pre-commit 钩子，只对暂存文件运行 Prettier、ESLint 和 rustfmt，`LEFTHOOK=0 git commit` 可临时跳过。
+
 ```sh
-npm run test:typescript
-cargo test --workspace --locked --features claude-in-codex-shim/test-utils
+npm run check            # 提交前的完整检查：类型、lint、格式、全部测试
+npm run test:unit        # 日常改代码：毫秒级的单元测试
+npm run test:watch       # 单元测试 watch 模式
+npm run test:integration # 启动 Host、派生进程的慢测试
+npm run test:coverage    # v8 覆盖率报告，输出到 coverage/
 ```
+
+`npm run typecheck` 同时检查包源码和测试（`tests/tsconfig.json`）。GitHub Actions（`.github/workflows/ci.yml`）在推送到 `main` 和每个 PR 上运行同样的检查。
+
+测试约定：
+
+- 测试放在各包的 `test/` 下；启动 Host、派生子进程或耗时以秒计的测试放在 `test/integration/`，归入 `integration` 项目。
+- `*.real.test.ts` 连接真实的 Claude 或 Hermes，只在设置对应的 `CLAUDE_IN_CODEX_RUN_*=1` 时运行。
+- 单元和集成测试运行时 `HOME`、`CODEX_HOME`、`CLAUDE_CONFIG_DIR` 指向临时目录（`tests/setup/isolate-home.ts`），测试读不到开发者本机的 `~/.codex` 和 `~/.claude`。
+- 临时目录用 `tests/helpers/temp-dir.ts` 的 `tempDir()`：路径已解析软链接，测试结束自动删除。
+- 等待异步结果时等具体事件或用 `vi.waitFor`，不写固定时长的 sleep。CI 中遗留的 `.only` 会让测试失败。
+- 大的测试文件按功能拆到同名目录，共用的 fixture 放在该目录的非测试模块里。
 
 热接入代码在 `packages/host-runtime/src/hot-attach/`，原生菜单在 `apps/macos/main.swift`，打包和安装入口在 `tools/app/`。数据和日志位置由 `packages/shared-contracts/src/app-paths.ts` 统一解析，改名前的标识符兼容集中在各自的读取入口。协议、适配器、模型投影、权限、历史、工具和远程实现复用现有 Host。

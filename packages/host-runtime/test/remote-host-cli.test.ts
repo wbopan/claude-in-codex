@@ -1,9 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { Writable } from "node:stream";
 
 import { describe, expect, it } from "vitest";
+
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { runRemoteHostCli } from "../src/remote-host-cli.js";
 
@@ -40,51 +39,43 @@ describe("remote SSH Host CLI", () => {
   });
 
   it("reports an absent installation without mutating the host", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-cli-"));
+    const home = await tempDir("claude-in-codex-remote-cli-");
     const stdout = textSink();
     const stderr = textSink();
-    try {
-      await expect(
-        runRemoteHostCli({
-          arguments: ["status"],
-          environment: { HOME: home, SHELL: "/bin/zsh" },
-          output: stdout.output,
-          diagnosticOutput: stderr.output,
-        }),
-      ).resolves.toBe(0);
-      expect(JSON.parse(stdout.text())).toMatchObject({
-        state: "not-installed",
-        runtime: { state: "stopped" },
-      });
-      expect(stderr.text()).toBe("");
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
+    await expect(
+      runRemoteHostCli({
+        arguments: ["status"],
+        environment: { HOME: home, SHELL: "/bin/zsh" },
+        output: stdout.output,
+        diagnosticOutput: stderr.output,
+      }),
+    ).resolves.toBe(0);
+    expect(JSON.parse(stdout.text())).toMatchObject({
+      state: "not-installed",
+      runtime: { state: "stopped" },
+    });
+    expect(stderr.text()).toBe("");
   });
 
   it("refuses lifecycle operations before installation", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-remote-cli-"));
+    const home = await tempDir("claude-in-codex-remote-cli-");
     const expectedMessage =
       process.platform === "win32"
         ? "Remote Host lifecycle must run on the macOS or Linux SSH host"
         : "Remote Host is not installed";
-    try {
-      for (const command of ["start", "stop"]) {
-        const stdout = textSink();
-        const stderr = textSink();
-        await expect(
-          runRemoteHostCli({
-            arguments: [command],
-            environment: { HOME: home, SHELL: "/bin/bash" },
-            output: stdout.output,
-            diagnosticOutput: stderr.output,
-          }),
-        ).resolves.toBe(1);
-        expect(stdout.text()).toBe("");
-        expect(stderr.text()).toContain(expectedMessage);
-      }
-    } finally {
-      await rm(home, { recursive: true, force: true });
+    for (const command of ["start", "stop"]) {
+      const stdout = textSink();
+      const stderr = textSink();
+      await expect(
+        runRemoteHostCli({
+          arguments: [command],
+          environment: { HOME: home, SHELL: "/bin/bash" },
+          output: stdout.output,
+          diagnosticOutput: stderr.output,
+        }),
+      ).resolves.toBe(1);
+      expect(stdout.text()).toBe("");
+      expect(stderr.text()).toContain(expectedMessage);
     }
   });
 

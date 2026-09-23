@@ -27,8 +27,8 @@ export interface DesktopHello {
 export class HotAttachSession extends EventEmitter {
   readonly host: AppServerHost;
   readonly done: Promise<number>;
-  readonly ready = Promise.withResolvers<void>();
-  readonly detached = Promise.withResolvers<void>();
+  readonly ready: PromiseWithResolvers<void> = Promise.withResolvers();
+  readonly detached: PromiseWithResolvers<void> = Promise.withResolvers();
   readonly #input = new PassThrough();
   readonly #backend: BorrowedDesktopBackend;
   readonly #scope: OfficialRuntimeScope;

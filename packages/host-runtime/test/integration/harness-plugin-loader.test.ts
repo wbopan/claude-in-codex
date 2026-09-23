@@ -1,21 +1,23 @@
-import { cp, mkdtemp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeHarnessAdapter } from "@claude-in-codex/harness-adapter/testing";
 import {
   harnessPluginDescriptorSchema,
   harnessPluginManifestSchema,
 } from "@claude-in-codex/shared-contracts";
 
-import { loadHarnessPlugins, type HarnessPluginDiagnostic } from "../src/harness-plugin-loader.js";
-import { HarnessPluginRegistry } from "../src/harness-plugin-registry.js";
-import { installedHarnessPluginOptions } from "../src/installed-harness-plugins.js";
-import { pluginResourcePath, readPluginIcon } from "../src/plugin-files.js";
+import {
+  loadHarnessPlugins,
+  type HarnessPluginDiagnostic,
+} from "../../src/harness-plugin-loader.js";
+import { HarnessPluginRegistry } from "../../src/harness-plugin-registry.js";
+import { installedHarnessPluginOptions } from "../../src/installed-harness-plugins.js";
+import { pluginResourcePath, readPluginIcon } from "../../src/plugin-files.js";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
-const roots: string[] = [];
 const context = {
   environment: { PRIVATE_VALUE: "never-report-this" },
   platform: "linux",
@@ -24,8 +26,7 @@ const context = {
 const fakeModule = pathToFileURL(path.resolve("packages/harness-adapter/dist/testing.js")).href;
 
 async function root(enabled: string[] = []): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "claude-in-codex-plugins-"));
-  roots.push(directory);
+  const directory = await tempDir("claude-in-codex-plugins-");
   await writeFile(path.join(directory, "enabled.json"), JSON.stringify({ version: 1, enabled }));
   return directory;
 }
@@ -63,12 +64,6 @@ async function plugin(
   );
   return location;
 }
-
-afterEach(async () => {
-  await Promise.all(
-    roots.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
 
 describe("Harness plugin discovery and loading", () => {
   it("passes saved commands only to opted-in local factories and exposes the setting", async () => {

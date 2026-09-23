@@ -1,5 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -14,6 +13,7 @@ import {
   readClaudeUserModelPicker,
   resolveClaudeConfigDirectory,
 } from "../src/model-catalog.js";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 function snapshot(models: unknown) {
   return { models, canSelectModel: true, canSelectPermissionMode: true };
@@ -333,48 +333,38 @@ describe("Claude Code modelPicker.settings merge", () => {
   });
 
   it("reads user settings through CLAUDE_CONFIG_DIR and ignores malformed files", async () => {
-    const configDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "claude-in-codex-claude-settings-"),
+    const configDirectory = await tempDir("claude-in-codex-claude-settings-");
+    expect(await readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory })).toBeUndefined();
+
+    await writeFile(path.join(configDirectory, "settings.json"), "{not-json");
+    expect(await readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory })).toBeUndefined();
+
+    await writeFile(
+      path.join(configDirectory, "settings.json"),
+      JSON.stringify({
+        modelPicker: {
+          replaceBuiltInOptions: true,
+          options: [
+            { model: "gateway/model-a", label: "A", description: "desc-a" },
+            { model: "  ", label: "ignored blank" },
+            { label: "missing model" },
+            { model: "gateway/model-a", label: "duplicate ignored" },
+            { model: "gateway/model-b", behavesAs: "sonnet" },
+          ],
+        },
+      }),
     );
-    try {
-      expect(
-        await readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory }),
-      ).toBeUndefined();
-
-      await writeFile(path.join(configDirectory, "settings.json"), "{not-json");
-      expect(
-        await readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory }),
-      ).toBeUndefined();
-
-      await writeFile(
-        path.join(configDirectory, "settings.json"),
-        JSON.stringify({
-          modelPicker: {
-            replaceBuiltInOptions: true,
-            options: [
-              { model: "gateway/model-a", label: "A", description: "desc-a" },
-              { model: "  ", label: "ignored blank" },
-              { label: "missing model" },
-              { model: "gateway/model-a", label: "duplicate ignored" },
-              { model: "gateway/model-b", behavesAs: "sonnet" },
-            ],
-          },
-        }),
-      );
-      await expect(
-        readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory }),
-      ).resolves.toEqual({
-        replaceBuiltInOptions: true,
-        options: [
-          { model: "gateway/model-a", label: "A", description: "desc-a" },
-          { model: "gateway/model-b", behavesAs: "sonnet" },
-        ],
-      });
-      expect(resolveClaudeConfigDirectory({ CLAUDE_CONFIG_DIR: configDirectory })).toBe(
-        path.resolve(configDirectory),
-      );
-    } finally {
-      await rm(configDirectory, { recursive: true, force: true });
-    }
+    await expect(
+      readClaudeUserModelPicker({ CLAUDE_CONFIG_DIR: configDirectory }),
+    ).resolves.toEqual({
+      replaceBuiltInOptions: true,
+      options: [
+        { model: "gateway/model-a", label: "A", description: "desc-a" },
+        { model: "gateway/model-b", behavesAs: "sonnet" },
+      ],
+    });
+    expect(resolveClaudeConfigDirectory({ CLAUDE_CONFIG_DIR: configDirectory })).toBe(
+      path.resolve(configDirectory),
+    );
   });
 });

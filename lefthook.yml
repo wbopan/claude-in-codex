@@ -1,0 +1,19 @@
+# Fast checks on staged files only; the full suite runs in CI and `npm run check`.
+# Personal overrides go in lefthook-local.yml (ignored). Skip once with LEFTHOOK=0.
+output:
+  - failure
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: prettier
+      glob: "*.{ts,mjs,js,json,yml,yaml}"
+      run: npx prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+    - name: eslint
+      glob: "*.{ts,mjs,js}"
+      run: npx eslint --cache --cache-location node_modules/.cache/eslint/ {staged_files}
+    - name: rustfmt
+      glob: "*.rs"
+      run: bash tools/toolchain/with-toolchain.sh cargo fmt --all
+      stage_fixed: true

@@ -75,6 +75,7 @@ function fixture(
   const activeTurn = vi.fn((): string | null => "actual-turn");
   const diagnose = vi.fn();
   const trace = vi.fn();
+  const elicit = options.elicit;
   const service = new OfficialDesktopTools({
     scope,
     cwd: "/workspace",
@@ -82,8 +83,8 @@ function fixture(
     diagnose,
     trace,
     appConsent: (params) => params.consented === true,
-    ...(options.elicit
-      ? { elicit: (_thread: string, _turn: string, params: JsonObject) => options.elicit!(params) }
+    ...(elicit
+      ? { elicit: (_thread: string, _turn: string, params: JsonObject) => elicit(params) }
       : {}),
     ...(options.enabledServers ? { enabledServers: options.enabledServers } : {}),
   });

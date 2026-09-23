@@ -1,8 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { harnessModelCatalogSchema } from "@claude-in-codex/shared-contracts";
+import { harnessModelCatalogSchema, type JsonValue } from "@claude-in-codex/shared-contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +20,7 @@ import {
   requestedNativeSelection,
   thinkingOptionForEffort,
 } from "../src/native-picker.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 const catalog = harnessModelCatalogSchema.parse({
   models: [
@@ -37,7 +37,7 @@ const catalog = harnessModelCatalogSchema.parse({
   defaultThinkingOptionId: "auto",
 });
 const route = "claude-in-codex/claude-code-native@opus";
-const edit = (keyPath: string, value: unknown) => ({ keyPath, value, mergeStrategy: "replace" });
+const edit = (keyPath: string, value: JsonValue) => ({ keyPath, value, mergeStrategy: "replace" });
 
 describe("native Model picker projection", () => {
   it("projects Harness Models with only efforts the official picker can show", () => {
@@ -196,25 +196,21 @@ describe("native Model picker projection", () => {
   });
 
   it("overlays and persists the selection outside the official config", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "native-picker-"));
-    try {
-      const store = new NativeSelectionStore(directory);
-      expect(await store.get()).toBeNull();
-      await store.set({ model: route, effort: "high" });
-      expect(
-        JSON.parse(readFileSync(path.join(directory, "native-picker-selection.json"), "utf8")),
-      ).toEqual({ model: route, effort: "high" });
-      const restored = await new NativeSelectionStore(directory).get();
-      expect(
-        overlayNativeSelection({ config: { model: "gpt-5.5", notify: true } }, restored),
-      ).toEqual({
-        config: { model: route, model_reasoning_effort: "high", notify: true },
-      });
-      await store.set(null);
-      expect(await new NativeSelectionStore(directory).get()).toBeNull();
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
+    const directory = await tempDir("native-picker-");
+    const store = new NativeSelectionStore(directory);
+    expect(await store.get()).toBeNull();
+    await store.set({ model: route, effort: "high" });
+    expect(
+      JSON.parse(readFileSync(path.join(directory, "native-picker-selection.json"), "utf8")),
+    ).toEqual({ model: route, effort: "high" });
+    const restored = await new NativeSelectionStore(directory).get();
+    expect(
+      overlayNativeSelection({ config: { model: "gpt-5.5", notify: true } }, restored),
+    ).toEqual({
+      config: { model: route, model_reasoning_effort: "high", notify: true },
+    });
+    await store.set(null);
+    expect(await new NativeSelectionStore(directory).get()).toBeNull();
   });
   it("maps the official permission selector without inferring full access", () => {
     const workspace = { permissions: ":workspace" };

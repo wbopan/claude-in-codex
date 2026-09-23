@@ -1,3 +1,8 @@
+// Both functions are serialized with Function.prototype.toString() and evaluated inside the
+// Codex App (Electron main realm and renderer), where they reach undocumented internals. Typing
+// them would take a cast on nearly every line, and the renderer half needs DOM types that
+// host-runtime does not load, so the file opts out of type checking entirely.
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- see above
 // @ts-nocheck -- Serialized into the version-checked Desktop's main realm. No imports/closures.
 /** All mutations are instance-local and have descriptor-preserving cleanup. */
 export function installDesktopAgent(config) {
@@ -32,7 +37,7 @@ export function installDesktopAgent(config) {
     );
   const prototype = [...candidates][0];
   const restorers = [];
-  let connection, transport, socket, incoming, outgoing, timer;
+  let connection, transport, socket, incoming, outgoing;
   let phase = "discovering",
     reason = null,
     buffer = "",
@@ -61,7 +66,7 @@ export function installDesktopAgent(config) {
     const restore = () => {
       if (target[name] !== replacement) return;
       if (descriptor) Object.defineProperty(target, name, descriptor);
-      else delete target[name];
+      else Reflect.deleteProperty(target, name);
     };
     restorers.push(restore);
     return restore;
@@ -143,7 +148,7 @@ export function installDesktopAgent(config) {
       const fs = require("node:fs");
       fs.unlink(config.socketPath, () => fs.rmdir(config.socketPath.slice(0, -12), () => {}));
     }
-    if (globalThis[key] === handle) delete globalThis[key];
+    if (globalThis[key] === handle) Reflect.deleteProperty(globalThis, key);
     handle.cleanup = refresh();
   }
   function activate() {
@@ -377,7 +382,8 @@ export function installDesktopAgent(config) {
     cleanup: Promise.resolve(),
   };
   globalThis[key] = handle;
-  timer = setInterval(() => {
+  // detach() reads this timer, but nothing can call detach() before this function returns.
+  const timer = setInterval(() => {
     if (Date.now() > deadline) detach("lease-expired");
     else if (connection && connection.connection !== transport) detach("native-backend-changed");
   }, 500);

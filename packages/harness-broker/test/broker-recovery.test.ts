@@ -1,5 +1,4 @@
-import { mkdtemp, rm, writeFile, chmod } from "node:fs/promises";
-import os from "node:os";
+import { writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import net, { type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
@@ -19,14 +18,14 @@ import {
 import { BrokeredHarnessAdapter, startHarnessBrokerServer } from "../src/index.js";
 import { consumeBrokerFrames } from "../src/framing.js";
 import { harnessBrokerServerFrameSchema } from "../src/protocol.js";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 async function fixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "cx-recover-"));
-  cleanup.push(() => rm(root, { recursive: true, force: true }));
+  const root = await tempDir("cx-recover-");
   const endpoint = (name: string) =>
     process.platform === "win32"
       ? `\\\\.\\pipe\\cx-${randomUUID()}`

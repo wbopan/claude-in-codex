@@ -19,6 +19,12 @@ const CLAUDE_OPUS = "claude-in-codex/claude-code-native@claude-model-v1.b3B1c1sx
 const CLAUDE_SONNET = "claude-in-codex/claude-code-native@claude-model-v1.c29ubmV0";
 const NOW = Date.parse("2026-09-22T05:00:00Z");
 
+/** Parses a rewritten usage body, failing the test when the publisher left the response alone. */
+function rewrittenJson<T>(body: Buffer | null): T {
+  if (!body) throw new Error("The usage response was not rewritten");
+  return JSON.parse(body.toString()) as T;
+}
+
 const claudeAccount = {
   email: "claude@example.com",
   plan: "max",
@@ -71,7 +77,7 @@ describe("harnessUsageBuckets", () => {
       now: NOW,
     });
     expect(buckets.map((bucket) => bucket.limit_name)).toEqual([CLAUDE_OPUS, CLAUDE_SONNET]);
-    expect(buckets[0]!.rate_limit).toEqual({
+    expect(buckets[0]?.rate_limit).toEqual({
       allowed: true,
       limit_reached: false,
       primary_window: {
@@ -94,7 +100,7 @@ describe("harnessUsageBuckets", () => {
       account: { credits: { usedPercent: 99.6, periodType: "seven_day" } },
       limitNames: [CLAUDE_OPUS],
     });
-    expect(bucket!.rate_limit).toEqual({
+    expect(bucket?.rate_limit).toEqual({
       allowed: true,
       limit_reached: false,
       primary_window: {
@@ -227,7 +233,7 @@ describe("DesktopUsagePublisher", () => {
       body: Buffer.from(fixture),
     });
     expect(rewritten).not.toBeNull();
-    const response = JSON.parse(rewritten!.toString()) as Record<string, unknown>;
+    const response = rewrittenJson<Record<string, unknown>>(rewritten);
     const original = JSON.parse(fixture) as Record<string, unknown>;
     const { ambient_usage, ...rest } = response;
     expect({ ...rest, additional_rate_limits: null }).toEqual(original);
@@ -279,14 +285,14 @@ describe("DesktopUsagePublisher", () => {
       { status: 200, headers, body: Buffer.from(fixture) },
       { language: "zh-CN" },
     );
-    const response = JSON.parse(rewritten!.toString()) as {
+    const response = rewrittenJson<{
       ambient_usage: {
         default: {
           profile_subtext: string | null;
           menu: { rows: { label: string; value: { text: string } }[] };
         };
       };
-    };
+    }>(rewritten);
     expect(response.ambient_usage.default.profile_subtext).toBeNull();
     expect(
       response.ambient_usage.default.menu.rows.map((row) => `${row.label} ${row.value.text}`),
@@ -305,10 +311,10 @@ describe("DesktopUsagePublisher", () => {
       { status: 200, headers, body: Buffer.from(fixture) },
       { language: "en-US" },
     );
-    const response = JSON.parse(rewritten!.toString()) as {
+    const response = rewrittenJson<{
       ambient_usage: { default: { menu: { rows: { label: string }[] } } };
-    };
-    expect(response.ambient_usage.default.menu.rows[0]!.label).toBe("Codex 7 天");
+    }>(rewritten);
+    expect(response.ambient_usage.default.menu.rows[0]?.label).toBe("Codex 7 天");
   });
 
   it("extends a server-sent ambient usage section instead of replacing it", async () => {
@@ -333,7 +339,7 @@ describe("DesktopUsagePublisher", () => {
       headers,
       body: Buffer.from(body),
     });
-    const response = JSON.parse(rewritten!.toString()) as {
+    const response = rewrittenJson<{
       ambient_usage: {
         extra: string;
         default: {
@@ -341,7 +347,7 @@ describe("DesktopUsagePublisher", () => {
           menu: { rows: { label: string }[]; actions: unknown[] };
         };
       };
-    };
+    }>(rewritten);
     expect(response.ambient_usage.extra).toBe("kept");
     expect(response.ambient_usage.default.profile_subtext).toBe("native subtext");
     expect(response.ambient_usage.default.menu.actions).toEqual([{ action: "invite" }]);
@@ -367,17 +373,17 @@ describe("DesktopUsagePublisher", () => {
       headers,
       body: Buffer.from(body),
     });
-    const response = JSON.parse(rewritten!.toString()) as {
+    const response = rewrittenJson<{
       ambient_usage: unknown;
       additional_rate_limits: { limit_name: string; rate_limit: unknown }[];
-    };
+    }>(rewritten);
     expect(response.ambient_usage).toEqual({ unexpected: true });
     expect(response.additional_rate_limits.map((entry) => entry.limit_name)).toEqual([
       CLAUDE_OPUS,
       "codex-auto-review",
       CLAUDE_SONNET,
     ]);
-    expect(response.additional_rate_limits[0]!.rate_limit).toEqual({
+    expect(response.additional_rate_limits[0]?.rate_limit).toEqual({
       allowed: true,
       note: "native",
     });

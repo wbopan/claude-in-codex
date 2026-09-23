@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostTurnIdSchema, nativeSessionRefSchema } from "@claude-in-codex/shared-contracts";
 import type { HarnessSession } from "@claude-in-codex/harness-adapter";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 import { ClaudeCodeAdapter } from "../src/claude-code-adapter.js";
 import { encodeClaudeModelRef } from "../src/model-catalog.js";
@@ -41,8 +40,7 @@ function messages(sessionId: string, text: string) {
 }
 
 async function fixture(turns = 1) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "claude-rollback-"));
-  cleanups.push(() => rm(directory, { force: true, recursive: true }));
+  const directory = await tempDir("claude-rollback-");
   const environment = { CLAUDE_CONFIG_DIR: directory };
   const sourceRef = nativeSessionRefSchema.parse({
     harnessId: "claude-code",

@@ -1,20 +1,19 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { syncClaudeMemoryToCodex } from "../src/claude-memory-sync.js";
+import { tempDir } from "../../../../tests/helpers/temp-dir.js";
 
 let data: string;
 let environment: NodeJS.ProcessEnv;
 beforeEach(async () => {
-  data = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-memory-sync-"));
+  data = await tempDir("claude-in-codex-memory-sync-");
   environment = { CLAUDE_IN_CODEX_DATA_DIR: data };
 });
-afterEach(async () => {
+afterEach(() => {
   vi.restoreAllMocks();
-  await rm(data, { recursive: true, force: true });
 });
 
 const lastResult = async () =>
