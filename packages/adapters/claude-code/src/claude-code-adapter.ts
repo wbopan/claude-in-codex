@@ -1,5 +1,6 @@
 import type { HarnessClientTools } from "@codexhost/harness-adapter";
 import { randomUUID } from "node:crypto";
+import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -80,6 +81,7 @@ import { claudeTranscriptItemId } from "./item-identity.js";
 import { readClaudeTranscript } from "./claude-transcript.js";
 import {
   CLAUDE_DEFAULT_MODEL_REF,
+  resolveClaudeConfigDirectory,
   decodeClaudeModelRef,
   normalizeClaudeModelCatalog,
 } from "./model-catalog.js";
@@ -2628,7 +2630,10 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly #pendingSessions: ClaudePendingSessions;
   readonly #toolOutputLimit: number;
   readonly #continuationQuiescenceMs: number;
-  readonly #inspectionCache = new Map<string, HarnessInspection>();
+  readonly #inspectionCache = new Map<
+    string,
+    { installation: string | undefined; inspection: HarnessInspection }
+  >();
   readonly #inspectionInFlight = new Map<string, Promise<HarnessInspection>>();
   readonly #inspectors = new Set<ClaudeModelInspector>();
   readonly #sessions = new Set<ClaudeHarnessSession>();
@@ -2659,10 +2664,16 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     this.#dependencies = dependencies ?? {
       randomUUID,
       inspectInstallation: () => {
-        resolveClaudeCodeExecutable({
-          ...(options.command ? { command: options.command } : {}),
-          environment: options.environment ?? process.env,
-        });
+        const executable = realpathSync(
+          resolveClaudeCodeExecutable({
+            ...(options.command ? { command: options.command } : {}),
+            environment,
+          }),
+        );
+        // An updated CLI or edited modelPicker settings must invalidate the cached catalog.
+        const settings = path.join(resolveClaudeConfigDirectory(environment), "settings.json");
+        const modified = (file: string) => statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+        return `${executable}\0${modified(executable)}\0${modified(settings)}`;
       },
       createInspector: (input) =>
         new ClaudeSdkModelInspector({
@@ -2716,14 +2727,22 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       };
     }
     const cwd = path.resolve(input.cwd ?? process.cwd());
+    let installation: string | undefined;
+    try {
+      installation = this.#dependencies.inspectInstallation();
+    } catch {
+      // A missing CLI is reported by the uncached inspection below.
+      this.#inspectionCache.delete(cwd);
+    }
     if (!input.refresh) {
       const cached = this.#inspectionCache.get(cwd);
-      if (cached) return cached;
+      if (cached && cached.installation === installation) return cached.inspection;
     }
     const current = this.#inspectionInFlight.get(cwd);
     if (current) return current;
     const inspection = this.#inspectModels(cwd).then((result) => {
-      if (result.status === "ready") this.#inspectionCache.set(cwd, result);
+      if (result.status === "ready")
+        this.#inspectionCache.set(cwd, { installation, inspection: result });
       return result;
     });
     this.#inspectionInFlight.set(cwd, inspection);

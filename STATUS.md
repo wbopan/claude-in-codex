@@ -6,7 +6,7 @@ Implemented in the independent `codex/menubar-hot-attach` worktree, based on `86
 The original checkout remains on `main`; concurrent edits there belong to other work.
 
 - Native macOS MenuBar app, vector icons, bundled Node/Host/plugins and local signing.
-- Version-checked, reversible in-memory attachment to normally started Desktop 26.915.31945.
+- Signature- and layout-checked, reversible in-memory attachment to normally started Desktop (verified on 26.915.31945 and 26.917.51856).
 - Existing model/permission/Plan/tool/history/memory/usage and remote implementations retained.
 - Attach/detach preserve real GPT turns. Background drain, cancel, history after reconnect,
   native CUA, usage rows, second-owner rejection and abnormal process cleanup verified.

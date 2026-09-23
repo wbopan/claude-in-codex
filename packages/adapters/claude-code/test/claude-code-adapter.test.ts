@@ -536,7 +536,6 @@ describe("Claude Code HarnessAdapter", () => {
       },
     });
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toEqual(first);
-    expect(dependencies.inspectInstallation).toHaveBeenCalledOnce();
     expect(dependencies.createInspector).toHaveBeenCalledOnce();
     expect(inspectors[0]?.close).toHaveBeenCalledOnce();
 
@@ -673,9 +672,21 @@ describe("Claude Code HarnessAdapter", () => {
     expect(close).toHaveBeenCalledTimes(4);
   });
 
+  it("re-inspects the Model catalog after Claude Code is updated", async () => {
+    const { adapter, dependencies, inspectInstallation } = fixture();
+    inspectInstallation.mockReturnValue("claude-2.1.279");
+    await adapter.inspect({ cwd: "/synthetic" });
+    await adapter.inspect({ cwd: "/synthetic" });
+    expect(dependencies.createInspector).toHaveBeenCalledOnce();
+
+    inspectInstallation.mockReturnValue("claude-2.1.280");
+    await adapter.inspect({ cwd: "/synthetic" });
+    expect(dependencies.createInspector).toHaveBeenCalledTimes(2);
+  });
+
   it("reports a missing installation without starting a Transport", async () => {
     const { adapter, dependencies, inspectInstallation } = fixture();
-    inspectInstallation.mockImplementationOnce(() => {
+    inspectInstallation.mockImplementation(() => {
       throw new ClaudeCodeExecutableError("Claude Code is not installed");
     });
 

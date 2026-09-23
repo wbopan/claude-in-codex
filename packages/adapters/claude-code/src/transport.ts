@@ -264,7 +264,8 @@ export interface ClaudeAdapterDependencies {
     sourceSessionId: string;
   }): Promise<{ sessionId: string }>;
   getSessionInfo(input: { sessionId: string }): Promise<{ cwd?: string } | undefined>;
-  inspectInstallation(): void;
+  /** Throws when Claude Code is missing; may return a fingerprint that changes when it is updated. */
+  inspectInstallation(): string | undefined;
   readSessionMessages(input: { cwd: string; sessionId: string }): Promise<unknown[]>;
   readSubagentMessages(input: {
     cwd: string;

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -8,7 +8,6 @@ import { CdpClient } from "@codexhost/desktop-control";
 import { installDesktopAgent, refreshDesktopQueries } from "./desktop-agent.js";
 import { HotAttachSession, type DesktopHello } from "./session.js";
 
-const SUPPORTED_ASAR = "1f7939c1c781887c167043c4d1d307af3400d324685cfc315dfe2f80e634f483";
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 async function within<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -121,35 +120,24 @@ export class HotAttachController {
         );
       const target = targets[0]!;
       this.#target = target;
-      const bytes = await readFile(path.join(this.options.appPath, "Contents/Resources/app.asar"));
-      if (createHash("sha256").update(bytes).digest("hex") !== SUPPORTED_ASAR)
-        throw new Error(
-          "Unsupported Desktop version. This Host supports 26.915.31945; update its compatibility adapter first.",
+      // Any genuinely signed Desktop is accepted; the injected agent verifies the connection
+      // layout at runtime and refuses to patch anything it does not recognize.
+      try {
+        execFileSync(
+          "/usr/bin/codesign",
+          [
+            "--verify",
+            "--deep",
+            "--strict",
+            "-R",
+            '=anchor apple generic and identifier "com.openai.codex" and certificate leaf[subject.OU] = "2DC432GLL2"',
+            this.options.appPath,
+          ],
+          { stdio: "ignore" },
         );
-      execFileSync(
-        "/usr/bin/codesign",
-        [
-          "--verify",
-          "--deep",
-          "--strict",
-          "-R",
-          '=anchor apple generic and identifier "com.openai.codex" and certificate leaf[subject.OU] = "2DC432GLL2"',
-          this.options.appPath,
-        ],
-        {
-          stdio: "ignore",
-        },
-      );
-      const version = execFileSync(
-        "/usr/libexec/PlistBuddy",
-        [
-          "-c",
-          "Print :CFBundleShortVersionString",
-          path.join(this.options.appPath, "Contents/Info.plist"),
-        ],
-        { encoding: "utf8" },
-      ).trim();
-      if (version !== "26.915.31945") throw new Error("Unsupported Desktop application version");
+      } catch {
+        throw new Error("Desktop is not the original OpenAI-signed App");
+      }
       const owners = inspectorOwners();
       if (owners.some((pid) => pid !== target.pid))
         throw new Error("Inspector port 9229 is in use by another process");

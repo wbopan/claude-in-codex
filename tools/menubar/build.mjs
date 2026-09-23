@@ -143,7 +143,6 @@ try {
         sourceDigest: digest,
         node: version,
         builtAt: new Date().toISOString(),
-        supportedDesktop: "26.915.31945",
         mode: "hot-attach",
       },
       null,
