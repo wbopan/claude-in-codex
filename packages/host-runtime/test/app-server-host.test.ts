@@ -4427,6 +4427,32 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("opens a side chat on a running source that has no completed Fork Checkpoint", async () => {
+    const fixture = createFixture();
+    const sourceThreadId = await startPiThread(fixture);
+    const activeTurnId = await startPiTurn(fixture, sourceThreadId, 2);
+    await fixture.collector.waitFor((message) => turnEvent(message, "turn/started", activeTurnId));
+
+    writeRequest(fixture.desktopInput, {
+      id: 10,
+      method: "thread/fork",
+      params: { threadId: sourceThreadId, ephemeral: true, excludeTurns: true },
+    });
+    const forkResponse = await fixture.collector.waitFor((message) => requestId(message, 10));
+    expect(forkResponse).toMatchObject({ result: { thread: { ephemeral: true, turns: [] } } });
+    const derivedId = ((forkResponse.result as JsonObject).thread as JsonObject).id;
+    expect(derivedId).not.toBe(sourceThreadId);
+    expect(fixture.adapter.sessions).toHaveLength(2);
+
+    const sourceSession = fixture.adapter.sessions[0];
+    if (!sourceSession) throw new Error("Fake source Session was not opened");
+    sourceSession.succeedTurn();
+    await fixture.collector.waitFor((message) =>
+      turnEvent(message, "turn/completed", activeTurnId),
+    );
+    await stopFixture(fixture);
+  });
+
   it("acknowledges Desktop unsubscribe without inventing an external subscription", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();

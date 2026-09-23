@@ -84,14 +84,25 @@ export async function executeExternalThreadFork(input: {
   }
 
   const mappings = source.record.turnMappings;
+  // The Desktop opens a side chat as an ephemeral fork of the latest history and sends the
+  // parent context separately with `thread/inject_items`.
+  const sideChat =
+    fork.ephemeral === true && fork.excludeTurns && !fork.lastTurnId && !fork.beforeTurnId;
   let boundaryIndex: number;
   if (fork.lastTurnId) {
     boundaryIndex = mappings.findIndex(({ hostTurnId }) => hostTurnId === fork.lastTurnId);
   } else if (fork.beforeTurnId) {
     const beforeIndex = mappings.findIndex(({ hostTurnId }) => hostTurnId === fork.beforeTurnId);
     boundaryIndex = beforeIndex < 0 ? -2 : beforeIndex - 1;
+  } else if (sideChat) {
+    boundaryIndex = mappings.findLastIndex(({ nativeCheckpointRef }) => !!nativeCheckpointRef);
   } else {
     boundaryIndex = mappings.length - 1;
+  }
+  // A side chat opened during the source's first Turn has no Checkpoint yet. It starts from
+  // an empty Session; the injected parent context still reaches it.
+  if (sideChat && boundaryIndex < 0) {
+    return openEmptySideChat({ ...input, targetCwd });
   }
   const boundary = mappings[boundaryIndex];
   if (boundaryIndex < 0 || !boundary?.nativeCheckpointRef) {
@@ -191,6 +202,87 @@ export async function executeExternalThreadFork(input: {
       thread,
       responseThread: fork.excludeTurns ? { ...thread, turns: [] } : thread,
     };
+  } catch {
+    runtime.remove(provisional.hostThreadId);
+    await session.close().catch(() => undefined);
+    await repository.removeProvisional(provisional.hostThreadId).catch(() => undefined);
+    return {
+      ok: false,
+      error: { code: -32081, message: "External Fork could not be persisted" },
+    };
+  }
+}
+
+async function openEmptySideChat(input: {
+  source: ExternalThread;
+  fork: DecodedThreadForkRequest;
+  adapters: Map<ExternalHarnessId, HarnessAdapter>;
+  repository: ExternalThreadRepository;
+  runtime: ExternalThreadRuntime;
+  environment?: NodeJS.ProcessEnv;
+  targetCwd: string;
+}): Promise<ExternalThreadForkResult> {
+  const { source, fork, adapters, repository, runtime, targetCwd } = input;
+  const adapter = adapters.get(source.harnessId);
+  if (!adapter) {
+    return {
+      ok: false,
+      error: { code: -32077, message: "External Harness is unavailable" },
+    };
+  }
+
+  let provisional;
+  try {
+    provisional = await repository.createProvisional(
+      createExternalThreadRecordInput({
+        harnessId: source.record.harnessId,
+        cwd: targetCwd,
+        transportModelId: source.transportModelId,
+        ephemeral: fork.ephemeral ?? source.record.ephemeral,
+        historyMode: source.record.historyMode,
+      }),
+    );
+  } catch {
+    return {
+      ok: false,
+      error: { code: -32081, message: "External Fork could not be persisted" },
+    };
+  }
+
+  let opened: Awaited<ReturnType<HarnessAdapter["open"]>>;
+  try {
+    opened = await adapter.open({
+      clientTools: runtime.clientTools(provisional.hostThreadId, provisional.cwd),
+      kind: "create",
+      cwd: targetCwd,
+      environment: {
+        ...(input.environment ?? process.env),
+      },
+    });
+  } catch {
+    await repository.removeProvisional(provisional.hostThreadId).catch(() => undefined);
+    return { ok: false, error: { code: -32076, message: "External Thread fork failed" } };
+  }
+  if (!opened.ok) {
+    await repository.removeProvisional(provisional.hostThreadId).catch(() => undefined);
+    return { ok: false, error: mapExternalThreadHarnessError(opened.error, "fork") };
+  }
+
+  const session = opened.value;
+  try {
+    const nativeRef = session.initialState.nativeRef;
+    const record = nativeRef
+      ? await repository.commitNative(provisional.hostThreadId, nativeRef as NativeSessionRef)
+      : provisional;
+    const thread = externalThreadValue({ record, turns: [], sessionId: source.sessionId });
+    const derived = runtime.register({
+      record,
+      session,
+      sessionId: source.sessionId,
+      thread,
+      turns: [],
+    });
+    return { ok: true, derived, thread, responseThread: thread };
   } catch {
     runtime.remove(provisional.hostThreadId);
     await session.close().catch(() => undefined);
