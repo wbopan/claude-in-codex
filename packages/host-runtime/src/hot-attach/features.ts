@@ -19,7 +19,11 @@ import type { DesktopToolServerStatus } from "../official-desktop-tools.js";
 import type { HotAttachSession } from "./session.js";
 
 export interface FeatureReport extends FeatureState {
-  /** A short sentence for the Dashboard when an enabled feature is not working. */
+  /**
+   * A short English sentence for the Dashboard when an enabled feature is not working. The App
+   * translates it by this exact text, so a new or reworded one also goes into
+   * apps/macos/localization/zh-Hans.lproj/Localizable.strings.
+   */
   problem: string | null;
   /** Idle release only: the minutes idle before release, kept while the switch is off. */
   timeoutMinutes?: number;
@@ -85,31 +89,33 @@ async function memorySummaryProblem(codexHome: string): Promise<string | null> {
   try {
     const metadata = await stat(file);
     if (metadata.size > MEMORY_SUMMARY_MAX_BYTES)
-      return "Codex 的记忆摘要超过 64 KB，只会注入前 64 KB";
-    if ((await readFile(file, "utf8")).trim().length === 0) return "Codex 的记忆摘要是空的";
+      return "Codex's memory summary exceeds 64 KB, so only the first 64 KB is added";
+    if ((await readFile(file, "utf8")).trim().length === 0)
+      return "Codex's memory summary is empty";
     return null;
   } catch (error) {
     return (error as { code?: string }).code === "ENOENT"
-      ? "Codex 还没有生成记忆摘要"
-      : "无法读取 Codex 的记忆摘要";
+      ? "Codex has not written a memory summary yet"
+      : "Codex's memory summary could not be read";
   }
 }
 
 function codexAppToolsProblem(servers: Servers): string | null {
   const server = servers.get("codex_app");
-  if (server?.error) return "Codex App 工具加载失败，查看诊断日志了解原因";
-  return server?.tools?.length ? null : "Codex App 没有提供这组工具";
+  if (server?.error) return "Codex App tools failed to load. The diagnostic log says why";
+  return server?.tools?.length ? null : "The Codex App does not provide these tools";
 }
 
 function computerUseProblem(servers: Servers | null, plugin: boolean | null): string | null {
   const server = servers?.get("cua_repl");
-  if (!server && plugin === false) return "Codex 里没有启用 Computer Use 插件";
+  if (!server && plugin === false) return "The Computer Use plugin is not enabled in Codex";
   if (!servers) return null;
-  if (!server) return "Codex 没有加载 Computer Use 插件，重启 Codex App 后再试";
-  if (server.error) return "Computer Use 工具加载失败，查看诊断日志了解原因";
+  if (!server)
+    return "Codex has not loaded the Computer Use plugin. Restart the Codex App and try again";
+  if (server.error) return "Computer Use tools failed to load. The diagnostic log says why";
   return COMPUTER_USE_TOOLS.every((tool) => server.tools?.includes(tool))
     ? null
-    : "Computer Use 插件没有提供 js 工具";
+    : "The Computer Use plugin does not provide the js tool";
 }
 
 /**
@@ -166,7 +172,7 @@ export class FeatureHealth {
       codexMemory: () => memorySummaryProblem(codexHome),
       claudeMemorySync: async () =>
         (await readMemorySyncResult(environment))?.error
-          ? "上次同步失败，查看诊断日志了解原因"
+          ? "The last sync failed. The diagnostic log says why"
           : null,
       idleRelease: async () => null,
     };

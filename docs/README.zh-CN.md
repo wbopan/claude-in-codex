@@ -6,6 +6,8 @@
 
 本文是英文 README 的中文版本，内容以英文版为准。
 
+App 界面跟随 macOS 语言：默认英文；在“系统设置 › 通用 › 语言与地区”中把中文排在英文前面时显示简体中文。要单独指定 App 的语言，在同一页面的“应用程序”里添加。
+
 ## 安装
 
 1. 从 [最新 Release](https://github.com/wbopan/claude-in-codex/releases/latest) 下载 `Claude-in-Codex-<版本>-arm64.dmg`。
