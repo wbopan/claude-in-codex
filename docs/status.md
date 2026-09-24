@@ -65,7 +65,7 @@ The original checkout remains on `main`; concurrent edits there belong to other 
   native CUA, usage rows, second-owner rejection and abnormal process cleanup verified.
 - TypeScript: 1205 passed, 7 skipped. Rust: 171 passed. Stable Desktop was never restarted.
 
-See [migration design and acceptance](docs/menubar-migration.md) and [usage](README.md).
+See [migration design and acceptance](menubar-migration.md) and [usage](../README.md).
 The earlier launcher goal and its historical evidence follow below.
 
 Goal (owner: Wenbo, set 2026-09-21): a slim repo that runs Claude Code inside the official Codex

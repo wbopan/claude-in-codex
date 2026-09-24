@@ -29,12 +29,12 @@ function run(command, args, options = {}) {
   return execFileSync(command, args, { encoding: "utf8", ...options });
 }
 
-/// The notes under "## <version>" in CHANGELOG.md, as Markdown.
+/// The notes under "## <version>" in docs/CHANGELOG.md, as Markdown.
 export async function releaseNotes(version) {
-  const changelog = await readFile(path.join(root, "CHANGELOG.md"), "utf8");
+  const changelog = await readFile(path.join(root, "docs", "CHANGELOG.md"), "utf8");
   const sections = changelog.split(/^## /m).slice(1);
   const section = sections.find((text) => text.split("\n", 1)[0].trim().split(/\s/)[0] === version);
-  if (!section) throw new Error(`CHANGELOG.md has no "## ${version}" section`);
+  if (!section) throw new Error(`docs/CHANGELOG.md has no "## ${version}" section`);
   return section.slice(section.indexOf("\n") + 1).trim();
 }
 

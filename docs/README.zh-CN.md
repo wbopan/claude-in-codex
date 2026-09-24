@@ -1,6 +1,6 @@
 # Claude in Codex
 
-[English](README.md) | 简体中文
+[English](../README.md) | 简体中文
 
 在正常启动的 Codex App（`/Applications/ChatGPT.app`）中使用本机的 Claude Code。Claude in Codex 是一个 macOS 菜单栏 App：接入后，Codex App 的原生模型选择器会增加本机 Claude 模型，Claude Code Session 和 GPT 任务在同一个窗口里并行运行。
 
@@ -109,7 +109,7 @@ open '/Applications/Claude in Codex.app'
 
 仓库内的开发产物（构建、工具链、验收记录）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
 
-开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](docs/menubar-migration.md)（英文）。`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定测试副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_FEATURES=1`、`CLAUDE_IN_CODEX_SHOW_SETTINGS=1` 在启动时打开主窗口的功能或设置页，`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 打开关于窗口。普通使用不需要这些环境变量。
+开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](menubar-migration.md)（英文）。`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定测试副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_FEATURES=1`、`CLAUDE_IN_CODEX_SHOW_SETTINGS=1` 在启动时打开主窗口的功能或设置页，`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 打开关于窗口。普通使用不需要这些环境变量。
 
 已有 Claude in Codex 在运行时，同一 bundle identifier 的新构建会直接交给它并退出。要和正在使用的 Host 并排测试界面，构建一个独立标识的副本，并关闭自动接入：
 
@@ -125,12 +125,12 @@ open --env CLAUDE_IN_CODEX_AUTO_ATTACH=0 --env CLAUDE_IN_CODEX_DATA_DIR="$PWD/.d
 发布版作为本仓库的 GitHub Release 发布，App 从最新 Release 的 `appcast.xml` 得知新版本。发布一个版本：
 
 ```sh
-# 1. 修改 package.json 的 version，在 CHANGELOG.md 加一节同名说明，提交
+# 1. 修改 package.json 的 version，在 docs/CHANGELOG.md 加一节同名说明，提交
 # 2. 推送同名 tag，GitHub Actions 构建、公证并发布
 git tag v0.2.2 && git push origin v0.2.2
 ```
 
-也可以在本机执行 `npm run release:app -- --publish`。凭据、密钥备份和出错时的处理见 [发布手册](docs/release.md)（英文）。
+也可以在本机执行 `npm run release:app -- --publish`。凭据、密钥备份和出错时的处理见 [发布手册](release.md)（英文）。
 
 ## 开发验证
 
@@ -159,6 +159,6 @@ npm run test:coverage    # v8 覆盖率报告，输出到 coverage/
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。App 附带的第三方组件许可证见 `Claude in Codex.app/Contents/Resources/THIRD_PARTY_NOTICES.txt`。
+MIT，见 [LICENSE](../LICENSE)。App 附带的第三方组件许可证见 `Claude in Codex.app/Contents/Resources/THIRD_PARTY_NOTICES.txt`。
 
 Claude in Codex 是独立项目，与 Anthropic、OpenAI 没有关联。Claude、Claude Code 是 Anthropic 的商标，Codex、ChatGPT 是 OpenAI 的商标。

@@ -1,5 +1,5 @@
 # Fast checks on staged files only; the full suite runs in CI and `npm run check`.
-# Personal overrides go in lefthook-local.yml (ignored). Skip once with LEFTHOOK=0.
+# Personal overrides go in .lefthook-local.yml (ignored). Skip once with LEFTHOOK=0.
 output:
   - failure
 

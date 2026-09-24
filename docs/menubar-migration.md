@@ -57,7 +57,7 @@ Local reports, logs and screenshots are generated under `.dev/` and excluded fro
 Recorded checks (2026-09-22, Desktop 26.915.31945):
 
 - TypeScript: 1205 passed, 7 skipped; 107 files passed, 3 skipped.
-- Rust: 171 passed across launcher/platform/shim unit and integration suites. (The launcher crate and the local launcher flow were removed on 2026-09-23; the workspace is now `platform` and `shim` only, see [STATUS](../STATUS.md).)
+- Rust: 171 passed across launcher/platform/shim unit and integration suites. (The launcher crate and the local launcher flow were removed on 2026-09-23; the workspace is now `platform` and `shim` only, see [STATUS](status.md).)
 - Real native GPT turns completed across both attach and detach; Desktop and signed backend PIDs stayed unchanged.
 - Local model list contained 5 native GPT models and 5 Claude choices.
 - Background drain was canceled and resumed, rejected new external work, then waited about 40 seconds for a native Claude shell task. History remained readable after reconnecting.

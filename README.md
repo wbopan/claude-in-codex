@@ -1,6 +1,6 @@
 # Claude in Codex
 
-English | [简体中文](README.zh-CN.md)
+English | [简体中文](docs/README.zh-CN.md)
 
 Use your local Claude Code inside the normally launched Codex App (`/Applications/ChatGPT.app`). Claude in Codex is a macOS menu bar app: once it attaches, the Codex App's native model picker gains the local Claude models, and Claude Code Sessions run next to GPT tasks in the same window.
 
@@ -125,7 +125,7 @@ The test copy has its own preferences and login item.
 Releases are published as GitHub Releases of this repository, and the App learns about a new version from the latest release's `appcast.xml`. To release a version:
 
 ```sh
-# 1. Bump "version" in package.json, add a matching section to CHANGELOG.md, and commit.
+# 1. Bump "version" in package.json, add a matching section to docs/CHANGELOG.md, and commit.
 # 2. Push a matching tag. GitHub Actions builds, notarizes and publishes it.
 git tag v0.2.2 && git push origin v0.2.2
 ```

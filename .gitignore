@@ -21,6 +21,7 @@ coverage/
 
 # Per-machine settings.
 .claude/settings.local.json
+.lefthook-local.yml
 lefthook-local.yml
 
 *.log

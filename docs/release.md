@@ -6,7 +6,7 @@ Claude in Codex is released as a notarized zip on this repository's [GitHub Rele
 
 `tools/app/release.mjs` (`npm run release:app`) does the following in order:
 
-1. Checks that the working tree is clean, and reads the version from `package.json` and the matching section of `CHANGELOG.md`.
+1. Checks that the working tree is clean, and reads the version from `package.json` and the matching section of `docs/CHANGELOG.md`.
 2. Builds the App with `--release`. This requires a Developer ID Application certificate, turns on automatic update checks and bundles the Node.js license.
 3. Submits the App for Apple notarization, waits for the result, staples the ticket into the App and runs a Gatekeeper assessment.
 4. Zips it as `build/app-release/<version>/Claude-in-Codex-<version>-arm64.zip`, signs the zip with the Sparkle EdDSA key and writes an `appcast.xml` holding only this version.
@@ -16,7 +16,7 @@ The feed URL is `https://github.com/wbopan/claude-in-codex/releases/latest/downl
 
 ## Releasing a version
 
-1. Bump `version` in the root `package.json` (and the two matching lines at the top of `package-lock.json`), and add a `## <version>` section to `CHANGELOG.md`. That section is shown in the App's update prompt and on the release page.
+1. Bump `version` in the root `package.json` (and the two matching lines at the top of `package-lock.json`), and add a `## <version>` section to `docs/CHANGELOG.md`. That section is shown in the App's update prompt and on the release page.
 2. Commit and push to `main`.
 3. Push the tag: `git tag v<version> && git push origin v<version>`. `.github/workflows/release.yml` builds, notarizes and publishes on a macOS 26 runner in about ten minutes, using the workflow's own `GITHUB_TOKEN` to create the release.
 
