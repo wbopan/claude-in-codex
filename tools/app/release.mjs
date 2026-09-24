@@ -12,6 +12,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { buildDiskImage } from "./dmg.mjs";
+import { signingIdentity } from "./signing.mjs";
 
 import {
   ensureSparkle,
@@ -91,9 +93,11 @@ function notaryArguments() {
   return ["--keychain-profile", process.env.NOTARY_KEYCHAIN_PROFILE ?? "claude-in-codex-notary"];
 }
 
-async function notarize(app, scratch) {
-  const upload = path.join(scratch, "notarize.zip");
-  run("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", app, upload]);
+export async function notarize(target, scratch) {
+  const isDiskImage = target.endsWith(".dmg");
+  const upload = isDiskImage ? target : path.join(scratch, "notarize.zip");
+  if (!isDiskImage)
+    run("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", target, upload]);
   console.log("Submitting to Apple's notary service…");
   const submitted = spawnSync(
     "/usr/bin/xcrun",
@@ -116,9 +120,12 @@ async function notarize(app, scratch) {
     );
   }
   console.log(`Notarized (${result.id})`);
-  run("/usr/bin/xcrun", ["stapler", "staple", app], { stdio: "inherit" });
-  run("/usr/bin/xcrun", ["stapler", "validate", app], { stdio: "inherit" });
-  run("/usr/sbin/spctl", ["--assess", "--type", "execute", "--verbose=2", app], {
+  run("/usr/bin/xcrun", ["stapler", "staple", target], { stdio: "inherit" });
+  run("/usr/bin/xcrun", ["stapler", "validate", target], { stdio: "inherit" });
+  const assessment = isDiskImage
+    ? ["--type", "open", "--context", "context:primary-signature"]
+    : ["--type", "execute"];
+  run("/usr/sbin/spctl", ["--assess", ...assessment, "--verbose=2", target], {
     stdio: "inherit",
   });
 }
@@ -152,21 +159,38 @@ async function github(method, url, body, headers = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-/// Creates the release as a draft, attaches the archive and appcast, then publishes it as the
+export function assetContentType(file) {
+  switch (path.extname(file)) {
+    case ".dmg":
+      return "application/x-apple-diskimage";
+    case ".zip":
+      return "application/zip";
+    case ".xml":
+      return "application/xml";
+    default:
+      throw new Error(`Unknown release asset type: ${file}`);
+  }
+}
+
+export function installationNotes(diskImage) {
+  return `Download \`${path.basename(diskImage)}\`, open it and drag ${appName}.app into Applications. Eject the disk image, then open the App from Applications. If replacing an installed copy, quit it from its menu first and wait for its tasks to finish. Installed copies receive this update automatically; the ZIP is used by the updater.`;
+}
+
+/// Creates the release as a draft, attaches the DMG, archive and appcast, then publishes it as the
 /// latest release, so the appcast the App reads never points at a missing archive.
-async function publish({ version, notes, files }) {
+async function publish({ version, notes, diskImage, files }) {
   const tag = `v${version}`;
   if (await github("GET", `/repos/${repository}/releases/tags/${tag}`))
     throw new Error(`${repository} already has a release ${tag}`);
   const release = await github("POST", `/repos/${repository}/releases`, {
     tag_name: tag,
     name: `${appName} ${version}`,
-    body: `${notes}\n\n---\n\nDownload \`${path.basename(files[0])}\`, unzip it and drag ${appName}.app into the Applications folder. Installed copies receive this update automatically.`,
+    body: `${notes}\n\n---\n\n${installationNotes(diskImage)}`,
     draft: true,
   });
   for (const file of files) {
     const name = path.basename(file);
-    const type = name.endsWith(".xml") ? "application/xml" : "application/zip";
+    const type = assetContentType(file);
     await github(
       "POST",
       release.upload_url.replace(/\{.*\}$/, `?name=${encodeURIComponent(name)}`),
@@ -200,9 +224,15 @@ export async function main(argv) {
     stdio: "inherit",
   });
   const app = path.join(root, `.dev/app/${appName}.app`);
+  const diskImage = path.join(output, `Claude-in-Codex-${version}-${arch}.dmg`);
   const scratch = await mkdtemp(path.join(os.tmpdir(), "claude-in-codex-release-"));
   try {
     await notarize(app, scratch);
+    const identity = signingIdentity();
+    if (!identity?.name.startsWith("Developer ID Application:"))
+      throw new Error("Release disk images need a Developer ID Application identity");
+    await buildDiskImage({ app, output: diskImage, signingIdentity: identity.hash });
+    await notarize(diskImage, scratch);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -222,8 +252,9 @@ export async function main(argv) {
       notes,
     }),
   );
-  console.log(`${archive}\n${feed}`);
-  if (shouldPublish) await publish({ version, notes, files: [archive, feed] });
+  console.log(`${diskImage}\n${archive}\n${feed}`);
+  if (shouldPublish)
+    await publish({ version, notes, diskImage, files: [diskImage, archive, feed] });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)

@@ -41,6 +41,7 @@
     "test:rust": "bash tools/toolchain/with-toolchain.sh cargo test --workspace --features claude-in-codex-shim/test-utils",
     "app:build": "npm run build:typescript && node tools/app/build.mjs",
     "app:install": "npm run app:build && node tools/app/install.mjs",
+    "app:dmg": "npm run app:build && node tools/app/dmg.mjs",
     "release:app": "npm run build:typescript && node tools/app/release.mjs",
     "release:npm": "node scripts/release/prepare-npm.mjs",
     "release:npm:meta": "node scripts/release/prepare-npm-meta.mjs",

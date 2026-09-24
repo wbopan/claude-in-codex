@@ -1,5 +1,5 @@
 // Where released builds of the App live and how the App finds and trusts its updates.
-// Every release on the repository carries the notarized zip and a signed appcast, and the App
+// Every release carries a notarized DMG for installation, a ZIP and a signed appcast, and the App
 // reads the appcast of the latest release.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";

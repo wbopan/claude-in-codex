@@ -76,7 +76,7 @@ jobs:
         run: |
           echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
           chmod 600 "$RUNNER_TEMP/notary.p8"
-      - name: Build, notarize and publish
+      - name: Build, notarize and publish DMG and ZIP
         if: steps.existing.outputs.published != 'true'
         env:
           NOTARY_KEY_PATH: ${{ runner.temp }}/notary.p8

@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import { feedUrl, releaseVersion, repository } from "./distribution.mjs";
-import { appcast, releaseNotes } from "./release.mjs";
+import { appcast, assetContentType, installationNotes, releaseNotes } from "./release.mjs";
 
 const root = new URL("../..", import.meta.url).pathname;
 
 describe("App release", () => {
+  it("uploads disk images, updates and feeds with their own content types", () => {
+    expect(assetContentType("/output/installer.dmg")).toBe("application/x-apple-diskimage");
+    expect(assetContentType("/output/update.zip")).toBe("application/zip");
+    expect(assetContentType("/output/appcast.xml")).toBe("application/xml");
+    expect(() => assetContentType("/output/unknown.txt")).toThrow("Unknown release asset type");
+  });
+
+  it("directs manual installation to the DMG and leaves ZIPs for updates", () => {
+    const notes = installationNotes("/output/Claude-in-Codex-1.2.3-arm64.dmg");
+    expect(notes).toContain("`Claude-in-Codex-1.2.3-arm64.dmg`");
+    expect(notes).toContain("drag Claude in Codex.app into Applications");
+    expect(notes).toContain("quit it from its menu first");
+    expect(notes).toContain("ZIP is used by the updater");
+  });
+
   it("reads the release version from package.json", async () => {
     expect(await releaseVersion(root)).toMatch(/^\d+\.\d+\.\d+$/);
   });

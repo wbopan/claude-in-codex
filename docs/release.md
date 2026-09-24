@@ -1,6 +1,6 @@
 # Release runbook
 
-Claude in Codex is released as a notarized zip on this repository's [GitHub Releases](https://github.com/wbopan/claude-in-codex/releases). Installed copies use [Sparkle](https://sparkle-project.org) to read `appcast.xml` from the latest release, and when they find a new version they download it, verify its signature and install it.
+Claude in Codex is released as a signed, notarized DMG for installation and a notarized ZIP for automatic updates on this repository's [GitHub Releases](https://github.com/wbopan/claude-in-codex/releases). Installed copies use [Sparkle](https://sparkle-project.org) to read `appcast.xml` from the latest release, and when they find a new version they download it, verify its signature and install it.
 
 ## How a release is made
 
@@ -9,8 +9,11 @@ Claude in Codex is released as a notarized zip on this repository's [GitHub Rele
 1. Checks that the working tree is clean, and reads the version from `package.json` and the matching section of `docs/CHANGELOG.md`.
 2. Builds the App with `--release`. This requires a Developer ID Application certificate, turns on automatic update checks and bundles the Node.js license.
 3. Submits the App for Apple notarization, waits for the result, staples the ticket into the App and runs a Gatekeeper assessment.
-4. Zips it as `build/app-release/<version>/Claude-in-Codex-<version>-arm64.zip`, signs the zip with the Sparkle EdDSA key and writes an `appcast.xml` holding only this version.
-5. With `--publish`, creates a draft release, uploads the zip and the appcast, then publishes the release and marks it as the latest. The App cannot see a draft, so the appcast never points at a missing file.
+4. Creates `Claude-in-Codex-<version>-<arch>.dmg` containing the stapled App, an Applications shortcut and a Retina background with installation instructions. It signs the DMG with the same Developer ID identity, submits it for notarization, staples its ticket and assesses it with Gatekeeper. The image is built without Finder automation: a Swift helper draws the background and writes the fixed window layout using the pinned DSStore package. DMG builds require Swift 6.2 or newer; SwiftPM fetches the build-only dependency on the first run.
+5. Zips the stapled App as `build/app-release/<version>/Claude-in-Codex-<version>-arm64.zip`, signs the zip with the Sparkle EdDSA key and writes an `appcast.xml` holding only this version.
+6. With `--publish`, creates a draft release, uploads the DMG, ZIP and appcast, then publishes the release and marks it as the latest. The App cannot see a draft, so the appcast never points at a missing file.
+
+The App and DMG each receive a stapled ticket before distribution, following Apple's [notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow). Sparkle continues to use the ZIP. Local `npm run app:dmg` builds skip notarization and write to `build/app-dmg/`; `node tools/app/dmg.mjs` packages an existing `.dev/app/Claude in Codex.app`.
 
 The feed URL is `https://github.com/wbopan/claude-in-codex/releases/latest/download/appcast.xml`, defined in `tools/app/distribution.mjs`.
 

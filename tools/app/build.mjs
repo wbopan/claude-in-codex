@@ -18,6 +18,7 @@ import { readFile } from "node:fs/promises";
 import { buildReleaseHostBundle } from "../../packages/host-runtime/scripts/build-release.mjs";
 import { buildPreinstalledHarnessPlugins } from "../../scripts/release/harness-plugins.mjs";
 import { writeThirdPartyNotices } from "../../scripts/release/prepare-npm.mjs";
+import { signingIdentity } from "./signing.mjs";
 import {
   ensureSparkle,
   feedUrl,
@@ -77,26 +78,6 @@ async function sourceDigest() {
     hash.update("\0");
   }
   return hash.digest("hex");
-}
-// The first Developer ID Application identity, else the first Apple Development one.
-// CLAUDE_IN_CODEX_SIGNING_IDENTITY picks another by name or SHA-1 when several teams are present.
-function signingIdentity() {
-  const identities = [
-    ...execFileSync("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"], {
-      encoding: "utf8",
-    }).matchAll(/^\s*\d+\) ([0-9A-F]{40}) "([^"]+)"$/gm),
-  ].map(([, hash, name]) => ({ hash, name }));
-  const wanted = process.env.CLAUDE_IN_CODEX_SIGNING_IDENTITY;
-  if (wanted) {
-    const chosen = identities.find(({ hash, name }) => hash === wanted || name === wanted);
-    if (!chosen) throw new Error(`No valid code signing identity matches ${wanted}`);
-    return chosen;
-  }
-  return (
-    identities.find(({ name }) => name.startsWith("Developer ID Application:")) ??
-    identities.find(({ name }) => name.startsWith("Apple Development:")) ??
-    null
-  );
 }
 const revision = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 const digest = await sourceDigest();

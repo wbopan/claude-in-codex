@@ -8,9 +8,11 @@ The App's interface is currently in Chinese. English support is planned; this RE
 
 ## Install
 
-1. Download `Claude-in-Codex-<version>-arm64.zip` from the [latest release](https://github.com/wbopan/claude-in-codex/releases/latest).
-2. Unzip it and drag **Claude in Codex.app** into the Applications folder.
-3. Open the Codex App first, then Claude in Codex.
+1. Download `Claude-in-Codex-<version>-arm64.dmg` from the [latest release](https://github.com/wbopan/claude-in-codex/releases/latest).
+2. Open the DMG and drag **Claude in Codex.app** onto **Applications**. If replacing an installed copy, quit it from its menu first and wait for its tasks to finish.
+3. Eject the disk image. Open the Codex App first, then Claude in Codex from Applications.
+
+Older releases that only offer a ZIP can still be installed by unzipping and dragging the App into Applications.
 
 The App is signed with a Developer ID and notarized by Apple, so it opens without warnings. It needs an Apple silicon Mac, macOS 14 or later, the official Codex App, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and signed in. To build it yourself, see [Build](#build).
 
@@ -89,7 +91,7 @@ When upgrading from Codex Host, the first attach moves the data in `~/.codexhost
 
 Hot attach changes only the running Codex App's local stdio connection. Cloud GPT, ChatGPT Work and SSH hosts are still connected and filtered by the Codex App, and local Claude models are not added to the cloud model list. Existing SSH Remote Hosts, the Aqua broker and `claude-in-codex remote install|start|stop|status|uninstall` keep their own management, and the menu bar App never reinstalls or restarts remote services.
 
-The Remote Host ships only as the npm package `@claude-in-codex/cli`. On the SSH target, run `npm install -g @claude-in-codex/cli` and then `claude-in-codex remote install`. The package contains only the Host Runtime (`app/host-runtime.mjs`, run by the current Node.js), the preinstalled Harness plugins and the Rust Shim (`libexec/claude-in-codex-shim`). Installing copies the Shim to `<data folder>/remote/bin/codex` (`~/Library/Application Support/Claude in Codex` on macOS, `$XDG_DATA_HOME/claude-in-codex` on Linux, by default `~/.local/share/claude-in-codex`) and adds a block to the login profile that applies only to SSH sessions. Reinstalling takes over the pre-rename `~/.codexhost/remote`: it migrates the data there, removes the old entry points and replaces the old profile block. On macOS the old `ai.bytepioneer.codexhost.*` LaunchAgents are removed as well. The Shim hands only the Codex Desktop managed `app-server --listen unix://` listener to the Host Runtime and passes every other call, including stdio `app-server`, to the official Codex CLI unchanged. On macOS the Aqua broker is installed and managed by the Shim's hidden `--claude-in-codex-broker` command, which `remote install|status|uninstall` calls automatically. It can also be managed on its own with `claude-in-codex broker install|status|stop|uninstall`. The old launcher, the DMG installer and the local stdio Host have been removed.
+The Remote Host ships only as the npm package `@claude-in-codex/cli`. On the SSH target, run `npm install -g @claude-in-codex/cli` and then `claude-in-codex remote install`. The package contains only the Host Runtime (`app/host-runtime.mjs`, run by the current Node.js), the preinstalled Harness plugins and the Rust Shim (`libexec/claude-in-codex-shim`). Installing copies the Shim to `<data folder>/remote/bin/codex` (`~/Library/Application Support/Claude in Codex` on macOS, `$XDG_DATA_HOME/claude-in-codex` on Linux, by default `~/.local/share/claude-in-codex`) and adds a block to the login profile that applies only to SSH sessions. Reinstalling takes over the pre-rename `~/.codexhost/remote`: it migrates the data there, removes the old entry points and replaces the old profile block. On macOS the old `ai.bytepioneer.codexhost.*` LaunchAgents are removed as well. The Shim hands only the Codex Desktop managed `app-server --listen unix://` listener to the Host Runtime and passes every other call, including stdio `app-server`, to the official Codex CLI unchanged. On macOS the Aqua broker is installed and managed by the Shim's hidden `--claude-in-codex-broker` command, which `remote install|status|uninstall` calls automatically. It can also be managed on its own with `claude-in-codex broker install|status|stop|uninstall`. The old launcher, its DMG installer and the local stdio Host have been removed.
 
 To check the npm packages locally, `npm run release:npm -- --pack` builds the package for the current platform and `npm run release:npm:meta -- --version <version> --pack` builds the entry package, both into `build/npm/`.
 
@@ -104,6 +106,8 @@ open '/Applications/Claude in Codex.app'
 ```
 
 `npm run app:install` builds into `.dev/app/Claude in Codex.app` and then replaces the App in `/Applications`. A running App is never overwritten: quit it from the menu first, waiting for its tasks, then install. `npm run app:build` builds without installing.
+
+DMG packaging requires Swift 6.2 or newer. `npm run app:dmg` builds a development DMG in `build/app-dmg/`. To package an existing build, run `node tools/app/dmg.mjs`. These local images are not notarized. `npm run release:app` produces a signed, notarized DMG for installation and keeps the ZIP for Sparkle updates; see the [release runbook](docs/release.md).
 
 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` picks the Node 22 or 24 to bundle. The build produces the App icon (Xcode's `actool` compiles `apps/macos/icon/Claude.icon`, and without Xcode an icns is made from the pre-rendered PNG), embeds the Sparkle update framework (downloaded once into `.dev/toolchains` at a pinned version and checksum), then signs with the Developer ID certificate in the keychain and verifies the signature. Without a certificate it falls back to ad hoc signing. The version comes from the root `package.json`. Development builds never check for updates on their own, only on request.
 
