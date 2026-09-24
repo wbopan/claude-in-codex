@@ -1,80 +1,80 @@
-# Codex Desktop 热接入研究
+# Codex Desktop Hot-Attach Research
 
-2026-09-22，本机 macOS，Desktop `26.915.31945`。
+2026-09-22, this Mac (macOS), Desktop `26.915.31945`.
 
-结论：当前安装版本支持启动后的主进程接入。已实测一个可撤销的模型列表 hook，
-包括原生菜单更新、正常撤销、控制端断开后的自动撤销，以及原有 GPT 任务连续运行。
-可以据此设计菜单栏开关。完整 Claude 路由还没有接入这个原型。
+Conclusion: the currently installed version supports attaching to the main process after launch. A revocable model list hook has been tested in practice,
+including native menu updates, normal revocation, automatic revocation after the controller disconnects, and uninterrupted running of an existing GPT task.
+A menu bar toggle can be designed on this basis. Full Claude routing is not yet wired into this prototype.
 
-## 验证范围和结果
+## Verification scope and results
 
-使用官方 App 的独立 APFS 副本，保留官方签名。测试实例使用独立的 `CODEX_HOME`、
-SQLite、Electron/Chromium profile。启动时不设置 shim，不传 inspector 参数。
-测试启动仍由研究脚本执行，但启动参数只负责隔离数据目录；接入入口在启动之后建立。
+The test used an independent APFS copy of the official Codex App, keeping the official signature. The test instance used its own `CODEX_HOME`,
+SQLite, and Electron/Chromium profile. No shim was set at launch and no inspector arguments were passed.
+The research script still launched the test instance, but the launch arguments only isolated the data directories. The attach entry point was established after launch.
 
-| 检查 | 实测结果 |
+| Check | Observed result |
 | --- | --- |
-| 原版启动后激活调试入口 | `SIGUSR1` 开启主进程 inspector，`execArgv` 为 `[]` |
-| 现有后端连接 | 官方 `codex` PID `81854`，stdio 连接 |
-| 添加模型列表项 | 原生列表新增 `Hook Probe (temporary)`，无磁盘配置修改 |
-| 无刷新更新界面 | 仅 invalidate `['models', 'list', 'local']`，窗口 navigation 计数为 0 |
-| 显式撤销 | 原始方法 descriptor 恢复，定时器和全局 hook 句柄删除，菜单项消失 |
-| 运行中的 GPT 任务 | 接入和撤销时均为 `inProgress`，随后完成连续输出 1–100 |
-| 进程连续性 | Desktop `81817`、后端 `81854`、renderer `81859` 在成功循环中均不变 |
-| 控制端丢失 | 不再续租，3 秒后主进程自动恢复方法和模型缓存，菜单项消失 |
-| 重新接入 | 关闭 inspector 后，通过新的控制端再次激活并接入成功 |
-| 原始应用完整性 | 原版与测试副本的 `app.asar` 哈希一致，二者 codesign 校验通过 |
+| Activate the debug entry after a stock launch | `SIGUSR1` opens the main process inspector, `execArgv` is `[]` |
+| Existing backend connection | Official `codex` PID `81854`, stdio connection |
+| Add a model list entry | The native list gains `Hook Probe (temporary)`, no on-disk config changes |
+| Update the UI without a reload | Only invalidates `['models', 'list', 'local']`, window navigation count is 0 |
+| Explicit revocation | Original method descriptor restored, timer and global hook handle deleted, menu item disappears |
+| Running GPT task | `inProgress` during both attach and revocation, then completed with continuous output 1–100 |
+| Process continuity | Desktop `81817`, backend `81854`, and renderer `81859` all unchanged throughout the successful cycle |
+| Controller lost | The lease is no longer renewed. After 3 seconds the main process automatically restores the method and model cache, and the menu item disappears |
+| Reattach | After the inspector was closed, a new controller reactivated it and attached successfully |
+| Original App integrity | The `app.asar` hashes of the original Codex App and the test copy match, and both pass codesign verification |
 
-7 个含隐藏项的官方模型条目变为 8 个；用户可见的 5 项变为 6 项。
-测试项仅验证目录和 UI，不提供推理服务，也没有选择它发起任务。
+The 7 official model entries (including hidden ones) became 8. The 5 user-visible entries became 6.
+The test entry only verifies the catalog and the UI. It provides no inference service, and it was not selected to start a task.
 
-当前检查过的 `app.asar` SHA-256：
+The `app.asar` SHA-256 checked so far:
 
 ```text
 1f7939c1c781887c167043c4d1d307af3400d324685cfc315dfe2f80e634f483
 ```
 
-稳定实例 PID `57509`、启动时间 `2026-09-22 15:24:57` 保持不变。
-早期探索中曾刷新测试 renderer 以取得测试连接对象。最终 hook 安装不依赖该对象，
-成功的接入/撤销循环单独记录了零 navigation，并覆盖了一条真实运行中的任务。
+The stable instance, PID `57509` with launch time `2026-09-22 15:24:57`, remained unchanged.
+During early exploration, the test renderer was reloaded to obtain a test connection object. The final hook installation does not depend on that object.
+The successful attach/revoke cycle separately recorded zero navigations and covered a real running task.
 
-## 接入点
+## Attach point
 
-现有 launcher 通过 `CODEX_CLI_PATH` 指向 shim。shim 建立 Host 通信链，再 `exec`
-官方 CLI，以保留 Desktop → 官方 CLI 的签名进程关系。
-Host 占据 Desktop 和后端之间的 stdio，当前退出逻辑会关闭后端；launcher 也会在
-controller 退出时关闭 Desktop。这种生命周期不能直接用作热退出。
+The existing launcher points `CODEX_CLI_PATH` at the shim. The shim sets up the Host communication chain and then `exec`s
+the official CLI, which preserves the signed Desktop → official CLI process relationship.
+The Host sits on the stdio between Desktop and the backend, and its current exit logic shuts down the backend. The launcher also
+closes Desktop when the controller exits. This lifecycle cannot be used directly for a hot exit.
 
-热接入原型使用现有主进程中的连接类。在模块缓存的 `.vite/build/src-*.js` 导出中，
-按 `routeResponse`、`listModels`、`getPendingRequestCount` 的方法形状定位连接类，
-不依赖压缩后的类名或导出别名。对其 `routeResponse` 安装一个可恢复的 prototype wrapper：
+The hot-attach prototype uses the connection class that already exists in the main process. Among the exports of `.vite/build/src-*.js` in the module cache,
+it locates the connection class by the shape of its methods `routeResponse`, `listModels`, and `getPendingRequestCount`,
+without relying on minified class names or export aliases. It installs a restorable prototype wrapper on that class's `routeResponse`:
 
-1. 只处理 `local` host。
-2. 从 Desktop 原有的 pending-request 表读取响应所属 method。
-3. 只给成功的 `model/list` 响应追加测试项，复制对象，保留原始响应。
-4. 其他消息直接调用原方法。
-5. 显式撤销或租约到期后，恢复完整 property descriptor。
-6. 如果别的组件在此期间替换了方法，不覆盖对方的实现；停用本层改写并报告未完全恢复。
+1. Only handle the `local` host.
+2. Read the method that a response belongs to from Desktop's existing pending-request table.
+3. Append the test entry only to successful `model/list` responses, copying the object and leaving the original response intact.
+4. Pass all other messages straight to the original method.
+5. On explicit revocation or lease expiry, restore the full property descriptor.
+6. If another component replaced the method in the meantime, do not overwrite its implementation. Disable this layer's rewrite and report that restoration was incomplete.
 
-模型列表在 renderer 中有缓存。原型读取已挂载 React provider 中的 query client，
-只刷新本地模型列表。它没有改写 renderer 函数、DOM 或 React 状态。
-这仍依赖内部实现，需要按 Desktop 版本维护。
+The model list is cached in the renderer. The prototype reads the query client from the mounted React provider
+and refreshes only the local model list. It does not rewrite renderer functions, the DOM, or React state.
+This still depends on internal implementation details and needs maintenance for each Desktop version.
 
-主进程保留一个短租约。控制端定期续租；控制端消失时，由主进程自己的计时器恢复
-方法并调用预先安装的缓存清理回调。这使退出恢复不依赖控制端仍然存活。
+The main process holds a short lease. The controller renews it periodically. When the controller disappears, the main process's own timer restores
+the method and calls the cache cleanup callback installed in advance. This way, exit recovery does not depend on the controller still being alive.
 
-## 复现
+## Reproduction
 
-三个源码文件和单元验证：
+Three source files and unit tests:
 
-- `tools/probes/desktop-hot-attach.mjs`：限定独立测试实例的控制端，校验 PID/启动时间、
-  私有数据目录、未启用 shim 和应用归档哈希，拒绝对其他进程操作。
-- `tools/probes/desktop-model-hook.mjs`：可序列化到主进程的 hook 与租约。
-- `tools/probes/desktop-model-refresh.mjs`：可序列化到 renderer 的定向缓存刷新。
-- `tools/probes/desktop-model-hook.test.mjs`：8 项测试，覆盖不改写其他路由、原对象保留、
-  renderer/internal 请求、descriptor 恢复、租约、后装 wrapper、结构变化和清理失败。
+- `tools/probes/desktop-hot-attach.mjs`: a controller restricted to the isolated test instance. It verifies the PID/launch time,
+  the private data directory, the absence of the shim, and the app archive hash, and refuses to act on any other process.
+- `tools/probes/desktop-model-hook.mjs`: the hook and lease, serializable into the main process.
+- `tools/probes/desktop-model-refresh.mjs`: a targeted cache refresh, serializable into the renderer.
+- `tools/probes/desktop-model-hook.test.mjs`: 8 tests covering no rewriting of other routes, preservation of the original object,
+  renderer/internal requests, descriptor restoration, the lease, a wrapper installed later, structural changes, and cleanup failure.
 
-在仓库根目录执行：
+Run from the repository root:
 
 ```sh
 npx vitest run --config tests/vitest.config.js tools/probes/desktop-model-hook.test.mjs
@@ -82,9 +82,9 @@ node tools/probes/desktop-hot-attach.mjs start
 node tools/probes/desktop-hot-attach.mjs attach
 ```
 
-等待独立窗口启动完成后再执行 `attach`。控制端保持运行并每 1.5 秒续租。
-`Ctrl-C` 撤销；若直接杀掉控制端，5 秒租约到期后撤销。
-打开原生模型选择器可看到测试项；不要选择它执行任务。
+Wait for the isolated window to finish launching before running `attach`. The controller keeps running and renews the lease every 1.5 seconds.
+`Ctrl-C` revokes. If the controller is killed outright, revocation happens when the 5-second lease expires.
+Open the native model picker to see the test entry. Do not select it to run a task.
 
 ```sh
 node tools/probes/desktop-hot-attach.mjs status
@@ -93,69 +93,69 @@ node tools/probes/desktop-hot-attach.mjs close-inspector
 node tools/probes/desktop-hot-attach.mjs stop
 ```
 
-`close-inspector` 先要求 hook 已撤销。`stop` 只退出记录的测试实例。
-`status` 在 inspector 已关闭时会报告关闭，不会为了查询而重新激活它。
+`close-inspector` requires the hook to be revoked first. `stop` only quits the recorded test instance.
+When the inspector is closed, `status` reports it as closed and does not reactivate it just to run the query.
 
-本轮完整实测产物在本机 `.codexhost/hot-attach-research/`，不纳入 Git：
+The artifacts from this round's full test run are on this machine under `.codexhost/hot-attach-research/` and are not tracked in Git:
 
-- `cycle-report.json`：真实 GPT turn、接入/撤销、PID、原型恢复和 navigation 证据。
-- `lost-controller-report.json`：控制端断开后的恢复结果。
-- `inspector-close-report.json` / `cleanup-report.json`：调试端口关闭、测试进程清理和稳定实例连续性。
-- `verified-attached.png` / `verified-detached.png`：展开后的真实模型菜单截图。
-- `make-cycle.mjs` / `cycle.js`：本轮针对已捕获测试连接的连续任务实验。
+- `cycle-report.json`: evidence for the real GPT turn, attach/revoke, PIDs, prototype restoration, and navigation.
+- `lost-controller-report.json`: recovery results after the controller disconnected.
+- `inspector-close-report.json` / `cleanup-report.json`: debug port closure, test process cleanup, and stable instance continuity.
+- `verified-attached.png` / `verified-detached.png`: screenshots of the real model menu, expanded.
+- `make-cycle.mjs` / `cycle.js`: this round's continuous-task experiment against the captured test connection.
 
-## 避开的失败路径
+## Failure paths avoided
 
-首次尝试用 `Runtime.queryObjects` 查找连接实例时，测试实例 PID `79876` 崩溃。
-系统报告为 `EXC_BAD_ACCESS / SIGBUS`，栈包含 `v8::HeapProfiler::QueryObjects`。
-系统报告：`~/Library/Logs/DiagnosticReports/ChatGPT-2026-09-22-154719.ips`。
-稳定实例未受影响。最终方案通过导出的 prototype 安装 hook，不再使用堆对象扫描。
-实验结束后，独立 App 和首次崩溃遗留的三个辅助进程已按精确进程身份清理，
-9229 调试端口已关闭，稳定实例仍保持原 PID 和启动时间。
+The first attempt used `Runtime.queryObjects` to find the connection instance, and the test instance PID `79876` crashed.
+The system reported `EXC_BAD_ACCESS / SIGBUS`, with `v8::HeapProfiler::QueryObjects` in the stack.
+System report: `~/Library/Logs/DiagnosticReports/ChatGPT-2026-09-22-154719.ips`.
+The stable instance was unaffected. The final approach installs the hook through the exported prototype and no longer scans heap objects.
+After the experiment, the isolated App and the three helper processes left over from the first crash were cleaned up by exact process identity,
+debug port 9229 was closed, and the stable instance kept its original PID and launch time.
 
-仅检查 `document.body.innerText` 还不够确认菜单视觉状态：此版本在折叠的模型菜单中
-保留模型文本。最终截图通过真实 pointer 事件展开菜单后采集，并已人工视觉核对。
+Checking `document.body.innerText` alone is not enough to confirm the menu's visual state. This version keeps the model text
+in the model menu even when it is collapsed. The final screenshots were taken after expanding the menu with real pointer events and were checked visually by hand.
 
-## 完整产品的建议设计
+## Recommended design for the full product
 
-推荐一个菜单栏小助手，拥有 Attach / Detach / 状态三个入口。用户正常启动官方 App，
-小助手识别版本和精确进程身份后接入；关闭开关时恢复原始行为。
-不修改 `.app`、不重新签名、不设置全局 `launchctl` 环境、不接管原版 App 启动。
+We recommend a small menu bar helper with three entry points: Attach / Detach / Status. The user launches the official Codex App normally.
+The helper identifies the version and the exact process identity, then attaches. Turning the toggle off restores the original behavior.
+It does not modify the `.app`, does not re-sign, does not set a global `launchctl` environment, and does not take over launching the Codex App.
 
-协议层建议分为三个组件：
+The protocol layer should be split into three components:
 
 ```text
-原生 Desktop 连接
-    ↕ 最小的版本适配与可撤销 hook
-本机私有 IPC
+Native Desktop connection
+    ↕ minimal version adaptation and revocable hook
+Local private IPC
     ↕
-Claude 协议服务（复用现有 adapter / projector / thread store）
+Claude protocol service (reuses the existing adapter / projector / thread store)
 ```
 
-接入与退出状态应为 `off → attaching → active → draining → off`。
-进入 draining 后拒绝新增 Claude 请求，等待或按用户选择停止正在运行的 Claude 任务，
-再撤销路由、清理临时目录项和缓存、关闭本方打开的 inspector。
-已有 GPT 任务继续沿官方连接运行。
+The attach and exit states should be `off → attaching → active → draining → off`.
+After entering draining, new Claude requests are rejected, and running Claude tasks are either waited on or stopped, as the user chooses.
+Then routing is revoked, temporary catalog entries and caches are cleared, and any inspector that we opened is closed.
+Existing GPT tasks keep running over the official connection.
 
-下一步需要验证和实现：
+Next steps to verify and implement:
 
-1. **双向 Claude 路由。** 在现有连接的发送/响应分发边界接入 sidecar，处理请求 ID
-   关联、流式通知、审批回调和断线。保留官方原有 pending 请求，避免重复 initialize。
-   本轮仅验证响应改写，不代表这些功能已实现。
-2. **Host 生命周期拆分。** 现有 `AppServerHost` 假设拥有 transport/backend，需要将
-   外部模型协议服务从官方后端创建、初始化和 shutdown 中分离。
-3. **原生工具归属。** 原官方后端和签名父子关系天然保留；Claude 调用 `codex_app`、
-   `cua_repl` 所需的 task ownership、turn metadata 和事件归属仍需重新端到端验证。
-4. **Claude 状态收尾。** 活跃 Claude 会话不能在撤销时静默切成 GPT。保留历史和恢复
-   所需状态；突然失联时明确报错，不丢弃请求或伪报完成。
-5. **用量显示。** 现有 HTTPS 用量代理依赖启动时的证书 pin 参数。热接入需要另外验证
-   对现有网络响应的定点扩展，或首版暂不带用量扩展。
-6. **版本与权限。** 实测仅覆盖这个构建；新版需重新检查结构、签名和 inspector 开关。
-   未识别版本保持原版行为。inspector 只绑定 loopback，记录本方是否开启，退出时归还。
+1. **Bidirectional Claude routing.** Attach a sidecar at the send/response dispatch boundary of the existing connection, handling request ID
+   correlation, streaming notifications, approval callbacks, and disconnects. Keep the official pending requests intact and avoid a duplicate initialize.
+   This round only verified response rewriting. It does not mean these features are implemented.
+2. **Splitting the Host lifecycle.** The existing `AppServerHost` assumes it owns the transport/backend. The external model
+   protocol service needs to be separated from the creation, initialization, and shutdown of the official backend.
+3. **Native tool ownership.** The original official backend and the signed parent-child relationship are naturally preserved. The task ownership,
+   turn metadata, and event attribution that Claude needs to call `codex_app` and `cua_repl` still need to be re-verified end to end.
+4. **Wrapping up Claude state.** An active Claude session must not silently switch to GPT on revocation. Keep the history and the state
+   needed for recovery. On a sudden loss of connection, report an explicit error. Do not drop requests or falsely report completion.
+5. **Usage display.** The existing HTTPS usage proxy depends on a certificate pin argument passed at launch. Hot attach needs separate verification
+   of a targeted extension to existing network responses, or the first version ships without the usage extension.
+6. **Versions and permissions.** Testing only covered this build. New versions need their structure, signature, and inspector switch rechecked.
+   Unrecognized versions keep the stock behavior. The inspector binds only to loopback. We record whether we opened it, and hand it back on exit.
 
-当前稳定 App 仍走旧 launcher 链。未来迁移到热接入模式时，需要先退出旧链并正常
-启动原版一次；之后可以研究每次开关都不重启。这次没有迁移稳定实例。
+The stable App still goes through the old launcher chain. A future migration to hot-attach mode first requires exiting the old chain and launching
+the Codex App normally once. After that, toggling without a restart each time can be explored. The stable instance was not migrated this time.
 
-参考：[Electron fuses](https://www.electronjs.org/docs/latest/tutorial/fuses)、
-[主进程调试](https://www.electronjs.org/docs/latest/tutorial/debugging-main-process)。
-可行性判断以本机原版副本的实测为依据；这不是官方承诺稳定的插件接口。
+References: [Electron fuses](https://www.electronjs.org/docs/latest/tutorial/fuses),
+[Debugging the main process](https://www.electronjs.org/docs/latest/tutorial/debugging-main-process).
+The feasibility assessment is based on tests of a local copy of the original Codex App. This is not a plugin interface that is officially promised to be stable.

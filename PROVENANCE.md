@@ -5,7 +5,7 @@ This repository was extracted on 2026-09-21 from the personal fork of
 
 | Item | Value |
 | --- | --- |
-| Source repository | `/Users/wenbopan/Projects/codex-host` (`origin` = github.com/wbopan/codex-host) |
+| Source repository | [wbopan/codex-host](https://github.com/wbopan/codex-host) |
 | Source branch / commit | `wenbo/main` @ `43b8f282` |
 | Upstream base contained in that commit | `fb36f2df` (upstream v0.9.1 line) |
 

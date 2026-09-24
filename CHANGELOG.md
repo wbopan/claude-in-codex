@@ -1,18 +1,24 @@
-# 更新记录
+# Changelog
 
-每个版本的说明会原样显示在 App 的更新提示和 GitHub Release 页面上。发布新版本前，在这里加一节 `## <版本号>`。
+Each version's notes appear as written in the App's update prompt and on its GitHub Release. Before releasing, add a `## <version>` section here.
+
+## 0.2.2
+
+- Releases now live on this repository, which is public. Copies of 0.2.0 and 0.2.1 read their updates from the former `claude-in-codex-releases` repository, and this version moves them over. Later updates come from here.
+- The README, docs and release notes are now in English, and a Chinese README is available as `README.zh-CN.md`. The App's interface is still in Chinese. English support is planned.
+- Verified with Codex App 26.915.31945 and 26.917.51856.
 
 ## 0.2.1
 
-- 没有功能变化。这是第一个由 GitHub Actions 自动构建、公证和发布的版本，用来确认自动更新通道畅通。从 0.2.0 升级时，App 会先等正在执行的 Session 完成，再重启到新版本。
-- 已验证 Codex App 26.915.31945 和 26.917.51856。
+- No functional changes. This is the first version built, notarized and published by GitHub Actions, released to confirm that the update channel works. When updating from 0.2.0, the App waits for running Sessions to finish and then relaunches into the new version.
+- Verified with Codex App 26.915.31945 and 26.917.51856.
 
 ## 0.2.0
 
-第一个公开发布的版本。
+The first public release.
 
-- 在正常启动的 Codex App 中使用本机 Claude Code：原生模型选择器增加 Claude 模型，Claude Code Session 与 GPT 任务并行运行。
-- 菜单栏 App 显示接入状态和 Codex、Claude Code 两边的额度。主窗口的「功能」页可以开关 Codex App 工具、Computer & Browser Use 和记忆同步。
-- 断开或退出时先等正在执行的 Session 完成，也可以明确选择停止。
-- 自动更新：App 默认每 6 小时检查一次新版本。安装更新前同样先等 Session 完成，然后重启到新版本。可以在「设置 › 更新」关闭自动检查或手动检查。
-- 已验证 Codex App 26.915.31945 和 26.917.51856。
+- Use your local Claude Code inside the normally launched Codex App. The native model picker gains the Claude models, and Claude Code Sessions run next to GPT tasks.
+- The menu bar App shows the attachment state and the remaining Codex and Claude Code quotas. The Features pane of the main window switches Codex App tools, Computer & Browser Use and memory sync on or off.
+- Disconnecting or quitting first waits for running Sessions to finish, or stops them if you choose to.
+- Automatic updates: the App checks for a new version every six hours. Installing an update also waits for Sessions to finish, then relaunches into the new version. Automatic checks can be turned off, and updates checked manually, under Settings › Updates.
+- Verified with Codex App 26.915.31945 and 26.917.51856.

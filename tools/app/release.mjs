@@ -1,5 +1,5 @@
-// Builds, notarizes and packages a release of the App, and with --publish puts it on the public
-// releases repository where the App's updater finds it.
+// Builds, notarizes and packages a release of the App, and with --publish puts it on the
+// repository's GitHub Releases, where the App's updater finds it.
 //
 //   node tools/app/release.mjs [--publish] [--allow-dirty]
 //
@@ -18,7 +18,7 @@ import {
   minimumSystemVersion,
   releaseVersion,
   releasesPage,
-  releasesRepository,
+  repository,
   sparkleKeyAccount,
 } from "./distribution.mjs";
 
@@ -156,12 +156,12 @@ async function github(method, url, body, headers = {}) {
 /// latest release, so the appcast the App reads never points at a missing archive.
 async function publish({ version, notes, files }) {
   const tag = `v${version}`;
-  if (await github("GET", `/repos/${releasesRepository}/releases/tags/${tag}`))
-    throw new Error(`${releasesRepository} already has a release ${tag}`);
-  const release = await github("POST", `/repos/${releasesRepository}/releases`, {
+  if (await github("GET", `/repos/${repository}/releases/tags/${tag}`))
+    throw new Error(`${repository} already has a release ${tag}`);
+  const release = await github("POST", `/repos/${repository}/releases`, {
     tag_name: tag,
     name: `${appName} ${version}`,
-    body: `${notes}\n\n---\n\n下载 \`${path.basename(files[0])}\`，解压后把 ${appName}.app 拖到「应用程序」文件夹。已安装的 App 会自动收到这个更新。`,
+    body: `${notes}\n\n---\n\nDownload \`${path.basename(files[0])}\`, unzip it and drag ${appName}.app into the Applications folder. Installed copies receive this update automatically.`,
     draft: true,
   });
   for (const file of files) {
@@ -175,7 +175,7 @@ async function publish({ version, notes, files }) {
     );
     console.log(`Uploaded ${name}`);
   }
-  const published = await github("PATCH", `/repos/${releasesRepository}/releases/${release.id}`, {
+  const published = await github("PATCH", `/repos/${repository}/releases/${release.id}`, {
     draft: false,
     make_latest: "true",
   });

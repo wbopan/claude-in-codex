@@ -1,14 +1,17 @@
 // Where released builds of the App live and how the App finds and trusts its updates.
-// The source repository stays private; the public releases repository carries every release's
-// zip and its signed appcast, and the App reads the appcast of the latest release.
+// Every release on the repository carries the notarized zip and a signed appcast, and the App
+// reads the appcast of the latest release.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export const releasesRepository = "wbopan/claude-in-codex-releases";
-export const releasesPage = `https://github.com/${releasesRepository}/releases`;
+export const repository = "wbopan/claude-in-codex";
+// 0.2.0 and 0.2.1 read their updates from this separate repository, used while the source was
+// private. Its 0.2.2 release carries an appcast that moves those copies over to `repository`.
+export const legacyReleasesRepository = "wbopan/claude-in-codex-releases";
+export const releasesPage = `https://github.com/${repository}/releases`;
 export const feedUrl = `${releasesPage}/latest/download/appcast.xml`;
 // The EdDSA public key matching the private key that signs every update (Sparkle's
 // generate_keys --account claude-in-codex). Rotating it strands every installed copy.
