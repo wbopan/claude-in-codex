@@ -1,6 +1,8 @@
 # Documentation
 
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version. Each section is also shown as the release notes in the App's update window.
+- [guide.md](guide.md): how to use the App after installing it, with a Simplified Chinese translation in [guide.zh-CN.md](guide.zh-CN.md).
+- [development.md](development.md): building from source, tests and releasing.
 - [README.zh-CN.md](README.zh-CN.md): the README in Simplified Chinese.
 - [release.md](release.md): how to publish a release, which credentials it needs and what to do when something goes wrong.
 - [architecture.md](architecture.md): how the menu bar App attaches to a running Codex App, and which parts stay native.
