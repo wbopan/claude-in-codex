@@ -31,6 +31,8 @@ App 的 feed 地址固定为 `https://github.com/wbopan/claude-in-codex-releases
 | Sparkle EdDSA 私钥 | 登录钥匙串，账户名 `claude-in-codex` | `SPARKLE_PRIVATE_KEY` | 更新签名 |
 | 发布仓库写权限 | `git credential` 中的 GitHub 凭据，或 `GH_TOKEN` | `RELEASES_TOKEN` | 创建 Release |
 
+当前配置：CI 公证复用 App Store Connect 的 Talkie 团队 Key（Admin 权限）。`RELEASES_TOKEN` 是 GitHub 细粒度令牌「claude-in-codex release CI」，只能读写发布仓库的内容，不过期；要收回就在 GitHub 的 Fine-grained tokens 页面删除它。Sparkle 私钥备份在 1Password 条目「Claude in Codex Sparkle 更新签名私钥」。
+
 **Sparkle 私钥必须备份。** 已安装的 App 只接受这把私钥签名的更新，公钥写在每个 App 的 Info.plist 里。私钥丢失后，现有用户只能手动下载新版本。导出备份并存进密码管理器：
 
 ```sh
