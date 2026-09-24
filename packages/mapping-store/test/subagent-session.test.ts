@@ -12,7 +12,7 @@ import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { MappingStore } from "../src/index.js";
 
-const harnessId = harnessIdSchema.parse("antigravity");
+const harnessId = harnessIdSchema.parse("example-harness");
 const parentId = hostThreadIdSchema.parse("parent");
 const childId = hostThreadIdSchema.parse("child");
 const source = nativeSessionRefSchema.parse({
@@ -36,7 +36,7 @@ async function fixture() {
   const input = {
     harnessId,
     cwd: "/synthetic",
-    transportModelId: "claude-in-codex/antigravity-native",
+    transportModelId: "claude-in-codex/example-harness-native",
     ephemeral: false,
     historyMode: "paginated" as const,
   };
@@ -100,7 +100,12 @@ describe("Native child Session rebinding", () => {
         nativeSessionId: "other",
       }),
     },
-    { nativeSessionRef: nativeSessionRefSchema.parse({ ...replacement, harnessId: "grok" }) },
+    {
+      nativeSessionRef: nativeSessionRefSchema.parse({
+        ...replacement,
+        harnessId: "other-harness",
+      }),
+    },
     {
       nativeSessionRef: nativeSessionRefSchema.parse({
         ...replacement,

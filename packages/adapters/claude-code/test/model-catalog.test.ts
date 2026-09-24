@@ -167,8 +167,8 @@ describe("Claude Code modelPicker.settings merge", () => {
       replaceBuiltInOptions: false,
       options: [
         {
-          model: "glm-glm-5.3-cp[1m]",
-          label: "glm-glm-5.3-cp (1M)",
+          model: "gateway-model-a[1m]",
+          label: "gateway-model-a (1M)",
           description: "custom gateway",
         },
         {
@@ -183,8 +183,8 @@ describe("Claude Code modelPicker.settings merge", () => {
     expect(merged).toEqual([
       ...builtins,
       {
-        value: "glm-glm-5.3-cp[1m]",
-        displayName: "glm-glm-5.3-cp (1M)",
+        value: "gateway-model-a[1m]",
+        displayName: "gateway-model-a (1M)",
         description: "custom gateway",
       },
       {
@@ -197,7 +197,7 @@ describe("Claude Code modelPicker.settings merge", () => {
     const normalized = normalizeClaudeModelCatalog(snapshot(merged));
     expect(normalized.catalog.models.map(({ label }) => label)).toEqual([
       "Default",
-      "glm-glm-5.3-cp (1M)",
+      "gateway-model-a (1M)",
       "gpt-5.6-sol (1M)",
       "Haiku",
       "Opus",
@@ -205,7 +205,7 @@ describe("Claude Code modelPicker.settings merge", () => {
     ]);
     expect(normalized.catalog.models.map(({ ref }) => decodeClaudeModelRef(ref))).toEqual([
       undefined,
-      "glm-glm-5.3-cp[1m]",
+      "gateway-model-a[1m]",
       "gpt-5.6-sol[1m]",
       "haiku",
       "opus",
@@ -218,14 +218,14 @@ describe("Claude Code modelPicker.settings merge", () => {
       replaceBuiltInOptions: true,
       options: [
         {
-          model: "glm-glm-5.3-flash-cp[1m]",
-          label: "glm flash",
-          description: "flash gateway",
+          model: "gateway-model-b[1m]",
+          label: "model b",
+          description: "custom gateway",
         },
         {
-          model: "deepseek-v4-pro-saas[1m]",
-          label: "deepseek pro",
-          description: "deepseek gateway",
+          model: "gateway-model-c[1m]",
+          label: "model c",
+          description: "custom gateway",
           behavesAs: "sonnet",
         },
       ],
@@ -234,14 +234,14 @@ describe("Claude Code modelPicker.settings merge", () => {
     expect(merged).toEqual([
       { value: "default", displayName: "Default", supportsAutoMode: true },
       {
-        value: "glm-glm-5.3-flash-cp[1m]",
-        displayName: "glm flash",
-        description: "flash gateway",
+        value: "gateway-model-b[1m]",
+        displayName: "model b",
+        description: "custom gateway",
       },
       {
-        value: "deepseek-v4-pro-saas[1m]",
-        displayName: "deepseek pro",
-        description: "deepseek gateway",
+        value: "gateway-model-c[1m]",
+        displayName: "model c",
+        description: "custom gateway",
         resolvedModel: "sonnet",
       },
     ]);
@@ -249,11 +249,11 @@ describe("Claude Code modelPicker.settings merge", () => {
     const normalized = normalizeClaudeModelCatalog(snapshot(merged));
     expect(normalized.catalog.models.map(({ label }) => label)).toEqual([
       "Default",
-      "deepseek pro",
-      "glm flash",
+      "model b",
+      "model c",
     ]);
     expect(
-      normalized.catalog.models.find(({ label }) => label === "deepseek pro")?.resolvedModelLabel,
+      normalized.catalog.models.find(({ label }) => label === "model c")?.resolvedModelLabel,
     ).toBe("sonnet");
     expect(normalized.catalog.defaultModel).toEqual(CLAUDE_DEFAULT_MODEL_REF);
   });

@@ -9,7 +9,7 @@ import {
 describe("Thread Usage contracts", () => {
   it("carries credits and independent context percent through usage inspection", () => {
     const usage = { totalCredits: 0.125, contextUsagePercent: 102 };
-    expect(threadUsageInspectionSchema.parse({ threadId: "kiro", usage }).usage).toEqual(usage);
+    expect(threadUsageInspectionSchema.parse({ threadId: "thread-1", usage }).usage).toEqual(usage);
     for (const value of [-1, Infinity, NaN]) {
       expect(threadUsageSnapshotSchema.safeParse({ totalCredits: value }).success).toBe(false);
       expect(threadUsageSnapshotSchema.safeParse({ contextUsagePercent: value }).success).toBe(

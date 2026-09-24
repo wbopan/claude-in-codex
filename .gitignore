@@ -1,7 +1,5 @@
 # Local toolchains, caches and the development Host instance.
-/.dev/
-# Development folder used before the rename to Claude in Codex.
-/.codexhost/
+/.dev
 .env
 .env.*
 
@@ -22,7 +20,6 @@ coverage/
 # Per-machine settings.
 .claude/settings.local.json
 .lefthook-local.yml
-lefthook-local.yml
 
 *.log
 *.pid

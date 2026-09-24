@@ -867,14 +867,14 @@ mod tests {
             "ai.bytepioneer.codexhost.native-harness-broker"
         );
         assert_eq!(
-            legacy_native_harness_broker_label("codebuddy").unwrap(),
-            "ai.bytepioneer.codexhost.codebuddy-broker"
+            legacy_native_harness_broker_label("example-harness").unwrap(),
+            "ai.bytepioneer.codexhost.example-harness-broker"
         );
     }
 
     #[test]
     fn non_claude_brokers_have_independent_launch_agents_and_lifecycle_targets() {
-        for harness_id in ["codebuddy", "workbuddy", "cursor-cli"] {
+        for harness_id in ["example-harness", "other-harness", "third-harness"] {
             let plan = plan_native_harness_broker_launch_agent(
                 NativeHarnessBrokerPaths {
                     harness_id,
@@ -914,7 +914,7 @@ mod tests {
         let plan = plan_native_harness_broker_launch_agent(
             NativeHarnessBrokerPaths {
                 harness_id: "claude-code",
-                home: Path::new("/Users/moka"),
+                home: Path::new("/Users/example"),
                 node: Path::new(
                     "/Applications/claude-in-codex.app/Contents/Resources/runtime/node",
                 ),
@@ -931,7 +931,7 @@ mod tests {
         assert_eq!(
             plan.descriptor_path,
             Path::new(
-                "/Users/moka/Library/Application Support/Claude in Codex/broker/claude-code-broker-v1.json"
+                "/Users/example/Library/Application Support/Claude in Codex/broker/claude-code-broker-v1.json"
             )
         );
         assert_eq!(
@@ -954,7 +954,7 @@ mod tests {
     #[test]
     fn launchctl_plan_targets_only_the_current_users_gui_domain() {
         let plist = Path::new(
-            "/Users/moka/Library/LaunchAgents/ai.bytepioneer.claude-in-codex.native-harness-broker.plist",
+            "/Users/example/Library/LaunchAgents/ai.bytepioneer.claude-in-codex.native-harness-broker.plist",
         );
         let commands = plan_native_harness_broker_launchctl(501, plist).expect("command plan");
 
@@ -991,7 +991,7 @@ mod tests {
     fn launch_agent_persists_only_the_normalized_proxy_allowlist() {
         let paths = NativeHarnessBrokerPaths {
             harness_id: "claude-code",
-            home: Path::new("/Users/moka"),
+            home: Path::new("/Users/example"),
             node: Path::new("/opt/claude-in-codex/node"),
             host_runtime: Path::new("/opt/claude-in-codex/host-runtime.mjs"),
         };

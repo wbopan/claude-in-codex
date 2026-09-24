@@ -16,7 +16,7 @@ cherry-picked by path (`git remote add upstream … && git cherry-pick`; no shar
 
 `packages/{shared-contracts,harness-adapter,harness-broker,harness-discovery,mapping-store,protocol-core,desktop-control,update-manager,host-runtime}`,
 `packages/adapters/claude-code`, `crates/{launcher,platform,shim,updater}`, `scripts/release`,
-`tools/toolchain`, `tests/{vitest.config.js,tsconfig.json,fixtures/gate-a}`, root build configuration.
+`tools/toolchain`, `tests/{vitest.config.js,tsconfig.json,fixtures}`, root build configuration.
 
 ## Not copied
 
@@ -28,9 +28,7 @@ gate/audit tools, e2e tests, website, docs, Windows/Linux installers' CI.
 - Removed host-runtime tests that import other adapters (`installed-harness-plugins`,
   `antigravity-*.real`, `harness-session-import`); narrowed `harness-plugin-loader.test.ts` to `claude-code`.
 - `scripts/release/harness-plugins.json` ships only `claude-code`; license list trimmed accordingly.
-- No renderer extension is built or injected. `app/renderer-extension.js` is a marker file that
-  selects the passive Desktop Controller (`PASSIVE_RENDERER_MARKER`). (Removed with the launcher
-  on 2026-09-23, see below.)
+- No renderer extension is built or injected.
 
 ## Later deviations
 

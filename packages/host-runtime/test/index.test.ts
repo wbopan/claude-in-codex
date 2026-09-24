@@ -5,7 +5,7 @@ import { classifyCreateRequestRoute, officialEnvironment, packageMetadata } from
 
 import { transportModelIdForHarness } from "@claude-in-codex/protocol-core";
 
-const PI_NATIVE_TRANSPORT_MODEL_ID = transportModelIdForHarness("pi");
+const EXAMPLE_TRANSPORT_MODEL_ID = transportModelIdForHarness("example-harness");
 
 describe("host-runtime package", () => {
   it("declares the composition-root dependencies", () => {
@@ -32,10 +32,10 @@ describe("host-runtime package", () => {
       selectedHarness: "codex",
       selectionSource: "official-model",
     });
-    expect(classifyCreateRequestRoute(request(PI_NATIVE_TRANSPORT_MODEL_ID))).toEqual({
+    expect(classifyCreateRequestRoute(request(EXAMPLE_TRANSPORT_MODEL_ID))).toEqual({
       requestMethod: "thread/start",
-      modelCarrier: "pi-transport",
-      selectedHarness: "pi",
+      modelCarrier: "example-harness-transport",
+      selectedHarness: "example-harness",
       selectionSource: "transport-model",
     });
     expect(classifyCreateRequestRoute(request("claude-in-codex/claude-code-native"))).toEqual({
@@ -44,7 +44,7 @@ describe("host-runtime package", () => {
       selectedHarness: "claude-code",
       selectionSource: "transport-model",
     });
-    expect(classifyCreateRequestRoute(request("claude-in-codex/grok-native"))).toEqual({
+    expect(classifyCreateRequestRoute(request("claude-in-codex/other-harness-native"))).toEqual({
       requestMethod: "thread/start",
       modelCarrier: "official-model",
       selectedHarness: "codex",
@@ -60,13 +60,8 @@ describe("host-runtime package", () => {
       CLAUDE_IN_CODEX_DATA_DIR: "/opt/data",
       CODEXHOST_CONTROL_NONCE: "legacy-secret",
       CLAUDE_IN_CODEX_STOCK_CODEX_PATH: "/opt/codex",
-      CLAUDE_IN_CODEX_NPM_NODE_PATH: "/opt/node",
-      CLAUDE_IN_CODEX_NPM_CLI_PATH: "/opt/npm-cli.js",
-      CLAUDE_IN_CODEX_NPM_LAUNCHER_PATH: "/opt/launcher.mjs",
-      CLAUDE_IN_CODEX_NPM_PACKAGE_ROOT: "/opt/package",
-      CLAUDE_IN_CODEX_DESKTOP_PROXY: "1",
-      CLAUDE_IN_CODEX_DESKTOP_PROXY_SPKI: "pin",
-      CLAUDE_IN_CODEX_DESKTOP_PROXY_TRACE: "1",
+      CLAUDE_IN_CODEX_EXAMPLE_PATH: "/opt/example",
+      CLAUDE_IN_CODEX_EXAMPLE_FLAG: "1",
     });
 
     expect(official).toEqual({ PATH: "/usr/bin" });

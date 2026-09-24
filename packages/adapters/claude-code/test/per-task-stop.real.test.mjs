@@ -5,18 +5,18 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { describe, it } from "vitest";
-import { resolveClaudeCodeExecutable } from "../../packages/adapters/claude-code/dist/command.js";
+import { resolveClaudeCodeExecutable } from "../dist/command.js";
 
 // Runs the real CLI against a loopback-only fake Messages API. No paid model
 // requests or existing Claude sessions are used. Requires Claude Code >= 2.1.246.
-// CLAUDE_IN_CODEX_RUN_CLAUDE_STOP_REAL=1 npx vitest run --config tests/vitest.config.js tools/probes/claude-subagent-stop.real.test.mjs
+// CLAUDE_IN_CODEX_RUN_CLAUDE_STOP_REAL=1 npx vitest run --config tests/vitest.config.js packages/adapters/claude-code/test/per-task-stop.real.test.mjs
 describe.skipIf(process.env.CLAUDE_IN_CODEX_RUN_CLAUDE_STOP_REAL !== "1")(
   "native Claude background task interrupt",
   () => {
     it.each([false, true])(
       "perTaskStopAffordance=%s controls background task survival",
       async (preserve) => {
-        const root = await mkdtemp(join(tmpdir(), "claude-stop-probe-"));
+        const root = await mkdtemp(join(tmpdir(), "claude-per-task-stop-"));
         await mkdir(join(root, "config"));
         const pending = new Map();
         const events = [];

@@ -1,7 +1,7 @@
 //! Hidden `--claude-in-codex-broker` command that manages the per-Harness native broker LaunchAgent.
 //!
 //! The npm Remote Host wrapper invokes it with the exact Node.js runtime and Host Runtime paths
-//! it ships, so the LaunchAgent never depends on a separate launcher executable.
+//! it ships, so the LaunchAgent runs only what the package ships.
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -186,7 +186,7 @@ mod tests {
                 .harness_id,
             "claude-code"
         );
-        for id in ["codebuddy", "workbuddy", "cursor-cli"] {
+        for id in ["example-harness", "other-harness", "third-harness"] {
             assert_eq!(
                 parse_broker_cli(&with_runtime(&["install", "--harness", id]))
                     .unwrap()
@@ -199,9 +199,9 @@ mod tests {
             parse_broker_cli(&with_runtime(&[
                 "stop",
                 "--harness",
-                "codebuddy",
+                "example-harness",
                 "--harness",
-                "cursor-cli"
+                "third-harness"
             ]))
             .is_err()
         );

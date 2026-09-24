@@ -1,6 +1,5 @@
 # Everything in .gitignore is ignored too (Prettier reads it by default).
 **/*.md
-**/*.wxs
 package-lock.json
 Cargo.lock
 # Written by Icon Composer.

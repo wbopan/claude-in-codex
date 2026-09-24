@@ -45,7 +45,7 @@ interface DesktopToolOptions {
   appConsent?(params: JsonObject, contextThreadId: string): boolean;
   /** Show a native MCP elicitation on the owning task and resolve with the Desktop's answer. */
   elicit?(threadId: string, turnId: string, params: JsonObject): Promise<JsonObject>;
-  /** Sanitized acceptance trace: names and outcomes only, never arguments or results. */
+  /** Sanitized diagnostic trace: names and outcomes only, never arguments or results. */
   trace?(event: JsonObject): void;
   /** Servers the feature switches allow, read when a Harness Session lists its tools. */
   enabledServers?(): Promise<ReadonlySet<string>>;

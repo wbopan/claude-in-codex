@@ -69,14 +69,11 @@ export {
   harnessPluginDescriptorSchema,
   harnessPluginIconSchema,
   harnessPluginIdSchema,
-  harnessPluginListParamsSchema,
-  harnessPluginListResultSchema,
   harnessPluginManifestSchema,
 } from "./harness-plugins.js";
 export type {
   HarnessPluginConfiguration,
   HarnessPluginDescriptor,
-  HarnessPluginListResult,
   HarnessPluginManifest,
 } from "./harness-plugins.js";
 export * from "./harness-launch-settings.js";
@@ -84,7 +81,6 @@ export { claudeInCodexErrorSchema } from "./errors.js";
 export {
   codexAccountUsageParamsSchema,
   codexAccountUsageResultSchema,
-  codexAccountChangedSchema,
   codexAccountPhaseSchema,
   codexAccountListResultSchema,
   codexAccountPlanTypeSchema,
@@ -93,18 +89,12 @@ export {
 export type {
   CodexAccountUsageParams,
   CodexAccountUsageResult,
-  CodexAccountChanged,
   CodexAccountPhase,
   CodexAccountListResult,
   CodexAccountPlanType,
   CodexAccountSummary,
 } from "./codex-accounts.js";
 export type { ClaudeInCodexError } from "./errors.js";
-export {
-  externalThreadForkParamsSchema,
-  externalThreadForkResultSchema,
-} from "./external-thread-fork.js";
-export type { ExternalThreadForkParams, ExternalThreadForkResult } from "./external-thread-fork.js";
 export {
   HARNESS_PERMISSION_MODE_CATALOG_MAX_LENGTH,
   HARNESS_PERMISSION_MODE_DESCRIPTION_MAX_LENGTH,
@@ -113,21 +103,17 @@ export {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
   harnessPermissionModeSchema,
-  threadPermissionModeSelectParamsSchema,
 } from "./harness-permission-modes.js";
 export type {
   HarnessPermissionMode,
   HarnessPermissionModeCatalog,
   HarnessPermissionModeId,
-  ThreadPermissionModeSelectParams,
 } from "./harness-permission-modes.js";
 export {
   HARNESS_MODEL_LABEL_MAX_LENGTH,
   HARNESS_MODEL_REF_MAX_LENGTH,
   HARNESS_THINKING_OPTION_ID_MAX_LENGTH,
-  THREAD_OWNERSHIP_LIST_MAX_LENGTH,
   harnessConfigurationStateSchema,
-  harnessInspectParamsSchema,
   harnessInspectionSchema,
   harnessModelCatalogSchema,
   harnessModelRefIdSchema,
@@ -139,21 +125,10 @@ export {
   harnessSessionCapabilitiesSchema,
   harnessThinkingOptionIdSchema,
   harnessThinkingOptionSchema,
-  harnessWebUiCapabilitySchema,
-  harnessWebUiOpenParamsSchema,
-  harnessWebUiOpenResultSchema,
   permissionModeFixedAtCreate,
-  threadInspectionParamsSchema,
-  threadInspectionSchema,
-  threadModelSelectParamsSchema,
-  threadThinkingSelectParamsSchema,
-  threadOwnershipListParamsSchema,
-  threadOwnershipListResultSchema,
-  threadOwnershipSchema,
 } from "./harness-models.js";
 export type {
   HarnessConfigurationState,
-  HarnessInspectParams,
   HarnessInspection,
   HarnessModel,
   HarnessModelCatalog,
@@ -163,32 +138,16 @@ export type {
   HarnessSessionCapabilities,
   HarnessThinkingOption,
   HarnessThinkingOptionId,
-  HarnessWebUiCapability,
-  HarnessWebUiOpenParams,
-  HarnessWebUiOpenResult,
-  ThreadInspection,
-  ThreadInspectionParams,
-  ThreadModelSelectParams,
-  ThreadThinkingSelectParams,
-  ThreadOwnership,
-  ThreadOwnershipListParams,
-  ThreadOwnershipListResult,
 } from "./harness-models.js";
 export {
   harnessCommandCatalogSchema,
   harnessCommandDescriptorSchema,
-  harnessCommandsInspectParamsSchema,
-  threadCommandExecuteParamsSchema,
   threadCommandExecuteResultSchema,
-  threadCommandsInspectParamsSchema,
 } from "./harness-commands.js";
 export type {
   HarnessCommandCatalog,
   HarnessCommandDescriptor,
-  HarnessCommandsInspectParams,
-  ThreadCommandExecuteParams,
   ThreadCommandExecuteResult,
-  ThreadCommandsInspectParams,
 } from "./harness-commands.js";
 export {
   accountCreditsProductUsageSchema,

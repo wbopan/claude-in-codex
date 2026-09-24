@@ -158,27 +158,6 @@ export function remoteAppServerSocketPath(
   return path.posix.join(codexHome, "app-server-control", "app-server-control.sock");
 }
 
-export function stdioArgumentsForRemoteListener(arguments_: readonly string[]): string[] {
-  if (remoteUnixListenerUrl(arguments_) === null) {
-    throw new Error("Expected a Unix listener app-server invocation");
-  }
-  const result = [...arguments_];
-  const appServerIndex = appServerSubcommandIndex(result);
-  if (appServerIndex === null) throw new Error("Expected an app-server invocation");
-  for (let index = appServerIndex + 1; index < result.length; index += 1) {
-    const argument = result[index];
-    if (argument === "--listen") {
-      result.splice(index, 2, "--stdio");
-      return result;
-    }
-    if (argument?.startsWith("--listen=")) {
-      result.splice(index, 1, "--stdio");
-      return result;
-    }
-  }
-  throw new Error("Unix listener invocation omitted --listen");
-}
-
 export function officialListenerArgumentsForRemoteListener(
   arguments_: readonly string[],
   socketPath: string,

@@ -125,9 +125,8 @@ function parseRateLimitCandidate(
     value.limitId !== null &&
     value.limitId !== "codex"
   ) {
-    // Rolling notifications can carry a model-specific snapshot (for
-    // example, GPT-5.3-Codex-Spark). It must not replace the account-wide
-    // `codex` bucket in the Usage popover.
+    // Rolling notifications can carry a model-specific snapshot; it must not replace the
+    // account-wide `codex` bucket.
     return null;
   }
   const primary = parseRateLimitWindow(value.primary);
@@ -142,9 +141,7 @@ function rateLimitCandidates(value: unknown): RateLimitCandidate[] {
   const candidates: RateLimitCandidate[] = [];
   const base = parseRateLimitCandidate(result.rateLimits, { genericOnly: true });
   if (base) candidates.push(base);
-  // `rateLimitsByLimitId` contains model-specific buckets (for example,
-  // GPT-5.3-Codex-Spark). Usage reports the account-level limit, so these
-  // buckets must not replace or augment the generic account snapshot.
+  // `rateLimitsByLimitId` holds model-specific buckets; only the account-level limit is reported.
   const notificationParams = isRecord(value.params) ? value.params : undefined;
   const notificationSnapshot = parseRateLimitCandidate(notificationParams?.rateLimits, {
     genericOnly: true,
@@ -249,7 +246,7 @@ function isoFromUnix(unixSeconds: number): string {
 
 /**
  * Projects the account-wide Codex rate-limit fields into the shared Credits
- * snapshot consumed by the renderer's pill/popover. Model-specific buckets
+ * snapshot shown in the App's usage rows. Model-specific buckets
  * have already been excluded by observeCodexRateLimits.
  */
 export function projectCodexRateLimitsToCredits(

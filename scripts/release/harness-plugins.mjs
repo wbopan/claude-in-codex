@@ -11,7 +11,7 @@ import { buildHarnessPlugin } from "../../packages/harness-adapter/scripts/build
 
 const defaultRoot = path.resolve(import.meta.dirname, "../..");
 
-/** Distribution data only. Neither Host nor Renderer imports this list. */
+/** Distribution data only; the Host does not import it. */
 export function preinstalledHarnessPlugins(root = defaultRoot) {
   const distribution = JSON.parse(
     readFileSync(path.join(root, "scripts/release/harness-plugins.json"), "utf8"),

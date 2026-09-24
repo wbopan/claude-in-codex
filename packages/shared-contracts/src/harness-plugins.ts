@@ -76,14 +76,6 @@ export const harnessPluginDescriptorSchema = z
   .strict();
 export type HarnessPluginDescriptor = z.infer<typeof harnessPluginDescriptorSchema>;
 
-export const harnessPluginListParamsSchema = z.object({}).strict();
-export const harnessPluginListResultSchema = z
-  .object({
-    plugins: z.array(harnessPluginDescriptorSchema).max(HARNESS_PLUGIN_LIMIT),
-  })
-  .strict();
-export type HarnessPluginListResult = z.infer<typeof harnessPluginListResultSchema>;
-
 /** Entries are explicit trust grants. Discovery alone never enables a plugin. */
 export const harnessPluginConfigurationSchema = z
   .object({

@@ -21,7 +21,7 @@ The App is signed with a Developer ID and notarized by Apple, so it opens withou
 3. Choose Disconnect (断开) or Quit Claude in Codex (退出 Claude in Codex) and the App waits for running Claude Code Sessions and background tasks to finish. While it waits you can cancel the disconnect, or explicitly stop the Sessions.
 4. The Codex App and its GPT tasks keep running. Reopen the App or choose Attach to Codex App (接入 Codex App) to attach again.
 
-Verified with the official Codex App **26.915.31945** and **26.917.51856**. Before attaching, the App checks only that the Codex App carries OpenAI's signature, then checks the internal connection layout at runtime. If the layout does not match, it stops and shows the reason instead of patching anything. The Host uses the Claude Code that is installed and signed in on the Mac, and the App bundles its own Node.js and plugins.
+Before attaching, the App checks only that the Codex App carries OpenAI's signature, then checks the internal connection layout at runtime. If the layout does not match, it stops and shows the reason instead of patching anything. The Host uses the Claude Code that is installed and signed in on the Mac, and the App bundles its own Node.js and plugins.
 
 If the running Codex App was started by the old launcher, quit it and open the Codex App from Finder. The Host recognizes the old `CODEX_CLI_PATH` and refuses to attach on top of it.
 
@@ -46,7 +46,7 @@ The main window's toolbar switches between Overview (概览), Features (功能) 
 **Overview**
 
 - Components: cards for the Codex App, the Claude Code CLI and Claude in Codex, each with its icon and health (running, the number of Claude processes the Host started, attached). The icons are plain glyphs: the Codex cloud taken from the Codex App's own icon, the Clawd pixel art for the Claude Code CLI, and the Claude cloud for Claude in Codex.
-- Usage: one row per quota window with a remaining bar, the percentage and the reset time. Windows at 20% or less turn orange. Codex quotas come from `/backend-api/wham/usage`, which the Codex App polls itself: structured `rate_limit` windows first, otherwise the text lines the server sends. Claude Code quotas come from Claude Code's account usage endpoint (the 5-hour, weekly and per-model weekly windows, such as Fable) and are cached for 90 seconds. The Codex App's own usage menu stays native and no longer shows Claude quotas.
+- Usage: one row per quota window with a remaining bar, the percentage and the reset time. Windows at 20% or less turn orange. Codex quotas come from `/backend-api/wham/usage`, which the Codex App polls itself: structured `rate_limit` windows first, otherwise the text lines the server sends. Claude Code quotas come from Claude Code's account usage endpoint (the 5-hour, weekly and per-model weekly windows, such as Fable) and are cached for 90 seconds. The Codex App's own usage menu stays native.
 - Claude Code Sessions: one row per Session with its title, current activity (thinking, running a command, waiting for approval and so on) and elapsed time. Hovering shows its directory. Prompts, commands and output are never shown.
 
 The Claude Code CLI process count and the usage are read after attaching.
@@ -107,9 +107,9 @@ open '/Applications/Claude in Codex.app'
 
 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` picks the Node 22 or 24 to bundle. The build produces the App icon (Xcode's `actool` compiles `apps/macos/icon/Claude.icon`, and without Xcode an icns is made from the pre-rendered PNG), embeds the Sparkle update framework (downloaded once into `.dev/toolchains` at a pinned version and checksum), then signs with the Developer ID certificate in the keychain and verifies the signature. Without a certificate it falls back to ad hoc signing. The version comes from the root `package.json`. Development builds never check for updates on their own, only on request.
 
-Development artifacts (builds, toolchains, acceptance records) live under the Git-ignored `.dev/`. `npm run bootstrap` installs the Node and Rust toolchains into `.dev/toolchains`.
+Development artifacts (builds, toolchains, test data) live under the Git-ignored `.dev/`. `npm run bootstrap` installs the Node and Rust toolchains into `.dev/toolchains`.
 
-Development tests use a separate copy of the official App and its own data folder, described in the [migration design and acceptance](docs/menubar-migration.md). `CLAUDE_IN_CODEX_DESKTOP_APP` points at the test copy and `CLAUDE_IN_CODEX_DATA_DIR` sets the Host's data folder. `CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` and `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` override the matching launch settings. `CLAUDE_IN_CODEX_SHOW_FEATURES=1` and `CLAUDE_IN_CODEX_SHOW_SETTINGS=1` open the main window's Features or Settings pane at launch, and `CLAUDE_IN_CODEX_SHOW_ABOUT=1` opens the About window. Normal use needs none of these.
+To test against a separate copy of the Codex App, `CLAUDE_IN_CODEX_DESKTOP_APP` points at that copy and `CLAUDE_IN_CODEX_DATA_DIR` sets the Host's data folder. `CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` and `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` override the matching launch settings. `CLAUDE_IN_CODEX_SHOW_FEATURES=1` and `CLAUDE_IN_CODEX_SHOW_SETTINGS=1` open the main window's Features or Settings pane at launch, and `CLAUDE_IN_CODEX_SHOW_ABOUT=1` opens the About window. Normal use needs none of these.
 
 While Claude in Codex is running, a new build with the same bundle identifier hands over to it and exits. To test the UI side by side with the Host you are using, build a separately identified copy and turn off attaching at launch:
 
@@ -127,7 +127,7 @@ Releases are published as GitHub Releases of this repository, and the App learns
 ```sh
 # 1. Bump "version" in package.json, add a matching section to docs/CHANGELOG.md, and commit.
 # 2. Push a matching tag. GitHub Actions builds, notarizes and publishes it.
-git tag v0.2.2 && git push origin v0.2.2
+git tag v<version> && git push origin v<version>
 ```
 
 `npm run release:app -- --publish` does the same from a Mac. Credentials, key backups and what to do when something fails are in the [release runbook](docs/release.md).
@@ -149,13 +149,13 @@ npm run test:coverage    # v8 coverage report in coverage/
 Test conventions:
 
 - Tests live in each package's `test/`. Tests that start a Host, spawn child processes or take seconds go in `test/integration/` and belong to the `integration` project.
-- `*.real.test.ts` talks to a real Claude or Hermes and runs only when the matching `CLAUDE_IN_CODEX_RUN_*=1` is set.
+- `*.real.test.ts` talks to a real Claude Code and runs only when the matching `CLAUDE_IN_CODEX_RUN_*=1` is set.
 - Unit and integration tests run with `HOME`, `CODEX_HOME` and `CLAUDE_CONFIG_DIR` pointing at temporary folders (`tests/setup/isolate-home.ts`), so they never read the developer's own `~/.codex` or `~/.claude`.
 - Temporary folders come from `tempDir()` in `tests/helpers/temp-dir.ts`: the path has symbolic links resolved and is removed when the test ends.
 - Wait for asynchronous results on a concrete event or with `vi.waitFor`, never with a fixed sleep. A leftover `.only` fails the run in CI.
 - Large test files are split by feature into a folder of the same name, with shared fixtures in a non-test module inside it.
 
-The hot attach code is in `packages/host-runtime/src/hot-attach/`, the native menu in `apps/macos/main.swift`, and the packaging and install entry points in `tools/app/`. Data and log locations are resolved in one place, `packages/shared-contracts/src/app-paths.ts`, and compatibility with pre-rename identifiers sits in each reader. Protocol, adapters, model projection, permissions, history, tools and the remote implementation reuse the existing Host.
+[docs/architecture.md](docs/architecture.md) explains how attaching works. The hot attach code is in `packages/host-runtime/src/hot-attach/`, the native menu in `apps/macos/main.swift`, and the packaging and install entry points in `tools/app/`. Data and log locations are resolved in one place, `packages/shared-contracts/src/app-paths.ts`, and compatibility with pre-rename identifiers sits in each reader. Protocol, adapters, model projection, permissions, history, tools and the remote implementation reuse the existing Host.
 
 ## License
 

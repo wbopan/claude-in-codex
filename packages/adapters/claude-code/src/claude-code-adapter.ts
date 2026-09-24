@@ -447,7 +447,7 @@ function claudeCacheHitRatePercent(usage: {
 
 /**
  * Projects the Adapter's cached plan-limit observation into the generic
- * `AccountCreditsSnapshot` shape the Renderer's credits pill/popover expect.
+ * `AccountCreditsSnapshot` shape returned by usage inspection.
  * The 5-hour window leads (it's the more actionable of the two — it resets
  * soonest); the 7-day window, when known, rides along as a secondary entry
  * rather than a fabricated "product". Falls back to the 7-day window alone
@@ -2284,8 +2284,8 @@ class ClaudeHarnessSession implements HarnessSession {
    * Plan usage is account-wide, not Thread-scoped, so every observation is
    * offered to the Adapter's shared cache regardless of this Session's own
    * lifecycle phase. What this Thread then publishes is the value the Adapter
-   * *accepted*, not the raw observation: a rejected push must not leave this
-   * Thread's Usage popover showing a number the credits pill disagrees with.
+   * *accepted*, not the raw observation: a rejected push must not make Thread usage
+   * disagree with account credits.
    */
   #handlePlanLimit(planLimit: ClaudePlanLimitEvent): void {
     const effective = this.#onPlanLimitObserved(planLimit);

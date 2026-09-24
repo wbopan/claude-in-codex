@@ -7,7 +7,6 @@ import {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
   permissionModeFixedAtCreate,
-  threadPermissionModeSelectParamsSchema,
 } from "@claude-in-codex/shared-contracts";
 
 const permissionModes = {
@@ -47,12 +46,6 @@ describe("Harness Permission Mode runtime contracts", () => {
     expect(harnessConfigurationStateSchema.parse({ effectivePermissionModeId: "default" })).toEqual(
       { effectivePermissionModeId: "default" },
     );
-    expect(
-      threadPermissionModeSelectParamsSchema.parse({
-        threadId: "thread-1",
-        permissionModeId: "bypassPermissions",
-      }),
-    ).toEqual({ threadId: "thread-1", permissionModeId: "bypassPermissions" });
   });
 
   it("defaults Permission Mode scope to live and treats atCreate as fixed", () => {
@@ -122,13 +115,6 @@ describe("Harness Permission Mode runtime contracts", () => {
       harnessPermissionModeIdSchema.safeParse(
         `m${"x".repeat(HARNESS_PERMISSION_MODE_ID_MAX_LENGTH)}`,
       ).success,
-    ).toBe(false);
-    expect(
-      threadPermissionModeSelectParamsSchema.safeParse({
-        threadId: "thread-1",
-        permissionModeId: "default",
-        nativeMode: "dontAsk",
-      }).success,
     ).toBe(false);
   });
 });

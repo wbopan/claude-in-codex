@@ -75,7 +75,7 @@ function fixture() {
       headers: { "content-type": "application/json" },
     });
   const electron = {
-    app: { getVersion: () => "26.915.31945" },
+    app: { getVersion: () => "1.0.0" },
     webContents: { getAllWebContents: () => [] },
     net: { fetch: nativeFetch },
   };

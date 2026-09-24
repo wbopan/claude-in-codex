@@ -27,7 +27,7 @@ async function temporaryStoreDirectory(): Promise<string> {
   return tempDir("claude-in-codex-mapping-store-");
 }
 
-const harnessId = harnessIdSchema.parse("pi");
+const harnessId = harnessIdSchema.parse("example-harness");
 const threadId = hostThreadIdSchema.parse("thread-1");
 const nativeRef = nativeSessionRefSchema.parse({
   harnessId,
@@ -68,7 +68,7 @@ async function createReady(
     harnessId,
     cwd: "/synthetic",
     title: "External Thread",
-    transportModelId: "claude-in-codex/pi-native",
+    transportModelId: "claude-in-codex/example-harness-native",
     ephemeral: false,
     historyMode: "legacy",
     ...(forkSource ? { forkSource } : {}),
@@ -87,7 +87,7 @@ async function createProvisional(store: MappingStore, value: string): Promise<Ho
     createRequestId: `create-${value}`,
     harnessId,
     cwd: "/synthetic",
-    transportModelId: "claude-in-codex/pi-native",
+    transportModelId: "claude-in-codex/example-harness-native",
     ephemeral: false,
     historyMode: "legacy",
   });
@@ -112,7 +112,7 @@ describe("mapping-store package", () => {
         createRequestId: "create-1",
         harnessId,
         cwd: "/another",
-        transportModelId: "claude-in-codex/pi-native",
+        transportModelId: "claude-in-codex/example-harness-native",
         ephemeral: false,
         historyMode: "legacy",
       }),
@@ -212,7 +212,7 @@ describe("mapping-store package", () => {
       nativeSessionRef: nativeRef,
       ephemeral: false,
       historyMode: "legacy",
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
       turnMappings: [mapping(1)],
     });
     await second.close();
@@ -305,7 +305,7 @@ describe("mapping-store package", () => {
       cwd: "/synthetic",
       title: "External",
       archived: false,
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
       ephemeral: false,
       historyMode: "legacy",
       turnMappings: [mapping(1)],
@@ -559,7 +559,7 @@ describe("mapping-store package", () => {
       turnMappings: [],
       forkSource,
       title: "External Thread",
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
     });
     await first.close();
 
@@ -757,7 +757,7 @@ describe("mapping-store package", () => {
       createRequestId: "provisional",
       harnessId,
       cwd: "/synthetic",
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
       ephemeral: false,
       historyMode: "legacy",
       forkSource: {
@@ -796,7 +796,7 @@ describe("mapping-store package", () => {
       createRequestId: "fork-create",
       harnessId,
       cwd: "/synthetic",
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
       ephemeral: false,
       historyMode: "legacy",
       forkSource: { hostThreadId: threadId, hostTurnId: mapping(1).hostTurnId },
@@ -832,7 +832,7 @@ describe("mapping-store package", () => {
       createRequestId: "replacement-create",
       harnessId,
       cwd: "/synthetic",
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
       ephemeral: false,
       historyMode: "legacy",
     });
@@ -862,7 +862,7 @@ describe("mapping-store package", () => {
           cwd: "/scale",
           title: `Scale Thread ${index}`,
           archived: false,
-          transportModelId: "claude-in-codex/pi-native",
+          transportModelId: "claude-in-codex/example-harness-native",
           ephemeral: false,
           historyMode: "legacy",
           turnMappings: [],

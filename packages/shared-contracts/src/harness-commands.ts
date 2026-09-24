@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-import { harnessIdSchema, hostThreadIdSchema, hostTurnIdSchema } from "./ids.js";
-import { jsonObjectSchema } from "./json-value.js";
+import { hostTurnIdSchema } from "./ids.js";
 
 const commandIdSchema = z
   .string()
@@ -47,29 +46,6 @@ export const harnessCommandCatalogSchema = z
   });
 
 export type HarnessCommandCatalog = z.infer<typeof harnessCommandCatalogSchema>;
-
-export const harnessCommandsInspectParamsSchema = z.object({ harnessId: harnessIdSchema }).strict();
-
-export type HarnessCommandsInspectParams = z.infer<typeof harnessCommandsInspectParamsSchema>;
-
-export const threadCommandsInspectParamsSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-  })
-  .strict();
-
-export type ThreadCommandsInspectParams = z.infer<typeof threadCommandsInspectParamsSchema>;
-
-export const threadCommandExecuteParamsSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-    commandId: commandIdSchema,
-    turnId: hostTurnIdSchema.optional(),
-    arguments: jsonObjectSchema.optional(),
-  })
-  .strict();
-
-export type ThreadCommandExecuteParams = z.infer<typeof threadCommandExecuteParamsSchema>;
 
 export const threadCommandExecuteResultSchema = z
   .object({

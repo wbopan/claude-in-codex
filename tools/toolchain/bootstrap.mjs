@@ -7,12 +7,10 @@ import { hostReleaseTarget, NODE_DIST_BASE_URL } from "../../scripts/release/tar
 
 const root = path.resolve(import.meta.dirname, "../..");
 const target = hostReleaseTarget();
-if (process.platform !== "darwin") throw new Error("Fork bootstrap currently supports macOS.");
+if (process.platform !== "darwin") throw new Error("Bootstrap supports macOS only.");
 const toolchains = path.join(root, ".dev/toolchains");
 const downloads = path.join(toolchains, "downloads");
-const cache = path.join(root, ".dev/release-cache/node");
 await mkdir(downloads, { recursive: true });
-await mkdir(cache, { recursive: true });
 
 function run(command, args, env = process.env) {
   execFileSync(command, args, { cwd: root, env, stdio: "inherit" });
@@ -33,7 +31,7 @@ function download(url, destination) {
   ]);
 }
 
-const archive = path.join(cache, target.nodeArchive);
+const archive = path.join(downloads, target.nodeArchive);
 try {
   await verifyNodeArchive(archive, target.nodeArchiveSha256);
 } catch {
@@ -42,9 +40,7 @@ try {
 }
 run("tar", ["-xzf", archive, "-C", toolchains]);
 
-// Use Rust's distribution bucket directly when static.rust-lang.org is unreachable.
-const rustBase = "https://static-rust-lang-org.s3.amazonaws.com";
-const rustupUrl = `${rustBase}/rustup/dist/${target.rustTarget}/rustup-init`;
+const rustupUrl = `https://static.rust-lang.org/rustup/dist/${target.rustTarget}/rustup-init`;
 const installer = path.join(downloads, "rustup-init");
 download(rustupUrl, installer);
 download(`${rustupUrl}.sha256`, `${installer}.sha256`);
@@ -75,8 +71,6 @@ run(
     ...process.env,
     CARGO_HOME: path.join(toolchains, "cargo"),
     RUSTUP_HOME: path.join(toolchains, "rustup"),
-    RUSTUP_DIST_SERVER: rustBase,
-    RUSTUP_UPDATE_ROOT: `${rustBase}/rustup`,
   },
 );
 console.log("Local toolchains ready. Run: bash tools/toolchain/with-toolchain.sh npm ci");

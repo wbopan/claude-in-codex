@@ -4,7 +4,6 @@ import {
   harnessAccountSnapshotSchema,
   harnessAccountSourceListResultSchema,
   type HarnessAccountInspectResult,
-  type HarnessAccountListResult,
   type HarnessAccountSourceListResult,
   type HarnessId,
   type HarnessPluginDescriptor,
@@ -114,20 +113,4 @@ export class HarnessAccountInspectionCache {
     this.#flights.set(adapter.harnessId, flight);
     return flight;
   }
-}
-
-/** Legacy aggregate interface retained for older Renderer clients. */
-export async function inspectHarnessAccounts(
-  adapters: Iterable<HarnessAdapter>,
-  descriptors: readonly HarnessPluginDescriptor[],
-  timeoutMs = DEFAULT_ACCOUNT_INSPECTION_TIMEOUT_MS,
-): Promise<HarnessAccountListResult> {
-  const inspections = await Promise.all(
-    [...adapters].map((adapter) => inspectHarnessAccount(adapter, descriptors, timeoutMs)),
-  );
-  return {
-    accounts: inspections.flatMap(({ harnessId, harnessName, account }) =>
-      account ? [{ ...account, harnessId, harnessName }] : [],
-    ),
-  };
 }

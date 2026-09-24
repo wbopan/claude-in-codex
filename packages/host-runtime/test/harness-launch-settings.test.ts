@@ -33,9 +33,12 @@ describe("Host-owned Harness launch settings", () => {
   it("keeps separate plugins and Host data roots isolated", async () => {
     const first = await setup(),
       other = await setup();
-    await Promise.all([first.store.set(id, first.file), first.store.set("workbuddy", other.file)]);
+    await Promise.all([
+      first.store.set(id, first.file),
+      first.store.set("other-harness", other.file),
+    ]);
     expect((await first.store.get(id)).path).toBe(first.file);
-    expect((await first.store.get("workbuddy")).path).toBe(other.file);
+    expect((await first.store.get("other-harness")).path).toBe(other.file);
     expect((await other.store.get(id)).path).toBeNull();
   });
 

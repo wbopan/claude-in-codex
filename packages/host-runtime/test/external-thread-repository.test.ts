@@ -227,8 +227,8 @@ describe("ExternalThreadRepository", () => {
       createRequestId: "create-rewind",
       harnessId,
       cwd: "/synthetic",
-      title: "Grok Thread",
-      transportModelId: "claude-in-codex/grok-native",
+      title: "Rewind Thread",
+      transportModelId: "claude-in-codex/claude-code-native",
       ephemeral: false,
       historyMode: "legacy",
     });

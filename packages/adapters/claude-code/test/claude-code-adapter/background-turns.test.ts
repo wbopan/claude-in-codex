@@ -414,7 +414,7 @@ describe("Claude Code HarnessAdapter", () => {
     await nextEvent(iterator);
     const transport = transports[0];
     if (!transport) throw new Error("Fake Claude transport was not created");
-    const nativeSubagentIds = ["a419753fbeb78d5bd", "a4c17172923f00231", "a78414260bd2f9554"];
+    const nativeSubagentIds = ["a0000000000000003", "a0000000000000004", "a0000000000000001"];
     for (const [index, nativeSubagentId] of nativeSubagentIds.entries()) {
       const callId = `agent-${index + 1}`;
       transport.event({
@@ -451,12 +451,12 @@ describe("Claude Code HarnessAdapter", () => {
         status: "completed",
       });
     }
-    transport.delta("三个agent全部启动完毕");
+    transport.delta("All three agents started");
     await nextEvent(iterator);
     transport.finish({ status: "succeeded" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { type: "agentMessage", text: "三个agent全部启动完毕" } },
+      snapshot: { item: { type: "agentMessage", text: "All three agents started" } },
     });
     await expect(session.execute(textTurn("follow-up"))).resolves.toMatchObject({
       ok: false,
@@ -465,11 +465,11 @@ describe("Claude Code HarnessAdapter", () => {
 
     for (const [index, nativeSubagentId] of nativeSubagentIds.entries()) {
       transport.event({ type: "segment.started" });
-      transport.delta(`${nativeSubagentId} 已完成`, `continuation-${index + 1}`);
+      transport.delta(`${nativeSubagentId} done`, `continuation-${index + 1}`);
       expect(await nextEvent(iterator)).toMatchObject({ type: "item.started" });
       expect(await nextEvent(iterator)).toMatchObject({
         type: "item.updated",
-        update: { type: "text.append", text: `${nativeSubagentId} 已完成` },
+        update: { type: "text.append", text: `${nativeSubagentId} done` },
       });
       transport.event({ type: "message.completed", messageId: `continuation-${index + 1}` });
       expect(await nextEvent(iterator)).toMatchObject({ type: "item.completed" });
@@ -531,7 +531,7 @@ describe("Claude Code HarnessAdapter", () => {
     });
 
     transport.event({ type: "segment.started" });
-    transport.delta("Agent 1 已完成，等待 Agent 2", "continuation-1");
+    transport.delta("Agent 1 done, waiting for Agent 2", "continuation-1");
     expect(await nextEvent(iterator)).toMatchObject({ type: "item.started" });
     await nextEvent(iterator);
     // The second Subagent settles while Claude is still answering for the first.
@@ -548,7 +548,7 @@ describe("Claude Code HarnessAdapter", () => {
     transport.event({ type: "message.completed", messageId: "continuation-1" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "Agent 1 已完成，等待 Agent 2" } },
+      snapshot: { item: { text: "Agent 1 done, waiting for Agent 2" } },
     });
     transport.finish({ status: "succeeded" });
     await expect(session.execute(textTurn("follow-up"))).resolves.toMatchObject({
@@ -557,13 +557,13 @@ describe("Claude Code HarnessAdapter", () => {
     });
 
     transport.event({ type: "segment.started" });
-    transport.delta("Agent 2 已完成", "continuation-2");
+    transport.delta("Agent 2 done", "continuation-2");
     expect(await nextEvent(iterator)).toMatchObject({ type: "item.started" });
     await nextEvent(iterator);
     transport.event({ type: "message.completed", messageId: "continuation-2" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "Agent 2 已完成" } },
+      snapshot: { item: { text: "Agent 2 done" } },
     });
     transport.finish({ status: "succeeded" });
     expect(await nextEvent(iterator)).toMatchObject({
@@ -657,9 +657,9 @@ describe("Claude Code HarnessAdapter", () => {
     const transport = transports[0];
     if (!transport) throw new Error("Fake Claude transport was not created");
     for (const [index, nativeSubagentId] of [
-      "a8b5bcd3a4bf6c508",
-      "a47086db7e0c568b6",
-      "a372e8a990c9aadf9",
+      "a0000000000000005",
+      "a0000000000000006",
+      "a0000000000000007",
     ].entries()) {
       const callId = `agent-${index + 1}`;
       transport.event({
@@ -682,12 +682,12 @@ describe("Claude Code HarnessAdapter", () => {
       await nextEvent(iterator);
     }
 
-    transport.delta("已并行启动 3 个子 agent", "root-1");
+    transport.delta("Started 3 agents in parallel", "root-1");
     await nextEvent(iterator);
     transport.event({ type: "message.completed", messageId: "root-1" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "已并行启动 3 个子 agent" } },
+      snapshot: { item: { text: "Started 3 agents in parallel" } },
     });
     transport.finish({ status: "succeeded" });
     await expect(session.execute(textTurn("follow-up"))).resolves.toMatchObject({
@@ -695,19 +695,19 @@ describe("Claude Code HarnessAdapter", () => {
       error: { code: "sessionBusy" },
     });
 
-    transport.delta("等待三个子 agent 返回检查结果。", "root-2");
+    transport.delta("Waiting for the three agents to report.", "root-2");
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.started",
       item: { type: "agentMessage", text: "" },
     });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.updated",
-      update: { type: "text.append", text: "等待三个子 agent 返回检查结果。" },
+      update: { type: "text.append", text: "Waiting for the three agents to report." },
     });
     transport.event({ type: "message.completed", messageId: "root-2" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "等待三个子 agent 返回检查结果。" } },
+      snapshot: { item: { text: "Waiting for the three agents to report." } },
     });
     transport.finish({ status: "succeeded" });
     await expect(session.execute(textTurn("still-busy"))).resolves.toMatchObject({
@@ -716,9 +716,9 @@ describe("Claude Code HarnessAdapter", () => {
     });
 
     for (const nativeSubagentId of [
-      "a8b5bcd3a4bf6c508",
-      "a47086db7e0c568b6",
-      "a372e8a990c9aadf9",
+      "a0000000000000005",
+      "a0000000000000006",
+      "a0000000000000007",
     ]) {
       transport.event({
         type: "subagent.settled",
@@ -733,19 +733,19 @@ describe("Claude Code HarnessAdapter", () => {
       });
     }
 
-    transport.delta("三份子 agent 已完成，结果一致。", "root-3");
+    transport.delta("All three agents finished with matching results.", "root-3");
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.started",
       item: { type: "agentMessage", text: "" },
     });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.updated",
-      update: { type: "text.append", text: "三份子 agent 已完成，结果一致。" },
+      update: { type: "text.append", text: "All three agents finished with matching results." },
     });
     transport.event({ type: "message.completed", messageId: "root-3" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "三份子 agent 已完成，结果一致。" } },
+      snapshot: { item: { text: "All three agents finished with matching results." } },
     });
     await expect(session.execute(textTurn("after-items"))).resolves.toMatchObject({
       ok: false,
@@ -763,7 +763,7 @@ describe("Claude Code HarnessAdapter", () => {
     const { adapter, transports } = fixture();
     const session = await openSession(adapter);
     const iterator = session.outputs[Symbol.asyncIterator]();
-    const agents = ["a0e467bb4be68bd08", "a22cd5f001d3795e3", "a5eb0835279350422"] as const;
+    const agents = ["a0000000000000008", "a0000000000000009", "a000000000000000a"] as const;
 
     await session.execute(textTurn("launch three agents"));
     await nextEvent(iterator);
@@ -792,12 +792,12 @@ describe("Claude Code HarnessAdapter", () => {
       await nextEvent(iterator);
       await nextEvent(iterator);
     }
-    transport.delta("已启动 3 个子 agent", "root-1");
+    transport.delta("Started 3 agents", "root-1");
     await nextEvent(iterator);
     transport.event({ type: "message.completed", messageId: "root-1" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "已启动 3 个子 agent" } },
+      snapshot: { item: { text: "Started 3 agents" } },
     });
     transport.finish({ status: "succeeded" });
     await expect(session.execute(textTurn("follow-up"))).resolves.toMatchObject({
@@ -815,16 +815,16 @@ describe("Claude Code HarnessAdapter", () => {
       nativeSubagentId: agents[0],
       status: "completed",
     });
-    transport.delta("第 1 个子 agent 已完成，另外 2 个仍在执行中。", "root-2");
+    transport.delta("Agent 1 finished; 2 are still running.", "root-2");
     expect(await nextEvent(iterator)).toMatchObject({ type: "item.started" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.updated",
-      update: { type: "text.append", text: "第 1 个子 agent 已完成，另外 2 个仍在执行中。" },
+      update: { type: "text.append", text: "Agent 1 finished; 2 are still running." },
     });
     transport.event({ type: "message.completed", messageId: "root-2" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "第 1 个子 agent 已完成，另外 2 个仍在执行中。" } },
+      snapshot: { item: { text: "Agent 1 finished; 2 are still running." } },
     });
     transport.finish({ status: "succeeded" });
     await expect(session.execute(textTurn("still-busy"))).resolves.toMatchObject({
@@ -840,13 +840,13 @@ describe("Claude Code HarnessAdapter", () => {
         status: "completed",
       });
     }
-    transport.delta("第 3 个子 agent 已完成。", "root-3");
+    transport.delta("Agent 3 finished.", "root-3");
     expect(await nextEvent(iterator)).toMatchObject({ type: "item.started" });
     expect(await nextEvent(iterator)).toMatchObject({ type: "item.updated" });
     transport.event({ type: "message.completed", messageId: "root-3" });
     expect(await nextEvent(iterator)).toMatchObject({
       type: "item.completed",
-      snapshot: { item: { text: "第 3 个子 agent 已完成。" } },
+      snapshot: { item: { text: "Agent 3 finished." } },
     });
     await expect(session.execute(textTurn("after-items"))).resolves.toMatchObject({
       ok: false,

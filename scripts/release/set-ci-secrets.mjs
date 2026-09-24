@@ -6,20 +6,18 @@
 //   node scripts/release/set-ci-secrets.mjs --sparkle
 //
 // --certificate exports only the Developer ID Application identity (never the keychain's other
-// identities), so macOS asks once for the keychain password. Uses gh from PATH or
-// .dev/toolchains/gh, authenticated by GH_TOKEN or the git credential for github.com.
+// identities), so macOS asks once for the keychain password. Uses gh from PATH, authenticated by
+// GH_TOKEN or the git credential for github.com.
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { ensureSparkle, sparkleKeyAccount } from "../../tools/app/distribution.mjs";
+import { ensureSparkle, repository, sparkleKeyAccount } from "../../tools/app/distribution.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const sourceRepository = "wbopan/claude-in-codex";
 const { values } = parseArgs({
   options: {
     certificate: { type: "boolean" },
@@ -30,12 +28,9 @@ const { values } = parseArgs({
   },
 });
 
-const gh = ["gh", path.join(root, ".dev/toolchains/gh/bin/gh")].find((candidate) =>
-  candidate === "gh"
-    ? spawnSync("gh", ["--version"], { stdio: "ignore" }).status === 0
-    : existsSync(candidate),
-);
-if (!gh) throw new Error("Install the GitHub CLI (gh) first");
+if (spawnSync("gh", ["--version"], { stdio: "ignore" }).status !== 0) {
+  throw new Error("Install the GitHub CLI (gh) first");
+}
 const token =
   process.env.GH_TOKEN ??
   execFileSync("git", ["credential", "fill"], {
@@ -45,7 +40,7 @@ const token =
 
 function setSecret(name, value) {
   if (!value) throw new Error(`${name} is empty`);
-  const result = spawnSync(gh, ["secret", "set", name, "--repo", sourceRepository], {
+  const result = spawnSync("gh", ["secret", "set", name, "--repo", repository], {
     input: value,
     env: { ...process.env, GH_TOKEN: token },
     encoding: "utf8",

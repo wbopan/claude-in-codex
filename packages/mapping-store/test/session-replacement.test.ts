@@ -14,7 +14,7 @@ import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
 import { MappingStore } from "../src/index.js";
 
-const harnessId = harnessIdSchema.parse("pi");
+const harnessId = harnessIdSchema.parse("example-harness");
 const hostThreadId = hostThreadIdSchema.parse("target");
 const sourceRef = nativeSessionRefSchema.parse({
   harnessId,
@@ -50,7 +50,7 @@ describe.each(["last-Turn", "Fork-derived"] as const)("%s replacement expectatio
       createRequestId: "create-target",
       harnessId,
       cwd: "/synthetic",
-      transportModelId: "claude-in-codex/pi-native",
+      transportModelId: "claude-in-codex/example-harness-native",
       ephemeral: false,
       historyMode: "paginated",
       forkSource,
@@ -92,7 +92,10 @@ describe.each(["last-Turn", "Fork-derived"] as const)("%s replacement expectatio
   it("rejects a stale edit after an earlier queued configuration write without losing indexes", async () => {
     const { directory, store, original, input, replace } = await setup();
     // Both requests enter the Store queue before either has persisted.
-    const updating = store.setTransportModelId(hostThreadId, "claude-in-codex/pi-native@changed");
+    const updating = store.setTransportModelId(
+      hostThreadId,
+      "claude-in-codex/example-harness-native@changed",
+    );
     const replacing = replace(input);
     await expect(replacing).rejects.toMatchObject({ code: "MAPPING_CONFLICT" });
     const updated = await updating;

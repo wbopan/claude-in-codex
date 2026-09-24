@@ -1,12 +1,6 @@
 {
   "schemaVersion": 1,
-  "source": {
-    "desktopVersion": "26.721.4979.0",
-    "codexCliVersion": "0.146.0-alpha.3.1",
-    "platform": "Windows 10.0.26200 x86_64",
-    "capturedAt": "2026-07-25",
-    "privacyReview": "No credentials, user prompts, transcript, tool output, or absolute local paths."
-  },
+  "source": "Captured from a stock Codex app-server; values are redacted placeholders.",
   "transport": "LF-delimited JSON objects over stdio",
   "requests": [
     {
@@ -15,7 +9,7 @@
       "params": {
         "clientInfo": {
           "name": "codex_app_server_daemon",
-          "title": "claude-in-codex Gate A differential",
+          "title": "claude-in-codex app-server fixture",
           "version": "0.0.0"
         },
         "capabilities": {

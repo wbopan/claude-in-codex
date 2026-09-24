@@ -4,7 +4,6 @@ import { harnessIdSchema, type HarnessAccountSnapshot } from "@claude-in-codex/s
 import {
   HarnessAccountInspectionCache,
   inspectHarnessAccount,
-  inspectHarnessAccounts,
   listHarnessAccountSources,
 } from "../src/harness-accounts.js";
 
@@ -53,28 +52,6 @@ describe("read-only Harness accounts", () => {
     });
   });
 
-  it("returns only real quota, isolates failure, and uses plugin display metadata without opening Threads", async () => {
-    const ready = Object.assign(adapter("sample-agent"), {
-      inspectAccount: vi.fn(async () => snapshot),
-    });
-    const open = vi.spyOn(ready, "open");
-    const api = Object.assign(adapter("api-agent"), { inspectAccount: vi.fn(async () => null) });
-    const failed = Object.assign(adapter("broken-agent"), {
-      inspectAccount: vi.fn(async () => {
-        throw new Error("secret diagnostic");
-      }),
-    });
-    expect(
-      await inspectHarnessAccounts(
-        [ready, api, failed, adapter("legacy-agent")],
-        [{ id: ready.harnessId, name: "Sample Agent", version: "1.0.0" }],
-      ),
-    ).toEqual({
-      accounts: [{ ...snapshot, harnessId: "sample-agent", harnessName: "Sample Agent" }],
-    });
-    expect(open).not.toHaveBeenCalled();
-  });
-
   it("caches each Harness account for 15 seconds and lets manual refresh bypass it", async () => {
     let now = 0;
     const inspectAccount = vi
@@ -98,23 +75,20 @@ describe("read-only Harness accounts", () => {
     expect(inspectAccount).toHaveBeenCalledTimes(3);
   });
 
-  it("does not reuse the previous account when native authentication stops returning quota", async () => {
-    const inspectAccount = vi
-      .fn<() => Promise<HarnessAccountSnapshot | null>>()
-      .mockResolvedValueOnce(snapshot)
-      .mockResolvedValueOnce(null);
-    const native = Object.assign(adapter("sample-agent"), { inspectAccount });
-    expect((await inspectHarnessAccounts([native], [])).accounts).toHaveLength(1);
-    expect(await inspectHarnessAccounts([native], [])).toEqual({ accounts: [] });
-  });
-
-  it("bounds unresponsive plugins and rejects malformed or secret-bearing snapshots", async () => {
+  it("bounds unresponsive plugins and isolates failed, malformed, or secret-bearing snapshots", async () => {
     const hung = Object.assign(adapter("hung-agent"), {
       inspectAccount: () => new Promise<null>(() => undefined),
     });
     const malformed = Object.assign(adapter("bad-agent"), {
       inspectAccount: async () => ({ ...snapshot, token: "must not escape" }),
     });
-    expect(await inspectHarnessAccounts([hung, malformed], [], 5)).toEqual({ accounts: [] });
+    const failed = Object.assign(adapter("broken-agent"), {
+      inspectAccount: vi.fn(async () => {
+        throw new Error("secret diagnostic");
+      }),
+    });
+    for (const candidate of [hung, malformed, failed]) {
+      expect((await inspectHarnessAccount(candidate, [], 5)).account).toBeNull();
+    }
   });
 });

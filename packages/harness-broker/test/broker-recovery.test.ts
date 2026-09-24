@@ -37,7 +37,7 @@ async function fixture() {
     socketPath: endpoint("broker"),
   };
 }
-const id = harnessIdSchema.parse("codebuddy");
+const id = harnessIdSchema.parse("example-harness");
 describe("broker recovery ownership", () => {
   it("preserves the ownership error when closing a foreign Session rejects", async () => {
     const f = await fixture();

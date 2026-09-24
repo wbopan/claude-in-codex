@@ -5,13 +5,10 @@ import {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
 } from "./harness-permission-modes.js";
-import { harnessIdSchema, hostThreadIdSchema } from "./ids.js";
-import { threadUsageSnapshotSchema } from "./thread-usage.js";
 
 export const HARNESS_MODEL_REF_MAX_LENGTH = 512;
 export const HARNESS_MODEL_LABEL_MAX_LENGTH = 256;
 export const HARNESS_THINKING_OPTION_ID_MAX_LENGTH = 128;
-export const THREAD_OWNERSHIP_LIST_MAX_LENGTH = 100;
 
 const nonBlankTextSchema = z.string().refine((value) => value.trim().length > 0, {
   message: "Value must not be empty or whitespace",
@@ -213,21 +210,12 @@ export type HarnessConfigurationState = z.infer<typeof harnessConfigurationState
 export const harnessModelSelectionStateSchema = harnessConfigurationStateSchema;
 export type HarnessModelSelectionState = HarnessConfigurationState;
 
-export const harnessWebUiCapabilitySchema = z
-  .object({
-    open: z.literal(true),
-  })
-  .strict();
-
-export type HarnessWebUiCapability = z.infer<typeof harnessWebUiCapabilitySchema>;
-
 const readyHarnessInspectionSchema = z
   .object({
     status: z.literal("ready"),
     catalog: harnessModelCatalogSchema,
     permissionModes: harnessPermissionModeCatalogSchema.optional(),
     capabilities: harnessSessionCapabilitiesSchema,
-    webUi: harnessWebUiCapabilitySchema.optional(),
   })
   .strict()
   .superRefine((inspection, context) => {
@@ -256,145 +244,3 @@ export const harnessInspectionSchema = z.union([
 ]);
 
 export type HarnessInspection = z.infer<typeof harnessInspectionSchema>;
-
-export const harnessInspectParamsSchema = z
-  .object({
-    harnessId: harnessIdSchema,
-    cwd: nonBlankTextSchema.max(16_384).optional(),
-    refresh: z.boolean().optional(),
-  })
-  .strict();
-
-export type HarnessInspectParams = z.infer<typeof harnessInspectParamsSchema>;
-
-export const harnessWebUiOpenParamsSchema = z
-  .object({
-    harnessId: harnessIdSchema,
-  })
-  .strict();
-
-export type HarnessWebUiOpenParams = z.infer<typeof harnessWebUiOpenParamsSchema>;
-
-export const harnessWebUiOpenResultSchema = z.object({}).strict();
-
-export type HarnessWebUiOpenResult = z.infer<typeof harnessWebUiOpenResultSchema>;
-
-export const threadModelSelectParamsSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-    model: harnessModelRefSchema,
-  })
-  .strict();
-
-export type ThreadModelSelectParams = z.infer<typeof threadModelSelectParamsSchema>;
-
-export const threadThinkingSelectParamsSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-    thinkingOptionId: harnessThinkingOptionIdSchema,
-  })
-  .strict();
-
-export type ThreadThinkingSelectParams = z.infer<typeof threadThinkingSelectParamsSchema>;
-
-export const threadInspectionParamsSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-  })
-  .strict();
-
-export type ThreadInspectionParams = z.infer<typeof threadInspectionParamsSchema>;
-
-const codexThreadInspectionSchema = z
-  .object({
-    owner: z.literal("codex"),
-    locked: z.literal(true),
-  })
-  .strict();
-
-const externalThreadInspectionSchema = z
-  .object({
-    owner: z.literal("external"),
-    harnessId: nonBlankTextSchema.max(256),
-    transportModelId: nonBlankTextSchema.max(1_024),
-    effectiveModel: harnessModelRefSchema.optional(),
-    resolvedModelLabel: harnessResolvedModelLabelSchema.optional(),
-    effectiveThinkingOptionId: harnessThinkingOptionIdSchema.optional(),
-    availableThinkingOptions: harnessThinkingOptionsSchema.optional(),
-    effectivePermissionModeId: harnessPermissionModeIdSchema.optional(),
-    history: harnessHistoryCapabilitiesSchema,
-    usage: threadUsageSnapshotSchema.optional(),
-    locked: z.literal(true),
-  })
-  .strict();
-
-export const threadInspectionSchema = z.discriminatedUnion("owner", [
-  codexThreadInspectionSchema,
-  externalThreadInspectionSchema,
-]);
-
-export type ThreadInspection = z.infer<typeof threadInspectionSchema>;
-
-export const threadOwnershipListParamsSchema = z
-  .object({
-    threadIds: z.array(hostThreadIdSchema).min(1).max(THREAD_OWNERSHIP_LIST_MAX_LENGTH),
-  })
-  .strict()
-  .superRefine(({ threadIds }, context) => {
-    const seen = new Set<string>();
-    for (const [index, threadId] of threadIds.entries()) {
-      if (seen.has(threadId)) {
-        context.addIssue({
-          code: "custom",
-          message: "Thread ownership-list IDs must be unique",
-          path: ["threadIds", index],
-        });
-      }
-      seen.add(threadId);
-    }
-  });
-
-export type ThreadOwnershipListParams = z.infer<typeof threadOwnershipListParamsSchema>;
-
-const codexThreadOwnershipSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-    owner: z.literal("codex"),
-  })
-  .strict();
-
-const externalThreadOwnershipSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-    owner: z.literal("external"),
-    harnessId: z.string().max(256).pipe(harnessIdSchema),
-  })
-  .strict();
-
-export const threadOwnershipSchema = z.discriminatedUnion("owner", [
-  codexThreadOwnershipSchema,
-  externalThreadOwnershipSchema,
-]);
-
-export type ThreadOwnership = z.infer<typeof threadOwnershipSchema>;
-
-export const threadOwnershipListResultSchema = z
-  .object({
-    threads: z.array(threadOwnershipSchema).min(1).max(THREAD_OWNERSHIP_LIST_MAX_LENGTH),
-  })
-  .strict()
-  .superRefine(({ threads }, context) => {
-    const seen = new Set<string>();
-    for (const [index, thread] of threads.entries()) {
-      if (seen.has(thread.threadId)) {
-        context.addIssue({
-          code: "custom",
-          message: "Thread ownership-list results must be unique",
-          path: ["threads", index, "threadId"],
-        });
-      }
-      seen.add(thread.threadId);
-    }
-  });
-
-export type ThreadOwnershipListResult = z.infer<typeof threadOwnershipListResultSchema>;

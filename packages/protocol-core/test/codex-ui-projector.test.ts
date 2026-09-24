@@ -658,7 +658,7 @@ describe("Codex UI projector", () => {
         cwd: "/workspace",
         snapshot: {
           nativeTurnRef: nativeTurnRefSchema.parse({
-            harnessId: "grok",
+            harnessId: "other-harness",
             nativeSessionId: "parent",
             nativeTurnKey: "turn-1",
             formatVersion: 1,

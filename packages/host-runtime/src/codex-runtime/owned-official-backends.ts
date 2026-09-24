@@ -11,8 +11,7 @@ interface LaunchOptions {
   environment: NodeJS.ProcessEnv;
 }
 
-/** Unix transport is distinct from deployment policy; account management remains
- * gated on its separately verified native process/storage capabilities. */
+/** Owns one official app-server behind a private Unix socket listener. */
 export function createOwnedUnixBackend(
   input: LaunchOptions & {
     diagnosticOutput: Writable;

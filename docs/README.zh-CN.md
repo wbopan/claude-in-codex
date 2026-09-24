@@ -21,7 +21,7 @@ App 由 Developer ID 签名并经过 Apple 公证，可以直接打开。需要 
 3. 选择「断开」或「退出 Claude in Codex」，App 会等正在执行的 Claude Code Session 和后台任务完成。等待期间可以取消断开，也可以明确选择停止 Session。
 4. Codex App 和 GPT 任务继续运行。重新打开 App 或选择「接入 Codex App」即可再次接入。
 
-已验证官方 Codex App **26.915.31945**、**26.917.51856**。接入前只校验 Codex App 带有 OpenAI 签名，运行时再检查内部连接结构；结构对不上时停止接入并显示原因，不会改动任何东西。Host 使用本机已安装、已登录的 Claude Code，App 自带 Node.js 和插件。
+接入前只校验 Codex App 带有 OpenAI 签名，运行时再检查内部连接结构；结构对不上时停止接入并显示原因，不会改动任何东西。Host 使用本机已安装、已登录的 Claude Code，App 自带 Node.js 和插件。
 
 如果当前 Codex App 是旧 launcher 启动的，需要先退出它，再从 Finder 正常打开 Codex App。Host 会识别旧的 `CODEX_CLI_PATH` 并拒绝叠加接入。
 
@@ -46,7 +46,7 @@ Codex App 更新后如果接入失败，通常是新版 Codex App 改了内部�
 **概览**
 
 - 组件：Codex App、Claude Code CLI、Claude in Codex 三张卡片，各带图标和健康状态（运行中、Host 启动的 Claude 进程数、已接入）。图标都是不带底色的图形：Codex 云朵从 Codex App 自带的图标中取出，Claude Code CLI 用 Clawd 像素图，Claude in Codex 用 Claude 云朵。
-- 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），缓存 90 秒。Codex App 自己的用量菜单保持原生，不再显示 Claude 额度。
+- 用量：每个额度窗口一行，显示剩余量进度条、百分比和重置时间，剩余 20% 及以下标为橙色。Codex 额度来自 Codex App 自己轮询的 `/backend-api/wham/usage`：优先读结构化的 `rate_limit` 窗口，没有时保留服务端下发的文字行。Claude Code 额度来自 Claude Code 的账户用量接口（5 小时、每周和按模型的每周窗口，例如 Fable），缓存 90 秒。Codex App 自己的用量菜单保持原生。
 - Claude Code Session：每个 Session 一行，显示标题和当前活动（思考、运行命令、等待批准等）及已运行时长，悬停可见所在目录。不显示提示词、命令或输出内容。
 
 Claude Code CLI 进程数和用量在接入后读取。
@@ -107,9 +107,9 @@ open '/Applications/Claude in Codex.app'
 
 可以用 `CLAUDE_IN_CODEX_NODE_BINARY=/absolute/path/to/node` 指定打包的 Node 22/24。构建会生成 App 图标（装有 Xcode 时用 `actool` 编译 `apps/macos/icon/Claude.icon`，否则用预渲染 PNG 生成 icns），嵌入 Sparkle 更新框架（首次构建时按固定版本和校验和下载到 `.dev/toolchains`），然后用钥匙串中的 Developer ID 证书签名并检查签名；没有证书时退回 ad-hoc 签名。版本号取自根目录 `package.json`。开发构建不自动检查更新，只能手动检查。
 
-仓库内的开发产物（构建、工具链、验收记录）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
+仓库内的开发产物（构建、工具链、测试数据）都在 Git 忽略的 `.dev/` 下。`npm run bootstrap` 把 Node 和 Rust 工具链装到 `.dev/toolchains`。
 
-开发测试使用独立的官方 App 副本及数据目录，详情见 [迁移设计与验收](menubar-migration.md)（英文）。`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定测试副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_FEATURES=1`、`CLAUDE_IN_CODEX_SHOW_SETTINGS=1` 在启动时打开主窗口的功能或设置页，`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 打开关于窗口。普通使用不需要这些环境变量。
+如需针对单独的 Codex App 副本测试，`CLAUDE_IN_CODEX_DESKTOP_APP` 可以指定该副本，`CLAUDE_IN_CODEX_DATA_DIR` 指定 Host 数据目录。`CLAUDE_IN_CODEX_AUTO_ATTACH=0|1` 和 `CLAUDE_IN_CODEX_SHOW_DASHBOARD=1` 会覆盖设置中对应的启动选项，`CLAUDE_IN_CODEX_SHOW_FEATURES=1`、`CLAUDE_IN_CODEX_SHOW_SETTINGS=1` 在启动时打开主窗口的功能或设置页，`CLAUDE_IN_CODEX_SHOW_ABOUT=1` 打开关于窗口。普通使用不需要这些环境变量。
 
 已有 Claude in Codex 在运行时，同一 bundle identifier 的新构建会直接交给它并退出。要和正在使用的 Host 并排测试界面，构建一个独立标识的副本，并关闭自动接入：
 
@@ -127,7 +127,7 @@ open --env CLAUDE_IN_CODEX_AUTO_ATTACH=0 --env CLAUDE_IN_CODEX_DATA_DIR="$PWD/.d
 ```sh
 # 1. 修改 package.json 的 version，在 docs/CHANGELOG.md 加一节同名说明，提交
 # 2. 推送同名 tag，GitHub Actions 构建、公证并发布
-git tag v0.2.2 && git push origin v0.2.2
+git tag v<版本> && git push origin v<版本>
 ```
 
 也可以在本机执行 `npm run release:app -- --publish`。凭据、密钥备份和出错时的处理见 [发布手册](release.md)（英文）。
@@ -149,13 +149,13 @@ npm run test:coverage    # v8 覆盖率报告，输出到 coverage/
 测试约定：
 
 - 测试放在各包的 `test/` 下；启动 Host、派生子进程或耗时以秒计的测试放在 `test/integration/`，归入 `integration` 项目。
-- `*.real.test.ts` 连接真实的 Claude 或 Hermes，只在设置对应的 `CLAUDE_IN_CODEX_RUN_*=1` 时运行。
+- `*.real.test.ts` 连接真实的 Claude Code，只在设置对应的 `CLAUDE_IN_CODEX_RUN_*=1` 时运行。
 - 单元和集成测试运行时 `HOME`、`CODEX_HOME`、`CLAUDE_CONFIG_DIR` 指向临时目录（`tests/setup/isolate-home.ts`），测试读不到开发者本机的 `~/.codex` 和 `~/.claude`。
 - 临时目录用 `tests/helpers/temp-dir.ts` 的 `tempDir()`：路径已解析软链接，测试结束自动删除。
 - 等待异步结果时等具体事件或用 `vi.waitFor`，不写固定时长的 sleep。CI 中遗留的 `.only` 会让测试失败。
 - 大的测试文件按功能拆到同名目录，共用的 fixture 放在该目录的非测试模块里。
 
-热接入代码在 `packages/host-runtime/src/hot-attach/`，原生菜单在 `apps/macos/main.swift`，打包和安装入口在 `tools/app/`。数据和日志位置由 `packages/shared-contracts/src/app-paths.ts` 统一解析，改名前的标识符兼容集中在各自的读取入口。协议、适配器、模型投影、权限、历史、工具和远程实现复用现有 Host。
+接入原理见 [architecture.md](architecture.md)（英文）。热接入代码在 `packages/host-runtime/src/hot-attach/`，原生菜单在 `apps/macos/main.swift`，打包和安装入口在 `tools/app/`。数据和日志位置由 `packages/shared-contracts/src/app-paths.ts` 统一解析，改名前的标识符兼容集中在各自的读取入口。协议、适配器、模型投影、权限、历史、工具和远程实现复用现有 Host。
 
 ## 许可证
 

@@ -235,9 +235,8 @@ function parseResultUsageEvent(
 }
 
 /**
- * Live Claude Code sends `utilization` as a 0–1 fraction (confirmed against a
- * real `rate_limit_event` payload), not the 0–100 percent the SDK's `.d.ts`
- * comment implies. Normalize and clamp defensively either way.
+ * Claude Code sends `utilization` as a 0–1 fraction, despite the SDK `.d.ts` suggesting
+ * 0–100. Normalize and clamp either way.
  */
 function parsePlanLimitWindow(
   value: unknown,

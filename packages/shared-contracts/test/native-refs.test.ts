@@ -37,19 +37,19 @@ void assertNativeRefIsolation;
 void assertExactOptionalLocators;
 
 const sessionRef = {
-  harnessId: "pi",
+  harnessId: "example-harness",
   nativeSessionId: "synthetic-session",
   locator: { storage: "adapter-managed", partition: 2 },
   formatVersion: 1,
 } as const;
 const turnRef = {
-  harnessId: "pi",
+  harnessId: "example-harness",
   nativeSessionId: "synthetic-session",
   nativeTurnKey: "synthetic-turn",
   formatVersion: 1,
 } as const;
 const checkpointRef = {
-  harnessId: "pi",
+  harnessId: "example-harness",
   nativeSessionId: "synthetic-session",
   checkpointId: "synthetic-checkpoint",
   locator: ["adapter-managed", 3],

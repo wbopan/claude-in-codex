@@ -31,7 +31,6 @@ export {
   isRemoteUnixListenerInvocation,
   remoteAppServerSocketPath,
   remoteUnixListenerUrl,
-  stdioArgumentsForRemoteListener,
 } from "./remote-app-server.js";
 export type {
   RemoteAppServerSession,

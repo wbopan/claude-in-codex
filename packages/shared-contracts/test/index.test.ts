@@ -24,9 +24,9 @@ describe("shared-contracts public package", () => {
 
   it("exports representative runtime contracts from the package root", () => {
     expect(jsonValueSchema.parse({ public: true })).toEqual({ public: true });
-    expect(harnessIdSchema.parse("pi")).toBe("pi");
-    expect(harnessModelRefSchema.parse({ id: "pi-model-v1.synthetic" })).toEqual({
-      id: "pi-model-v1.synthetic",
+    expect(harnessIdSchema.parse("example-harness")).toBe("example-harness");
+    expect(harnessModelRefSchema.parse({ id: "example-model-v1.synthetic" })).toEqual({
+      id: "example-model-v1.synthetic",
     });
     expect(
       harnessInspectionSchema.parse({
@@ -34,12 +34,12 @@ describe("shared-contracts public package", () => {
         catalog: {
           models: [
             {
-              ref: { id: "pi-model-v1.synthetic" },
+              ref: { id: "example-model-v1.synthetic" },
               label: "Synthetic",
               supportedThinkingOptionIds: ["off", "high"],
             },
           ],
-          defaultModel: { id: "pi-model-v1.synthetic" },
+          defaultModel: { id: "example-model-v1.synthetic" },
           thinkingOptions: [
             { id: "off", label: "Off" },
             { id: "high", label: "High" },
@@ -64,11 +64,15 @@ describe("shared-contracts public package", () => {
     expect(jsonRpcEnvelopeSchema.parse({ id: 1, result: null })).toEqual({ id: 1, result: null });
     expect(
       nativeSessionRefSchema.parse({
-        harnessId: "pi",
+        harnessId: "example-harness",
         nativeSessionId: "synthetic-session",
         formatVersion: 1,
       }),
-    ).toEqual({ harnessId: "pi", nativeSessionId: "synthetic-session", formatVersion: 1 });
+    ).toEqual({
+      harnessId: "example-harness",
+      nativeSessionId: "synthetic-session",
+      formatVersion: 1,
+    });
     expect(
       claudeInCodexErrorSchema.parse({
         code: "SYNTHETIC",

@@ -12,16 +12,16 @@ import {
 } from "../src/index.js";
 import type { JsonRpcNotification, JsonRpcRequest } from "../src/index.js";
 
-interface GateAAppServerFixture {
+interface AppServerFixture {
   requests: unknown[];
   responseShapes: unknown[];
 }
 
 const fixturePath = resolve(
   import.meta.dirname,
-  "../../../tests/fixtures/gate-a/windows/official-app-server.fixture.json",
+  "../../../tests/fixtures/app-server/official-app-server.fixture.json",
 );
-const gateAFixture = JSON.parse(readFileSync(fixturePath, "utf8")) as GateAAppServerFixture;
+const appServerFixture = JSON.parse(readFileSync(fixturePath, "utf8")) as AppServerFixture;
 
 function hasOwn(value: unknown, key: string): boolean {
   return typeof value === "object" && value !== null && Object.hasOwn(value, key);
@@ -43,8 +43,8 @@ function assertExactEnvelopeFields(
 void assertExactEnvelopeFields;
 
 describe("Codex-compatible JSON-RPC envelope contracts", () => {
-  it("parses every reviewed Gate A envelope without requiring jsonrpc", () => {
-    for (const value of gateAFixture.requests) {
+  it("parses every recorded app-server envelope without requiring jsonrpc", () => {
+    for (const value of appServerFixture.requests) {
       const parsed = hasOwn(value, "id")
         ? jsonRpcRequestSchema.parse(value)
         : jsonRpcNotificationSchema.parse(value);
@@ -52,7 +52,7 @@ describe("Codex-compatible JSON-RPC envelope contracts", () => {
       expect(jsonRpcEnvelopeSchema.parse(value)).toEqual(value);
     }
 
-    for (const value of gateAFixture.responseShapes) {
+    for (const value of appServerFixture.responseShapes) {
       const parsed = hasOwn(value, "result")
         ? jsonRpcSuccessResponseSchema.parse(value)
         : jsonRpcErrorResponseSchema.parse(value);

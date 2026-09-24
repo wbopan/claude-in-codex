@@ -240,7 +240,7 @@ export class MappingStore {
   readonly #nativeSessions = new Map<string, HostThreadId>();
   readonly #hostTurns = new Map<HostTurnId, HostThreadId>();
   readonly #nativeTurns = new Map<string, HostTurnId>();
-  // ponytail: A Store-wide queue caps write concurrency at one; shard only if measured throughput requires it.
+  // A Store-wide queue caps write concurrency at one; shard only if measured throughput requires it.
   #writeTail: Promise<void> = Promise.resolve();
   #initialized = false;
   #lockHandle: FileHandle | null = null;

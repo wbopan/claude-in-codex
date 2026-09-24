@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { hostThreadIdSchema } from "./ids.js";
-
 export const HARNESS_PERMISSION_MODE_ID_MAX_LENGTH = 128;
 export const HARNESS_PERMISSION_MODE_LABEL_MAX_LENGTH = 256;
 export const HARNESS_PERMISSION_MODE_DESCRIPTION_MAX_LENGTH = 1_024;
@@ -60,14 +58,3 @@ export const harnessPermissionModeCatalogSchema = z
   });
 
 export type HarnessPermissionModeCatalog = z.infer<typeof harnessPermissionModeCatalogSchema>;
-
-export const threadPermissionModeSelectParamsSchema = z
-  .object({
-    threadId: hostThreadIdSchema,
-    permissionModeId: harnessPermissionModeIdSchema,
-  })
-  .strict();
-
-export type ThreadPermissionModeSelectParams = z.infer<
-  typeof threadPermissionModeSelectParamsSchema
->;

@@ -549,10 +549,6 @@ export interface HarnessSubagentCapability {
   }): Promise<HarnessResult<HostThreadSnapshot>>;
 }
 
-export interface HarnessWebUiAction {
-  open(): Promise<HarnessResult<void>>;
-}
-
 /** The local native CLI a Harness drives, for status surfaces. */
 export interface HarnessInstallation {
   executable: string;
@@ -565,7 +561,6 @@ export interface HarnessAdapter {
   /** Static command metadata. Reading it must not inspect, connect to, or open a Native Session. */
   readonly commandCatalog?: HarnessCommandCatalog;
   readonly subagents?: HarnessSubagentCapability;
-  readonly webUi?: HarnessWebUiAction;
   /** Fresh read-only quota for current native authentication. Return null when unavailable;
    * never return session spend, old authentication caches, or start a model Turn.
    * Implementations must bound requests and release inspection resources on close.

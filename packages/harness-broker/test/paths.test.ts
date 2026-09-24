@@ -10,14 +10,14 @@ describe("instance broker paths", () => {
   it("isolates every harness socket and descriptor together", () => {
     const environment = {
       HOME: "/Users/example",
-      CLAUDE_IN_CODEX_HARNESS_BROKER_DIR: "/private/debug/broker",
+      CLAUDE_IN_CODEX_HARNESS_BROKER_DIR: "/tmp/broker",
     };
-    for (const id of ["claude-code", "codebuddy"]) {
+    for (const id of ["claude-code", "example-harness"]) {
       expect(defaultHarnessBrokerDescriptorPath(environment, id)).toBe(
-        `/private/debug/broker/${id}-broker-v1.json`,
+        `/tmp/broker/${id}-broker-v1.json`,
       );
       expect(defaultHarnessBrokerSocketPath(environment, id)).toBe(
-        `/private/debug/broker/${id}-broker-v1.sock`,
+        `/tmp/broker/${id}-broker-v1.sock`,
       );
     }
     expect(defaultHarnessBrokerSocketPath({ HOME: "/Users/example" })).toBe(

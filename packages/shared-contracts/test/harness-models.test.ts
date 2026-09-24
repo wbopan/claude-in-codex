@@ -3,25 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   HARNESS_MODEL_REF_MAX_LENGTH,
   HARNESS_THINKING_OPTION_ID_MAX_LENGTH,
-  THREAD_OWNERSHIP_LIST_MAX_LENGTH,
-  harnessInspectParamsSchema,
   harnessInspectionSchema,
   harnessModelCatalogSchema,
   harnessModelRefSchema,
   harnessModelSelectionStateSchema,
   harnessThinkingOptionIdSchema,
-  harnessWebUiOpenParamsSchema,
-  harnessWebUiOpenResultSchema,
-  threadInspectionParamsSchema,
-  threadInspectionSchema,
-  threadModelSelectParamsSchema,
-  threadThinkingSelectParamsSchema,
-  threadOwnershipListParamsSchema,
-  threadOwnershipListResultSchema,
 } from "@claude-in-codex/shared-contracts";
 
-const firstRef = { id: "pi-model-v1.cHJvdmlkZXI6bW9kZWw" };
-const secondRef = { id: "pi-model-v1.b3RoZXI6bW9kZWw" };
+const firstRef = { id: "example-model-v1.cHJvdmlkZXI6bW9kZWw" };
+const secondRef = { id: "example-model-v1.b3RoZXI6bW9kZWw" };
 
 function readyInspection() {
   return {
@@ -56,23 +46,7 @@ function readyInspection() {
 }
 
 describe("Harness Model runtime contracts", () => {
-  it("exposes only a credential-free Harness Web UI action", () => {
-    expect(
-      harnessInspectionSchema.parse({
-        ...readyInspection(),
-        webUi: { open: true },
-      }),
-    ).toMatchObject({ webUi: { open: true } });
-    expect(harnessWebUiOpenParamsSchema.parse({ harnessId: "deepseek-harness" })).toEqual({
-      harnessId: "deepseek-harness",
-    });
-    expect(harnessWebUiOpenResultSchema.parse({})).toEqual({});
-    expect(
-      harnessWebUiOpenResultSchema.safeParse({ url: "http://127.0.0.1/?token=secret" }).success,
-    ).toBe(false);
-  });
-
-  it("accepts a strict browser-safe ready inspection", () => {
+  it("accepts a strict ready inspection", () => {
     expect(harnessInspectionSchema.parse(readyInspection())).toEqual(readyInspection());
     expect(
       harnessModelSelectionStateSchema.parse({
@@ -140,13 +114,6 @@ describe("Harness Model runtime contracts", () => {
       harnessModelSelectionStateSchema.safeParse({
         effectiveModel: firstRef,
         nativeState: { modelId: "private" },
-      }).success,
-    ).toBe(false);
-    expect(
-      threadModelSelectParamsSchema.safeParse({
-        threadId: "thread-1",
-        model: firstRef,
-        resolvedModelLabel: "runtime/model-v1",
       }).success,
     ).toBe(false);
     for (const resolvedModelLabel of ["", "   ", "x".repeat(257)]) {
@@ -234,143 +201,13 @@ describe("Harness Model runtime contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps inspection and Thread selection params method-specific", () => {
-    expect(
-      harnessInspectParamsSchema.parse({
-        harnessId: "pi",
-        cwd: "/synthetic",
-        refresh: true,
-      }),
-    ).toEqual({ harnessId: "pi", cwd: "/synthetic", refresh: true });
-    expect(harnessInspectParamsSchema.parse({ harnessId: "claude-code" })).toEqual({
-      harnessId: "claude-code",
-    });
-    expect(threadModelSelectParamsSchema.parse({ threadId: "thread-1", model: firstRef })).toEqual({
-      threadId: "thread-1",
-      model: firstRef,
-    });
-    expect(
-      threadThinkingSelectParamsSchema.parse({
-        threadId: "thread-1",
-        thinkingOptionId: "high",
-      }),
-    ).toEqual({ threadId: "thread-1", thinkingOptionId: "high" });
-
-    expect(
-      harnessInspectParamsSchema.safeParse({
-        harnessId: "pi",
-        model: firstRef,
-      }).success,
-    ).toBe(false);
-    expect(
-      harnessInspectParamsSchema.safeParse({
-        harnessId: "pi",
-        method: "get_available_models",
-      }).success,
-    ).toBe(false);
-    expect(
-      threadModelSelectParamsSchema.safeParse({
-        threadId: "thread-1",
-        model: firstRef,
-        provider: "private-provider",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("validates fixed Thread ownership inspection without Native details", () => {
-    expect(threadInspectionParamsSchema.parse({ threadId: "thread-1" })).toEqual({
-      threadId: "thread-1",
-    });
-    expect(
-      threadInspectionSchema.parse({
-        owner: "external",
-        harnessId: "pi",
-        transportModelId: "claude-in-codex/pi-native",
-        effectiveModel: firstRef,
-        resolvedModelLabel: "runtime/model-v1",
-        effectiveThinkingOptionId: "high",
-        availableThinkingOptions: [
-          { id: "off", label: "Off" },
-          { id: "high", label: "High" },
-        ],
-        history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: false },
-        locked: true,
-      }),
-    ).toMatchObject({ owner: "external", harnessId: "pi", locked: true });
-    expect(threadInspectionSchema.parse({ owner: "codex", locked: true })).toEqual({
-      owner: "codex",
-      locked: true,
-    });
-    expect(
-      threadInspectionSchema.safeParse({
-        owner: "external",
-        harnessId: "pi",
-        transportModelId: "claude-in-codex/pi-native",
-        history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: false },
-        locked: true,
-        nativeSessionRef: { nativeSessionId: "secret" },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("validates strict bounded Thread ownership lists", () => {
-    const params = { threadIds: ["official-thread", "pi-thread", "claude-thread"] };
-    const result = {
-      threads: [
-        { threadId: "official-thread", owner: "codex" as const },
-        { threadId: "pi-thread", owner: "external" as const, harnessId: "pi" },
-        {
-          threadId: "claude-thread",
-          owner: "external" as const,
-          harnessId: "claude-code",
-        },
-      ],
-    };
-
-    expect(threadOwnershipListParamsSchema.parse(params)).toEqual(params);
-    expect(threadOwnershipListResultSchema.parse(result)).toEqual(result);
-    for (const invalid of [
-      { threadIds: [] },
-      { threadIds: ["thread-1", "thread-1"] },
-      {
-        threadIds: Array.from(
-          { length: THREAD_OWNERSHIP_LIST_MAX_LENGTH + 1 },
-          (_, index) => `thread-${index}`,
-        ),
-      },
-      { threadIds: ["thread-1"], nativeMethod: "get_entries" },
-    ]) {
-      expect(threadOwnershipListParamsSchema.safeParse(invalid).success).toBe(false);
-    }
-    expect(
-      threadOwnershipListResultSchema.safeParse({
-        threads: [
-          {
-            threadId: "pi-thread",
-            owner: "external",
-            harnessId: "pi",
-            nativeSessionRef: { nativeSessionId: "private" },
-          },
-        ],
-      }).success,
-    ).toBe(false);
-    expect(
-      threadOwnershipListResultSchema.safeParse({
-        threads: [
-          { threadId: "thread-1", owner: "codex" },
-          { threadId: "thread-1", owner: "codex" },
-        ],
-      }).success,
-    ).toBe(false);
-  });
-
   it("validates normalized inspection failures without arbitrary diagnostics", () => {
     expect(
       harnessInspectionSchema.parse({
         status: "notInstalled",
         error: {
           code: "notInstalled",
-          message: "Pi is not installed",
+          message: "Example Harness is not installed",
           retryable: false,
         },
       }),

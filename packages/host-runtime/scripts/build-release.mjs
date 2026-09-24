@@ -8,9 +8,6 @@ const forbiddenInputFragments = [
   "/packages/adapters/",
   "/node_modules/@claude-in-codex/adapter-",
   "/node_modules/@anthropic-ai/",
-  "/node_modules/@agentclientprotocol/",
-  "/node_modules/@deepseek-ai/",
-  "/node_modules/@opencode-ai/",
   "/test/",
   "/tests/",
   "/tools/",
@@ -73,9 +70,6 @@ export function auditHostBundleSource(source) {
   const forbidden = forbiddenBundleReferences.filter((reference) => source.includes(reference));
   if (forbidden.length > 0) {
     throw new Error(`release Host Bundle contains forbidden references: ${forbidden.join(", ")}`);
-  }
-  if (source.includes("--claude-in-codex-compatibility-update")) {
-    throw new Error("release Host Bundle contains the removed compatibility update command");
   }
 }
 

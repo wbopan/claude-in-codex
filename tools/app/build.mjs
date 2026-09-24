@@ -304,7 +304,6 @@ ${
         sourceDigest: digest,
         node: version,
         builtAt: new Date().toISOString(),
-        mode: "hot-attach",
       },
       null,
       2,

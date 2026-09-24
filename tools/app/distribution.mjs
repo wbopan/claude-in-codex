@@ -8,9 +8,6 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path";
 
 export const repository = "wbopan/claude-in-codex";
-// 0.2.0 and 0.2.1 read their updates from this separate repository, used while the source was
-// private. Its 0.2.2 release carries an appcast that moves those copies over to `repository`.
-export const legacyReleasesRepository = "wbopan/claude-in-codex-releases";
 export const releasesPage = `https://github.com/${repository}/releases`;
 export const feedUrl = `${releasesPage}/latest/download/appcast.xml`;
 // The EdDSA public key matching the private key that signs every update (Sparkle's

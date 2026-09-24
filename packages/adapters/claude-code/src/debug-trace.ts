@@ -3,8 +3,8 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 
 /**
- * Sanitized Subagent-lifecycle trace, written to the same acceptance file as
- * the Host's native picker trace. It records event names, enums and shapes so a
+ * Sanitized Subagent-lifecycle trace. Appended to `native-picker-trace.jsonl`, the Host's
+ * native picker trace, when tracing is enabled. It records event names, enums and shapes so a
  * background Agent that stops can be attributed to a code path. It never
  * records prompts, replies, native identifiers or file paths.
  */

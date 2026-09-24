@@ -1,25 +1,3 @@
-export interface CdpTarget {
-  id: string;
-  type: string;
-  title: string;
-  url: string;
-  webSocketDebuggerUrl: string;
-}
-
-export interface CdpBrowserVersion {
-  browser: string;
-  protocolVersion: string;
-  webSocketDebuggerUrl: string;
-}
-
-export interface CdpFetchResponse {
-  ok: boolean;
-  status: number;
-  json(): Promise<unknown>;
-}
-
-export type CdpFetch = (url: string) => Promise<CdpFetchResponse>;
-
 interface CdpSocketEvent {
   data?: unknown;
 }
@@ -66,13 +44,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function nonEmptyString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`CDP target '${field}' must be non-empty text`);
-  }
-  return value;
-}
-
 function loopbackUrl(value: string, protocols: readonly string[]): URL {
   const url = new URL(value);
   if (!protocols.includes(url.protocol)) {
@@ -82,23 +53,6 @@ function loopbackUrl(value: string, protocols: readonly string[]): URL {
     throw new Error("CDP endpoint must use a loopback host");
   }
   return url;
-}
-
-function parseTarget(value: unknown): CdpTarget {
-  if (!isRecord(value)) throw new Error("CDP target must be an object");
-  const target = {
-    id: nonEmptyString(value.id, "id"),
-    type: nonEmptyString(value.type, "type"),
-    title: typeof value.title === "string" ? value.title : "",
-    url: nonEmptyString(value.url, "url"),
-    webSocketDebuggerUrl: nonEmptyString(value.webSocketDebuggerUrl, "webSocketDebuggerUrl"),
-  };
-  loopbackUrl(target.webSocketDebuggerUrl, ["ws:", "wss:"]);
-  return target;
-}
-
-function defaultFetch(url: string): Promise<CdpFetchResponse> {
-  return fetch(url);
 }
 
 function defaultSocketFactory(url: string): CdpSocket {
@@ -127,67 +81,6 @@ function parseResponse(value: unknown): CdpResponse | null {
     };
   }
   return response;
-}
-
-export async function getCdpBrowserVersion(
-  endpoint: string,
-  fetchImpl: CdpFetch = defaultFetch,
-): Promise<CdpBrowserVersion> {
-  const baseUrl = loopbackUrl(endpoint, ["http:", "https:"]);
-  const response = await fetchImpl(new URL("/json/version", baseUrl).toString());
-  if (!response.ok) throw new Error(`CDP version discovery failed with HTTP ${response.status}`);
-  const value = await response.json();
-  if (!isRecord(value)) throw new Error("CDP version discovery did not return an object");
-  const version = {
-    browser: nonEmptyString(value.Browser, "Browser"),
-    protocolVersion: nonEmptyString(value["Protocol-Version"], "Protocol-Version"),
-    webSocketDebuggerUrl: nonEmptyString(value.webSocketDebuggerUrl, "webSocketDebuggerUrl"),
-  };
-  loopbackUrl(version.webSocketDebuggerUrl, ["ws:", "wss:"]);
-  return version;
-}
-
-export async function listCdpTargets(
-  endpoint: string,
-  fetchImpl: CdpFetch = defaultFetch,
-): Promise<CdpTarget[]> {
-  const baseUrl = loopbackUrl(endpoint, ["http:", "https:"]);
-  const targetsUrl = new URL("/json/list", baseUrl).toString();
-  const response = await fetchImpl(targetsUrl);
-  if (!response.ok) throw new Error(`CDP target discovery failed with HTTP ${response.status}`);
-  const value = await response.json();
-  if (!Array.isArray(value)) throw new Error("CDP target discovery did not return an array");
-  return value.map(parseTarget);
-}
-
-export async function waitForRendererTarget(
-  endpoint: string,
-  options: {
-    fetchImpl?: CdpFetch;
-    pollIntervalMs?: number;
-    timeoutMs?: number;
-  } = {},
-): Promise<CdpTarget> {
-  const fetchImpl = options.fetchImpl ?? defaultFetch;
-  const pollIntervalMs = options.pollIntervalMs ?? 250;
-  const timeoutMs = options.timeoutMs ?? 30_000;
-  const deadline = Date.now() + timeoutMs;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const targets = await listCdpTargets(endpoint, fetchImpl);
-      const renderer = targets.find(
-        (target) => target.type === "page" && target.url.startsWith("app://"),
-      );
-      if (renderer) return renderer;
-      lastError = new Error("CDP has no app:// page target");
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-  const detail = lastError instanceof Error ? `: ${lastError.message}` : "";
-  throw new Error(`Codex Renderer CDP target did not become ready${detail}`);
 }
 
 export class CdpClient {
@@ -291,7 +184,7 @@ export class CdpClient {
       const text =
         typeof response.exceptionDetails.text === "string"
           ? response.exceptionDetails.text
-          : "Renderer evaluation failed";
+          : "Runtime evaluation failed";
       throw new Error(text);
     }
     if (!isRecord(response.result) || !("value" in response.result)) {

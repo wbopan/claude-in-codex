@@ -74,7 +74,7 @@ describe("macOS Aqua Harness broker", () => {
       await expect(
         client.subagents.stop({
           ...input,
-          parent: { ...input.parent, harnessId: harnessIdSchema.parse("pi") },
+          parent: { ...input.parent, harnessId: harnessIdSchema.parse("other-harness") },
         }),
       ).resolves.toMatchObject({ ok: false });
       expect(adapter.subagents.stop).toHaveBeenCalledOnce();
@@ -92,12 +92,12 @@ describe("macOS Aqua Harness broker", () => {
       process.platform === "win32"
         ? `\\\\.\\pipe\\cx-broker-${randomUUID()}`
         : path.join(root, "b.sock");
-    const client = new BrokeredHarnessAdapter({ harnessId: "codebuddy", descriptorPath });
+    const client = new BrokeredHarnessAdapter({ harnessId: "example-harness", descriptorPath });
     expect((await client.inspect()).status).toBe("unavailable");
     let server = await startHarnessBrokerServer({
       descriptorPath,
       socketPath,
-      adapter: new FakeHarnessAdapter(harnessIdSchema.parse("codebuddy")),
+      adapter: new FakeHarnessAdapter(harnessIdSchema.parse("example-harness")),
     });
     try {
       expect((await client.inspect()).status).toBe("ready");
@@ -107,7 +107,7 @@ describe("macOS Aqua Harness broker", () => {
       server = await startHarnessBrokerServer({
         descriptorPath,
         socketPath,
-        adapter: new FakeHarnessAdapter(harnessIdSchema.parse("codebuddy")),
+        adapter: new FakeHarnessAdapter(harnessIdSchema.parse("example-harness")),
       });
       expect((await client.inspect({ refresh: true })).status).toBe("ready");
     } finally {
@@ -115,7 +115,7 @@ describe("macOS Aqua Harness broker", () => {
       await server.close();
     }
   });
-  it.each(["codebuddy", "workbuddy", "cursor-cli"])(
+  it.each(["example-harness", "other-harness", "third-harness"])(
     "isolates %s identity and forwards only opted-in delegation environment",
     async (id) => {
       const root = await tempDir("cx-broker-multi-");

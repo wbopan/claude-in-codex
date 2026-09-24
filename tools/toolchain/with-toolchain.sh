@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-FORK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FORK_NODE_ROOT="$FORK_ROOT/.dev/toolchains/node-v24.13.1-darwin-$(uname -m)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+NODE_VERSION="$(tr -d '[:space:]' < "$ROOT/.node-version")"
+NODE_ARCH=arm64
 if [[ "$(uname -m)" == x86_64 ]]; then
-  FORK_NODE_ROOT="$FORK_ROOT/.dev/toolchains/node-v24.13.1-darwin-x64"
+  NODE_ARCH=x64
 fi
-export CARGO_HOME="$FORK_ROOT/.dev/toolchains/cargo"
-export RUSTUP_HOME="$FORK_ROOT/.dev/toolchains/rustup"
-export RUSTUP_DIST_SERVER=https://static-rust-lang-org.s3.amazonaws.com
-export RUSTUP_UPDATE_ROOT=https://static-rust-lang-org.s3.amazonaws.com/rustup
-export PATH="$FORK_NODE_ROOT/bin:$CARGO_HOME/bin:$PATH"
-if [[ ! -x "$FORK_NODE_ROOT/bin/node" || ! -x "$CARGO_HOME/bin/cargo" ]]; then
+NODE_ROOT="$ROOT/.dev/toolchains/node-v${NODE_VERSION#v}-darwin-$NODE_ARCH"
+export CARGO_HOME="$ROOT/.dev/toolchains/cargo"
+export RUSTUP_HOME="$ROOT/.dev/toolchains/rustup"
+export PATH="$NODE_ROOT/bin:$CARGO_HOME/bin:$PATH"
+if [[ ! -x "$NODE_ROOT/bin/node" || ! -x "$CARGO_HOME/bin/cargo" ]]; then
   echo 'Run npm run bootstrap first.' >&2
   exit 1
 fi
-cd "$FORK_ROOT"
+cd "$ROOT"
 exec "$@"

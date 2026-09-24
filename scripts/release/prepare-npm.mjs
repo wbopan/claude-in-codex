@@ -120,31 +120,9 @@ export function verifyShippedRuntimeLicenses(shippedPackages) {
   }
 }
 
-export function npmReleaseCommand(
-  args,
-  platform = process.platform,
-  environment = process.env,
-  nodePath = process.execPath,
-) {
-  if (platform !== "win32") return { command: "npm", args };
-  const npmExecPath = environment.npm_execpath;
-  if (!npmExecPath) {
-    throw new Error("Windows release builds must be started through npm so npm_execpath is set");
-  }
-  return { command: nodePath, args: [npmExecPath, ...args] };
-}
-
-export function npmReleaseBuildCommands(
-  target,
-  platform = process.platform,
-  environment = process.env,
-  nodePath = process.execPath,
-) {
+export function npmReleaseBuildCommands(target) {
   return [
-    {
-      label: "TypeScript build",
-      ...npmReleaseCommand(["run", "build:typescript"], platform, environment, nodePath),
-    },
+    { label: "TypeScript build", command: "npm", args: ["run", "build:typescript"] },
     {
       label: "Rust release build",
       command: "cargo",
@@ -163,12 +141,8 @@ export function npmReleaseBuildCommands(
   ];
 }
 
-export function npmPackCommand(
-  platform = process.platform,
-  environment = process.env,
-  nodePath = process.execPath,
-) {
-  return npmReleaseCommand(["pack"], platform, environment, nodePath);
+export function npmPackCommand() {
+  return { command: "npm", args: ["pack"] };
 }
 
 async function runCommand({ label, command, args }, cwd = repositoryRoot) {
@@ -197,7 +171,7 @@ async function copyReleaseFile(source, destination, label, executable = false) {
   await requireRegularFile(source, label);
   await mkdir(path.dirname(destination), { recursive: true });
   await copyFile(source, destination);
-  if (executable && process.platform !== "win32") await chmod(destination, 0o755);
+  if (executable) await chmod(destination, 0o755);
 }
 
 function packageManifest(value, packageName) {
@@ -214,13 +188,12 @@ function packageManifest(value, packageName) {
 
 export function npmPackageOs(target) {
   if (target.hostPlatform === "darwin") return ["darwin"];
-  if (target.hostPlatform === "win32") return ["win32"];
   if (target.hostPlatform === "linux") return ["linux"];
   throw new Error(`unsupported npm package platform: ${target.hostPlatform}`);
 }
 
 export function npmPackageCpu(target) {
-  const architecture = target.packageArchitecture ?? target.installerArchitecture;
+  const architecture = target.packageArchitecture;
   if (architecture === "arm64") return ["arm64"];
   if (architecture === "x64") return ["x64"];
   throw new Error(`unsupported npm package architecture: ${architecture}`);

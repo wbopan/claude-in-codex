@@ -12,10 +12,8 @@ import type {
 import type { StoredThreadRecordV1 } from "@claude-in-codex/mapping-store";
 import {
   decodeExternalTransportSelection,
-  encodeExternalTransportSelection,
   mapExternalThreadHarnessError,
   type CodexTurnProjector,
-  type ExternalConfigurationSelection,
   type ExternalHarnessId,
   type ExternalThreadRpcError,
   type JsonObject,
@@ -566,9 +564,6 @@ export class ExternalThreadRuntime {
       ...(restoredSelection?.thinkingOptionId
         ? { thinkingOptionId: restoredSelection.thinkingOptionId }
         : {}),
-      ...(harnessId === "grok" && restoredSelection?.permissionModeId
-        ? { permissionModeId: restoredSelection.permissionModeId }
-        : {}),
     });
     if (!opened.ok) {
       throw new ExternalThreadOpenError(mapExternalThreadHarnessError(opened.error, "resume"));
@@ -577,7 +572,6 @@ export class ExternalThreadRuntime {
     try {
       if (
         restoredSelection?.permissionModeId &&
-        harnessId !== "opencode" &&
         !permissionModeFixedAtCreate(session.capabilities.configuration)
       ) {
         if (!session.capabilities.configuration.selectPermissionMode) {
@@ -600,7 +594,7 @@ export class ExternalThreadRuntime {
       if (!snapshot.ok) {
         throw new ExternalThreadOpenError(mapExternalThreadHarnessError(snapshot.error, "read"));
       }
-      let aligned = await this.#repository.alignSnapshot(record, snapshot.value);
+      const aligned = await this.#repository.alignSnapshot(record, snapshot.value);
       const restoredState = snapshot.value.state;
       const effectiveModel = restoredState
         ? restoredState.effectiveModel
@@ -611,33 +605,7 @@ export class ExternalThreadRuntime {
       const effectivePermissionModeId = restoredState
         ? restoredState.effectivePermissionModeId
         : restoredSelection?.permissionModeId;
-      let transportModelId = aligned.record.transportModelId;
-      // OMP can silently replace an unavailable Model during resume, while OpenCode's
-      // additive Permission API cannot reliably restore a stale mode. Persist live state so the
-      // next restore does not reapply an obsolete transport token.
-      if ((harnessId === "omp" || harnessId === "opencode") && effectiveModel) {
-        const liveSelection: ExternalConfigurationSelection = {
-          model: effectiveModel,
-          ...(effectiveThinkingOptionId ? { thinkingOptionId: effectiveThinkingOptionId } : {}),
-          ...((harnessId === "omp" || harnessId === "opencode") && effectivePermissionModeId
-            ? { permissionModeId: effectivePermissionModeId }
-            : {}),
-        };
-        transportModelId = encodeExternalTransportSelection(harnessId, liveSelection);
-        if (transportModelId !== aligned.record.transportModelId) {
-          try {
-            aligned = {
-              ...aligned,
-              record: await this.#repository.setTransportModelId(
-                aligned.record.hostThreadId,
-                transportModelId,
-              ),
-            };
-          } catch (error) {
-            this.#diagnose(error);
-          }
-        }
-      }
+      const transportModelId = aligned.record.transportModelId;
       const sessionId = await this.#repository.sessionTreeId(aligned.record);
       return this.register({
         record: aligned.record,

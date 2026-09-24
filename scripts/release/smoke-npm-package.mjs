@@ -71,25 +71,18 @@ export async function smokeNpmPackage({ targetName, version, workDirectory }) {
     const packageName = NPM_PLATFORM_PACKAGE_NAMES[target.id];
     const packageRoot = path.join(directory, "node_modules", ...packageName.split("/"));
     const manifest = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
-    const architecture = target.packageArchitecture ?? target.installerArchitecture;
+    const architecture = target.packageArchitecture;
     if (JSON.stringify(manifest.os) !== JSON.stringify([target.hostPlatform])) {
       throw new Error(`installed package os is invalid: ${JSON.stringify(manifest.os)}`);
     }
     if (JSON.stringify(manifest.cpu) !== JSON.stringify([architecture])) {
       throw new Error(`installed package cpu is invalid: ${JSON.stringify(manifest.cpu)}`);
     }
-    if (process.platform !== "win32") {
-      for (const relative of executablePaths) {
-        const mode = (await stat(path.join(packageRoot, relative))).mode & 0o777;
-        if ((mode & 0o111) === 0) throw new Error(`${relative} is not executable`);
-      }
+    for (const relative of executablePaths) {
+      const mode = (await stat(path.join(packageRoot, relative))).mode & 0o777;
+      if ((mode & 0o111) === 0) throw new Error(`${relative} is not executable`);
     }
-    const command = path.join(
-      directory,
-      "node_modules",
-      ".bin",
-      process.platform === "win32" ? "claude-in-codex.cmd" : "claude-in-codex",
-    );
+    const command = path.join(directory, "node_modules", ".bin", "claude-in-codex");
     const output = execFileSync(command, ["--version"], {
       cwd: directory,
       encoding: "utf8",

@@ -9,6 +9,7 @@ const typeScriptFiles = ["packages/**/*.ts", "tests/**/*.ts"];
 const javaScriptFiles = [
   "*.config.js",
   "packages/**/scripts/**/*.mjs",
+  "packages/**/test/**/*.mjs",
   "scripts/**/*.mjs",
   "tests/**/*.mjs",
   "tools/**/*.mjs",
@@ -26,20 +27,6 @@ export default [
       ...js.configs.recommended.rules,
       // `const { omitted, ...rest } = value` is how the code drops fields.
       "no-unused-vars": ["error", { ignoreRestSiblings: true }],
-    },
-  },
-  {
-    // Probe functions are serialized and evaluated inside the Desktop renderer.
-    files: ["tools/probes/**/*.mjs"],
-    languageOptions: {
-      globals: {
-        ...globals.browser,
-        __cxAcceptance: "writable",
-        __cxConnection: "writable",
-        __cxMenuTests: "writable",
-        __cxNetPaths: "writable",
-        __cxNetRestore: "writable",
-      },
     },
   },
   ...tseslint.configs.strict.map((config) => ({

@@ -17,7 +17,7 @@ import { ExternalThreadRepository } from "../src/external-thread-repository.js";
 import { ExternalThreadRuntime } from "../src/external-thread-runtime.js";
 import { tempDir } from "../../../tests/helpers/temp-dir.js";
 
-const harnessId = harnessIdSchema.parse("antigravity");
+const harnessId = harnessIdSchema.parse("example-harness");
 const parentId = hostThreadIdSchema.parse("parent");
 const sourceRef = nativeSessionRefSchema.parse({
   harnessId,
@@ -66,7 +66,7 @@ async function fixture() {
     harnessId,
     cwd: "/synthetic",
     title: "Parent",
-    transportModelId: "claude-in-codex/antigravity-native",
+    transportModelId: "claude-in-codex/example-harness-native",
     ephemeral: false,
     historyMode: "paginated" as const,
   };
@@ -177,7 +177,7 @@ describe("External native child identity", () => {
         subagents: { readSnapshot },
       });
       const runtime = new ExternalThreadRuntime({
-        adapters: new Map([["antigravity", adapter]]),
+        adapters: new Map([["example-harness", adapter]]),
         repository,
         consumeOutputs: async () => undefined,
         diagnose: () => undefined,

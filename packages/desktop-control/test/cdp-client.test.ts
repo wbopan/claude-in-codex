@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  CdpClient,
-  getCdpBrowserVersion,
-  listCdpTargets,
-  type CdpFetch,
-  type CdpSocketFactory,
-} from "../src/index.js";
+import { CdpClient, type CdpSocketFactory } from "../src/index.js";
 
 interface SocketEvent {
   data?: unknown;
@@ -64,74 +58,10 @@ class FakeSocket {
 }
 
 describe("CDP client", () => {
-  it("validates and returns loopback page targets", async () => {
-    const fetchImpl: CdpFetch = async (url) => ({
-      ok: true,
-      status: 200,
-      async json() {
-        expect(url).toBe("http://127.0.0.1:9222/json/list");
-        return [
-          {
-            id: "page-1",
-            type: "page",
-            title: "Codex",
-            url: "app://-/index.html",
-            webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/page-1",
-          },
-        ];
-      },
-    });
-
-    await expect(listCdpTargets("http://127.0.0.1:9222", fetchImpl)).resolves.toEqual([
-      {
-        id: "page-1",
-        type: "page",
-        title: "Codex",
-        url: "app://-/index.html",
-        webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/page-1",
-      },
-    ]);
-  });
-
-  it("validates browser-level discovery metadata", async () => {
-    const fetchImpl: CdpFetch = async (url) => ({
-      ok: true,
-      status: 200,
-      async json() {
-        expect(url).toBe("http://127.0.0.1:9222/json/version");
-        return {
-          Browser: "Chrome/150",
-          "Protocol-Version": "1.3",
-          webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/browser-1",
-        };
-      },
-    });
-
-    await expect(getCdpBrowserVersion("http://127.0.0.1:9222", fetchImpl)).resolves.toEqual({
-      browser: "Chrome/150",
-      protocolVersion: "1.3",
-      webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/browser-1",
-    });
-  });
-
-  it("rejects non-loopback discovery and target endpoints", async () => {
-    await expect(listCdpTargets("http://example.com:9222")).rejects.toThrow("loopback");
-    const fetchImpl: CdpFetch = async () => ({
-      ok: true,
-      status: 200,
-      async json() {
-        return [
-          {
-            id: "page-1",
-            type: "page",
-            title: "Codex",
-            url: "app://-/index.html",
-            webSocketDebuggerUrl: "ws://example.com/devtools/page/page-1",
-          },
-        ];
-      },
-    });
-    await expect(listCdpTargets("http://127.0.0.1:9222", fetchImpl)).rejects.toThrow("loopback");
+  it("rejects non-loopback WebSocket endpoints", async () => {
+    await expect(CdpClient.connect("ws://example.com/devtools/page/page-1")).rejects.toThrow(
+      "loopback",
+    );
   });
 
   it("correlates commands and unwraps Runtime.evaluate values", async () => {

@@ -54,9 +54,6 @@ export const codexAccountListResultSchema = z
   .strict();
 export type CodexAccountListResult = z.infer<typeof codexAccountListResultSchema>;
 
-export const codexAccountChangedSchema = codexAccountListResultSchema;
-export type CodexAccountChanged = z.infer<typeof codexAccountChangedSchema>;
-
 export const codexAccountUsageParamsSchema = z
   .object({ accountId: accountIdSchema, refresh: z.boolean().optional() })
   .strict();

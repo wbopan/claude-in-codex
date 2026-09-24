@@ -924,7 +924,7 @@ describe("ClaudeSdkTransport autonomous task continuation", () => {
         content: [
           {
             type: "text",
-            text: "<task-notification><task-id>a78414260bd2f9554</task-id><status>failed</status><summary>Agent failed</summary></task-notification>",
+            text: "<task-notification><task-id>a0000000000000001</task-id><status>failed</status><summary>Agent failed</summary></task-notification>",
           },
         ],
       },
@@ -936,7 +936,7 @@ describe("ClaudeSdkTransport autonomous task continuation", () => {
     expect(threadEvents).toEqual([
       {
         type: "subagent.settled",
-        nativeSubagentId: "a78414260bd2f9554",
+        nativeSubagentId: "a0000000000000001",
         status: "failed",
         resultSummary: "Agent failed",
       },
@@ -1260,13 +1260,13 @@ describe("ClaudeSdkTransport Model control", () => {
           replaceBuiltInOptions: true,
           options: [
             {
-              model: "glm-glm-5.3-cp[1m]",
-              label: "glm-glm-5.3-cp (1M)",
+              model: "gateway-model-a[1m]",
+              label: "gateway-model-a (1M)",
               description: "custom gateway",
             },
             {
-              model: "deepseek-v4-pro-saas[1m]",
-              label: "deepseek-v4-pro-saas (1M)",
+              model: "gateway-model-b[1m]",
+              label: "gateway-model-b (1M)",
               description: "custom gateway",
               behavesAs: "sonnet",
             },
@@ -1290,13 +1290,13 @@ describe("ClaudeSdkTransport Model control", () => {
           supportsAutoMode: true,
         },
         {
-          value: "glm-glm-5.3-cp[1m]",
-          displayName: "glm-glm-5.3-cp (1M)",
+          value: "gateway-model-a[1m]",
+          displayName: "gateway-model-a (1M)",
           description: "custom gateway",
         },
         {
-          value: "deepseek-v4-pro-saas[1m]",
-          displayName: "deepseek-v4-pro-saas (1M)",
+          value: "gateway-model-b[1m]",
+          displayName: "gateway-model-b (1M)",
           description: "custom gateway",
           resolvedModel: "sonnet",
         },

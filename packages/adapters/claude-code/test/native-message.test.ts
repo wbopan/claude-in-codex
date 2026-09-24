@@ -466,22 +466,22 @@ describe("Claude native Turn interpretation", () => {
 
   it("settles a background Agent from a user task-notification on the same Root Turn", () => {
     const notification = `<task-notification>
-<task-id>a78414260bd2f9554</task-id>
-<tool-use-id>call_02_1AO3OGlePFNFW4Nn9edX9246</tool-use-id>
+<task-id>a0000000000000001</task-id>
+<tool-use-id>call_02_AbCdEfGhIjKlMnOpQrStUv01</tool-use-id>
 <status>completed</status>
-<summary>Agent "只读检查-按类型区分" finished</summary>
+<summary>Agent "Read-only check by type" finished</summary>
 </task-notification>`;
     const turn = new ClaudeNativeTurnAccumulator();
     turn.consume(
       toolUse("Agent", "agent-1", {
-        description: "只读检查-按类型区分",
+        description: "Read-only check by type",
         prompt: "Inspect files",
       }),
     );
     turn.consume(
       toolResult("agent-1", {
         content:
-          "Async agent launched successfully.\nagentId: a78414260bd2f9554\nThe agent is working in the background.",
+          "Async agent launched successfully.\nagentId: a0000000000000001\nThe agent is working in the background.",
       }),
     );
 
@@ -494,10 +494,10 @@ describe("Claude native Turn interpretation", () => {
     ).toEqual([
       {
         type: "subagent.settled",
-        nativeSubagentId: "a78414260bd2f9554",
-        callId: "call_02_1AO3OGlePFNFW4Nn9edX9246",
+        nativeSubagentId: "a0000000000000001",
+        callId: "call_02_AbCdEfGhIjKlMnOpQrStUv01",
         status: "completed",
-        resultSummary: 'Agent "只读检查-按类型区分" finished',
+        resultSummary: 'Agent "Read-only check by type" finished',
       },
     ]);
     expect(
@@ -512,10 +512,10 @@ describe("Claude native Turn interpretation", () => {
     ).toEqual([
       {
         type: "subagent.settled",
-        nativeSubagentId: "a78414260bd2f9554",
-        callId: "call_02_1AO3OGlePFNFW4Nn9edX9246",
+        nativeSubagentId: "a0000000000000001",
+        callId: "call_02_AbCdEfGhIjKlMnOpQrStUv01",
         status: "completed",
-        resultSummary: 'Agent "只读检查-按类型区分" finished',
+        resultSummary: 'Agent "Read-only check by type" finished',
       },
     ]);
     expect(turn.consume(result()).terminal).toEqual({ status: "succeeded" });
@@ -525,7 +525,7 @@ describe("Claude native Turn interpretation", () => {
     const turn = new ClaudeNativeTurnAccumulator();
     turn.consume(
       toolUse("Agent", "agent-1", {
-        description: "只读检查当前目录",
+        description: "Read-only check of the current directory",
         run_in_background: true,
         prompt: "Inspect files",
       }),
@@ -533,7 +533,7 @@ describe("Claude native Turn interpretation", () => {
     turn.consume(
       toolResult("agent-1", {
         content:
-          "Async agent launched successfully.\nagentId: a08c4ffa3d980cff8\nThe agent is working in the background.",
+          "Async agent launched successfully.\nagentId: a0000000000000002\nThe agent is working in the background.",
       }),
     );
 
@@ -541,7 +541,7 @@ describe("Claude native Turn interpretation", () => {
       turn.consume({
         type: "system",
         subtype: "task_notification",
-        task_id: "a08c4ffa3d980cff8",
+        task_id: "a0000000000000002",
         tool_use_id: "agent-1",
         status: "completed",
         summary: "Agent finished",
@@ -549,7 +549,7 @@ describe("Claude native Turn interpretation", () => {
     ).toEqual([
       {
         type: "subagent.settled",
-        nativeSubagentId: "a08c4ffa3d980cff8",
+        nativeSubagentId: "a0000000000000002",
         callId: "agent-1",
         status: "completed",
         resultSummary: "Agent finished",
@@ -600,10 +600,10 @@ describe("Claude native Turn interpretation", () => {
     const second = new ClaudeNativeTurnAccumulator({ nonAgentTaskIds: shared });
     expect(second.consume(notification("bcafe123", "bash-2")).events).toEqual([]);
     // An Agent call delegated in an earlier Segment still settles.
-    expect(turn.consume(notification("a08c4ffa3d980cff8", "agent-0")).events).toEqual([
+    expect(turn.consume(notification("a0000000000000002", "agent-0")).events).toEqual([
       {
         type: "subagent.settled",
-        nativeSubagentId: "a08c4ffa3d980cff8",
+        nativeSubagentId: "a0000000000000002",
         callId: "agent-0",
         status: "completed",
         resultSummary: "Command finished",
@@ -619,14 +619,14 @@ describe("Claude native Turn interpretation", () => {
         type: "system",
         subtype: "background_tasks_changed",
         tasks: [
-          { task_id: "a08c4ffa3d980cff8", task_type: "local_agent", description: "Inspect" },
+          { task_id: "a0000000000000002", task_type: "local_agent", description: "Inspect" },
           { task_id: "a1b2c3d4e5f607182", task_type: "local_agent", description: "Review" },
         ],
       }).events,
     ).toEqual([
       {
         type: "subagents.live",
-        nativeSubagentIds: ["a08c4ffa3d980cff8", "a1b2c3d4e5f607182"],
+        nativeSubagentIds: ["a0000000000000002", "a1b2c3d4e5f607182"],
       },
     ]);
     expect(turn.consume({ type: "system", subtype: "init", cwd: "/tmp" }).events).toEqual([
@@ -1234,9 +1234,7 @@ describe("Claude native Turn interpretation", () => {
   });
 
   it("parses both plan windows from a real Claude Code unifiedWindows payload", () => {
-    // Captured verbatim from a live `rate_limit_event` (Claude.ai OAuth session).
-    // `utilization` is a 0-1 fraction here, not the 0-100 percent the SDK's
-    // `.d.ts` comment implies, and both windows arrive on one event.
+    // Real payload shape: utilization is a 0–1 fraction and both windows arrive on one event.
     expect(
       parseClaudePlanLimitEvent({
         type: "rate_limit_event",
@@ -1245,15 +1243,14 @@ describe("Claude native Turn interpretation", () => {
           resetsAt: 1_787_674_200,
           rateLimitType: "five_hour",
           overageStatus: "rejected",
-          overageDisabledReason: "org_level_disabled",
           isUsingOverage: false,
           unifiedWindows: {
             five_hour: { utilization: 0.28, resetsAt: 1_787_674_200 },
             seven_day: { utilization: 0.1, resetsAt: 1_787_940_000 },
           },
         },
-        uuid: "0c8be4f7-8525-42a3-ae6c-5393a4b6861e",
-        session_id: "121c08f6-2ddf-4250-9e51-bea9c39b554b",
+        uuid: "00000000-0000-4000-8000-000000000001",
+        session_id: "00000000-0000-4000-8000-000000000002",
       }),
     ).toEqual({
       fiveHour: { utilizationPercent: 28, resetsAtUnix: 1_787_674_200 },

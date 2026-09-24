@@ -29,7 +29,7 @@ let defaultDesktopApp = environment["CLAUDE_IN_CODEX_DESKTOP_APP"] ?? "/Applicat
 enum LaunchPreference: String, CaseIterable {
     case autoAttach = "AutoAttachAtLaunch", showDashboard = "ShowDashboardAtLaunch"
     var title: String { self == .autoAttach ? "启动时自动接入 Codex App" : "启动时打开此窗口" }
-    var variables: [String] { self == .autoAttach ? ["CLAUDE_IN_CODEX_AUTO_ATTACH"] : ["CLAUDE_IN_CODEX_SHOW_DASHBOARD", "CLAUDE_IN_CODEX_SHOW_STATUS_WINDOW"] }
+    var variables: [String] { self == .autoAttach ? ["CLAUDE_IN_CODEX_AUTO_ATTACH"] : ["CLAUDE_IN_CODEX_SHOW_DASHBOARD"] }
     var override: String? { variables.first { environment[$0] != nil } }
     var enabled: Bool {
         if override != nil {
@@ -139,7 +139,6 @@ func productName(_ source: String, short: Bool) -> String {
     switch source {
     case "codex": return "Codex"
     case "claude-code": return short ? "Claude" : "Claude Code"
-    case "pi": return "Pi"
     default: return source
     }
 }
