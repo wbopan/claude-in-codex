@@ -77,15 +77,15 @@ describe("feature problems", () => {
     );
     await health.refresh(undefined);
     expect(problems(health)).toMatchObject({
-      computerUse: "Codex 里没有启用 Computer Use 插件",
-      codexMemory: "Codex 还没有生成记忆摘要",
-      claudeMemorySync: "上次同步失败，查看诊断日志了解原因",
+      computerUse: "The Computer Use plugin is not enabled in Codex",
+      codexMemory: "Codex has not written a memory summary yet",
+      claudeMemorySync: "The last sync failed. The diagnostic log says why",
     });
 
     await writeFile(path.join(codexHome, "memories", "memory_summary.md"), "x".repeat(65 * 1024));
     await health.set("claudeMemorySync", false, undefined);
     expect(problems(health)).toMatchObject({
-      codexMemory: "Codex 的记忆摘要超过 64 KB，只会注入前 64 KB",
+      codexMemory: "Codex's memory summary exceeds 64 KB, so only the first 64 KB is added",
       claudeMemorySync: null,
     });
   });
@@ -99,8 +99,8 @@ describe("feature problems", () => {
     await health.refresh(attached.value);
     await vi.waitFor(() =>
       expect(problems(health)).toMatchObject({
-        codexAppTools: "Codex App 没有提供这组工具",
-        computerUse: "Computer Use 插件没有提供 js 工具",
+        codexAppTools: "The Codex App does not provide these tools",
+        computerUse: "The Computer Use plugin does not provide the js tool",
       }),
     );
     expect(changed).toHaveBeenCalled();
@@ -116,7 +116,7 @@ describe("feature problems", () => {
     await health.refresh(attached.value, true);
     expect(attached.desktopToolServers).toHaveBeenCalledTimes(2);
     expect(problems(health)).toMatchObject({
-      codexAppTools: "Codex App 工具加载失败，查看诊断日志了解原因",
+      codexAppTools: "Codex App tools failed to load. The diagnostic log says why",
       computerUse: null,
     });
   });

@@ -5,6 +5,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readdir,
   rename,
   rm,
   writeFile,
@@ -144,6 +145,26 @@ try {
     ],
     { stdio: "inherit" },
   );
+  // The App's languages: English, the development region and the source text, then each translation.
+  const localization = path.join(root, "apps/macos/localization");
+  const languages = (await readdir(localization)).filter((name) => name.endsWith(".lproj"));
+  for (const language of languages) {
+    execFileSync(
+      "/usr/bin/plutil",
+      [
+        "-lint",
+        "-s",
+        ...(await readdir(path.join(localization, language))).map((file) =>
+          path.join(localization, language, file),
+        ),
+      ],
+      { stdio: "inherit" },
+    );
+    execFileSync("/usr/bin/ditto", [
+      path.join(localization, language),
+      path.join(resources, language),
+    ]);
+  }
   const assets = path.join(root, ".dev/app/assets");
   execFileSync(executable, ["--render-assets", assets]);
   // Xcode's actool compiles the layered Icon Composer icon into Assets.car, which carries its dark,
@@ -223,7 +244,8 @@ try {
 <key>CFBundleName</key><string>${appName}</string>
 <key>CFBundleDisplayName</key><string>${appName}</string>
 <key>CFBundleExecutable</key><string>${executableName}</string>
-<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array>${languages.map((language) => `<string>${language.slice(0, -".lproj".length)}</string>`).join("")}</array>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>${appVersion}</string>
 <key>CFBundleVersion</key><string>${appVersion}</string>

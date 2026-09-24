@@ -4,7 +4,7 @@ English | [简体中文](docs/README.zh-CN.md)
 
 Use your local Claude Code inside the normally launched Codex App (`/Applications/ChatGPT.app`). Claude in Codex is a macOS menu bar app: once it attaches, the Codex App's native model picker gains the local Claude models, and Claude Code Sessions run next to GPT tasks in the same window.
 
-The App's interface is currently in Chinese. English support is planned; this README gives each Chinese label next to its English meaning.
+The App's interface follows the macOS language: English by default, and Simplified Chinese when Chinese comes before English in System Settings › General › Language & Region. To choose the App's language by itself, add it under Applications in that same pane.
 
 ## Install
 
@@ -20,8 +20,8 @@ The App is signed with a Developer ID and notarized by Apple, so it opens withou
 
 1. Open `/Applications/ChatGPT.app` as usual, then open Claude in Codex.
 2. The cloud icon in the menu bar turns solid and opens its eyes once attached. The native model picker lists the local Claude models, and "Claude Connected" appears under the account name at the bottom left of the sidebar.
-3. Choose Disconnect (断开) or Quit Claude in Codex (退出 Claude in Codex) and the App waits for running Claude Code Sessions and background tasks to finish. While it waits you can cancel the disconnect, or explicitly stop the Sessions.
-4. The Codex App and its GPT tasks keep running. Reopen the App or choose Attach to Codex App (接入 Codex App) to attach again.
+3. Choose Disconnect or Quit Claude in Codex and the App waits for running Claude Code Sessions and background tasks to finish. While it waits you can cancel the disconnect, or explicitly stop the Sessions.
+4. The Codex App and its GPT tasks keep running. Reopen the App or choose Attach to Codex App to attach again.
 
 Before attaching, the App checks only that the Codex App carries OpenAI's signature, then checks the internal connection layout at runtime. If the layout does not match, it stops and shows the reason instead of patching anything. The Host uses the Claude Code that is installed and signed in on the Mac, and the App bundles its own Node.js and plugins.
 
@@ -31,7 +31,7 @@ This project was previously called Codex Host. If an old Codex Host.app is still
 
 ## Updates
 
-The App checks for a new version every six hours. You can check manually or turn automatic checks off under Settings › Updates (设置 › 更新). Before installing an update, the App waits for running Claude Code Sessions to finish, exactly as it does when quitting, then relaunches into the new version. Updates carry an EdDSA signature, and the App accepts only updates whose signature matches.
+The App checks for a new version every six hours. You can check manually or turn automatic checks off under Settings › Updates. Before installing an update, the App waits for running Claude Code Sessions to finish, exactly as it does when quitting, then relaunches into the new version. Updates carry an EdDSA signature, and the App accepts only updates whose signature matches.
 
 When the Codex App updates and attaching starts failing, the new Codex App has usually changed its internals. The App stops attaching and shows why, and a fixed version arrives through the automatic update. Each release lists the Codex App versions it was verified with.
 
@@ -43,7 +43,7 @@ The menu keeps to a short status. The first line is the attachment state and ope
 
 Only one Host runs at a time. Opening Claude in Codex.app again, including a copy at another path, does not start a second Host: the new instance asks the running one to show its main window and exits. Reopening the running App from Finder also shows the main window.
 
-The main window's toolbar switches between Overview (概览), Features (功能) and Settings (设置), with the Attach or Disconnect button on the right.
+The main window's toolbar switches between Overview, Features and Settings, with the Attach or Disconnect button on the right.
 
 **Overview**
 

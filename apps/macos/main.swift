@@ -28,7 +28,7 @@ let defaultDesktopApp = environment["CLAUDE_IN_CODEX_DESKTOP_APP"] ?? "/Applicat
 /// Launch preferences saved in UserDefaults; a matching environment variable overrides one for development.
 enum LaunchPreference: String, CaseIterable {
     case autoAttach = "AutoAttachAtLaunch", showDashboard = "ShowDashboardAtLaunch"
-    var title: String { self == .autoAttach ? "启动时自动接入 Codex App" : "启动时打开此窗口" }
+    var title: String { self == .autoAttach ? tr("Attach to Codex App at launch") : tr("Open this window at launch") }
     var variables: [String] { self == .autoAttach ? ["CLAUDE_IN_CODEX_AUTO_ATTACH"] : ["CLAUDE_IN_CODEX_SHOW_DASHBOARD"] }
     var override: String? { variables.first { environment[$0] != nil } }
     var enabled: Bool {
@@ -102,7 +102,7 @@ func statusIcon(_ phase: String) -> NSImage {
         drawMark(rect, phase: phase, color: .black); return true
     }
     image.isTemplate = true
-    image.accessibilityDescription = "\(appName) \(phase)"
+    image.accessibilityDescription = "\(appName) · " + (phaseLabels[phase] ?? phase)
     return image
 }
 
@@ -119,18 +119,34 @@ func renderAssets(_ directory: String) throws {
 
 // MARK: Text and formatting
 
-let phaseLabels = ["detached": "未接入", "attaching": "正在接入…", "attached": "已接入 Codex App",
-                   "draining": "等待 Session 完成后断开…", "detaching": "正在断开…", "error": "接入未完成"]
+/// The App's text in the language macOS picks for it: the first of the user's preferred languages with
+/// a Resources/<language>.lproj, else English. The English text is the key; the Host's feature problems
+/// arrive in English and are looked up the same way.
+func tr(_ english: String) -> String { Bundle.main.localizedString(forKey: english, value: english, table: nil) }
+/// A format looked up as tr does; Localizable.stringsdict gives English its plurals.
+func tr(_ format: String, _ arguments: CVarArg...) -> String {
+    String(format: tr(format), locale: appLocale, arguments: arguments)
+}
+
+/// Dates and numbers follow the App's language rather than the first preferred one, with the user's region.
+let appLocale: Locale = {
+    let language = Bundle.main.preferredLocalizations.first ?? "en"
+    return Locale(identifier: Locale.current.region.map { "\(language)_\($0.identifier)" } ?? language)
+}()
+
+let phaseLabels = ["detached": tr("Not attached"), "attaching": tr("Attaching…"), "attached": tr("Attached to Codex App"),
+                   "draining": tr("Disconnecting after Sessions finish…"), "detaching": tr("Disconnecting…"),
+                   "error": tr("Attach did not complete")]
 
 func windowName(_ window: String?) -> String {
     guard let window else { return "" }
     switch window {
-    case "five_hour": return "5 小时"
-    case "weekly": return "每周"
-    case "monthly": return "每月"
+    case "five_hour": return tr("%d-hour", 5)
+    case "weekly": return tr("Weekly")
+    case "monthly": return tr("Monthly")
     default:
-        if window.hasSuffix("h"), let hours = Int(window.dropLast()) { return "\(hours) 小时" }
-        if window.hasSuffix("d"), let days = Int(window.dropLast()) { return "\(days) 天" }
+        if window.hasSuffix("h"), let hours = Int(window.dropLast()) { return tr("%d-hour", hours) }
+        if window.hasSuffix("d"), let days = Int(window.dropLast()) { return tr("%d-day", days) }
         return window
     }
 }
@@ -143,7 +159,7 @@ func productName(_ source: String, short: Bool) -> String {
     }
 }
 
-/// "Fable 每周"; a server-driven text row keeps its own label.
+/// "Fable Weekly"; a server-driven text row keeps its own label.
 func meterWindowLabel(_ meter: [String: Any]) -> String {
     if let label = meter["label"] as? String { return label }
     let window = windowName(meter["window"] as? String)
@@ -162,18 +178,19 @@ func parseDate(_ value: Any?) -> Date? {
     return isoFormatter.date(from: text) ?? ISO8601DateFormatter().date(from: text)
 }
 
-func dateText(_ format: String, _ date: Date) -> String {
+/// date with the fields of template ("MMMd"), ordered and punctuated for the App's locale.
+func dateText(_ template: String, _ date: Date) -> String {
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_CN"); formatter.dateFormat = format
+    formatter.locale = appLocale; formatter.setLocalizedDateFormatFromTemplate(template)
     return formatter.string(from: date)
 }
 
-/// Today "14:30", within a week "周六 18:00", later "9月30日".
+/// Today "14:30", within a week "Sat 18:00", later "Sep 30".
 func resetText(_ date: Date?) -> String {
     guard let date else { return "" }
-    if Calendar.current.isDateInToday(date) { return dateText("HH:mm", date) }
-    if date.timeIntervalSinceNow < 6.5 * 86400 { return dateText("EEE HH:mm", date) }
-    return dateText("M月d日", date)
+    if Calendar.current.isDateInToday(date) { return dateText("HHmm", date) }
+    if date.timeIntervalSinceNow < 6.5 * 86400 { return dateText("EEEHHmm", date) }
+    return dateText("MMMd", date)
 }
 
 func clockText(since milliseconds: Double) -> String {
@@ -183,10 +200,10 @@ func clockText(since milliseconds: Double) -> String {
 }
 
 func activityText(_ activity: [String: Any]?) -> String {
-    guard let kind = activity?["kind"] as? String else { return "运行中" }
-    return ["starting": "启动中", "thinking": "思考中", "responding": "回复中", "command": "运行命令",
-            "tool": "调用工具", "editing": "编辑文件", "subagent": "子代理", "compacting": "压缩上下文",
-            "approval": "等待批准", "question": "等待回答"][kind] ?? "运行中"
+    guard let kind = activity?["kind"] as? String else { return tr("Running") }
+    return ["starting": tr("Starting"), "thinking": tr("Thinking"), "responding": tr("Responding"), "command": tr("Running command"),
+            "tool": tr("Using a tool"), "editing": tr("Editing files"), "subagent": tr("Subagent"), "compacting": tr("Compacting"),
+            "approval": tr("Awaiting approval"), "question": tr("Awaiting an answer")][kind] ?? tr("Running")
 }
 
 func displayPath(_ path: String) -> String {
@@ -392,16 +409,16 @@ extension NSToolbarItem.Identifier {
 /// The main window's panes, in the order of the toolbar's segmented control.
 enum Pane: Int, CaseIterable {
     case overview, features, settings
-    var title: String { ["概览", "功能", "设置"][rawValue] }
+    var title: String { [tr("Overview"), tr("Features"), tr("Settings")][rawValue] }
 }
 
-/// The Host's optional features as the 功能 pane groups them; ids match the Host's status.features.
+/// The Host's optional features as the Features pane groups them; ids match the Host's status.features.
 let featureGroups: [(title: String, features: [(id: String, title: String, detail: String)])] = [
-    ("工具", [("codexAppTools", "Codex App 工具", "让 Claude 新建、管理 Codex thread 并发消息"),
-             ("computerUse", "Computer & Browser Use", "让 Claude 操作本机 App 和浏览器")]),
-    ("记忆", [("codexMemory", "Codex 记忆注入", "把 Codex 的记忆摘要附加到 Claude 的 system prompt"),
-             ("claudeMemorySync", "Claude Code 记忆同步", "把 Claude 的自动记忆同步到 Codex 的记忆")]),
-    ("Session", [("idleRelease", "闲置释放", "闲置超过所选时间的 Session 释放 Claude 进程，发消息时再恢复")]),
+    (tr("Tools"), [("codexAppTools", tr("Codex App tools"), tr("Let Claude create and manage Codex threads and message them")),
+                   ("computerUse", "Computer & Browser Use", tr("Let Claude operate apps and browsers on this Mac"))]),
+    (tr("Memory"), [("codexMemory", tr("Codex memory injection"), tr("Add Codex's memory summary to Claude's system prompt")),
+                    ("claudeMemorySync", tr("Claude Code memory sync"), tr("Sync Claude's auto memory into Codex's memories"))]),
+    ("Session", [("idleRelease", tr("Idle release"), tr("A Session idle longer than this frees its Claude process and resumes on the next message"))]),
 ]
 
 /// A switch for a grouped row, sent to target when flipped.
@@ -418,13 +435,18 @@ func titled(_ title: String, note: NSTextField) -> NSStackView {
     return text
 }
 
-/// The idle release choices: never, then how long a Session sits idle before release, tagged in minutes.
-let idleReleaseChoices = [(0, "永不"), (5, "5 分钟"), (15, "15 分钟"), (30, "30 分钟"), (60, "1 小时"), (240, "4 小时")]
+/// The idle release choices in minutes: never, then how long a Session sits idle before release.
+let idleReleaseChoices = [0, 5, 15, 30, 60, 240]
+
+func idleReleaseTitle(_ minutes: Int) -> String {
+    if minutes == 0 { return tr("Never") }
+    return minutes % 60 == 0 ? tr("%d hours", minutes / 60) : tr("%d minutes", minutes)
+}
 
 /// A popup of the idle release choices, sent to target when one is picked.
 func idleReleasePopup(_ target: AnyObject, _ action: Selector) -> NSPopUpButton {
     let popup = NSPopUpButton(); popup.target = target; popup.action = action
-    for (minutes, title) in idleReleaseChoices { popup.addItem(withTitle: title); popup.lastItem?.tag = minutes }
+    for minutes in idleReleaseChoices { popup.addItem(withTitle: idleReleaseTitle(minutes)); popup.lastItem?.tag = minutes }
     popup.setContentHuggingPriority(.required, for: .horizontal)
     return popup
 }
@@ -434,13 +456,13 @@ func selectIdleRelease(_ popup: NSPopUpButton, _ feature: [String: Any]?) {
     let minutes = feature?["enabled"] as? Bool == true ? feature?["timeoutMinutes"] as? Int ?? 0 : 0
     if popup.indexOfItem(withTag: minutes) < 0 {
         let index = popup.itemArray.firstIndex { $0.tag > minutes } ?? popup.numberOfItems
-        popup.insertItem(withTitle: minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes) 分钟", at: index)
+        popup.insertItem(withTitle: idleReleaseTitle(minutes), at: index)
         popup.item(at: index)?.tag = minutes
     }
     popup.selectItem(withTag: minutes)
 }
 
-/// One row on the 功能 pane: a switch, or for idle release the popup of never and durations. The
+/// One row on the Features pane: a switch, or for idle release the popup of never and durations. The
 /// description gives way to a problem the Host reports.
 final class FeatureRow {
     let control: NSControl
@@ -459,7 +481,7 @@ final class FeatureRow {
         control.isEnabled = feature != nil
         reflect(control, feature)
         if let problem = feature?["problem"] as? String, !problem.isEmpty {
-            note.stringValue = problem; note.textColor = Palette.warnInk
+            note.stringValue = tr(problem); note.textColor = Palette.warnInk
         } else {
             note.stringValue = detail; note.textColor = .secondaryLabelColor
         }
@@ -562,10 +584,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     private func waitForLegacyApp() {
         let alert = NSAlert()
-        alert.messageText = "旧版 Codex Host 正在运行"
-        alert.informativeText = "\(appName) 会接管 Codex Host 的模型偏好和线程记录。请在 Codex Host 的菜单里选择「退出 Codex Host」，等它的任务完成后退出；\(appName) 会随后自动继续启动。"
-        alert.addButton(withTitle: "等待 Codex Host 退出")
-        alert.addButton(withTitle: "退出 \(appName)")
+        alert.messageText = tr("The earlier Codex Host is running")
+        alert.informativeText = tr("%@ takes over Codex Host's model preferences and thread records. Quit Codex Host from its menu and let it finish its tasks. %@ then continues launching on its own.", appName, appName)
+        alert.addButton(withTitle: tr("Wait for Codex Host to Quit"))
+        alert.addButton(withTitle: tr("Quit %@", appName))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { exit(0) }
         legacyObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -590,16 +612,16 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let appItem = NSMenuItem()
         applicationMenu.addItem(appItem)
         let appSubmenu = NSMenu()
-        appSubmenu.addItem(withTitle: "关于 \(appName)", action: #selector(showAbout), keyEquivalent: "").target = self
+        appSubmenu.addItem(withTitle: tr("About %@", appName), action: #selector(showAbout), keyEquivalent: "").target = self
         if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
             updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
-            appSubmenu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
+            appSubmenu.addItem(withTitle: tr("Check for Updates…"), action: #selector(checkForUpdates), keyEquivalent: "").target = self
         }
         appSubmenu.addItem(.separator())
-        appSubmenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        appSubmenu.addItem(withTitle: tr("Settings…"), action: #selector(showSettings), keyEquivalent: ",").target = self
         appSubmenu.addItem(.separator())
-        appSubmenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        appSubmenu.addItem(withTitle: "退出 \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appSubmenu.addItem(withTitle: tr("Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appSubmenu.addItem(withTitle: tr("Quit %@", appName), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appSubmenu; NSApp.mainMenu = applicationMenu
         statusItem = NSStatusBar.system.statusItem(withLength: 28)
         statusItem.menu = menu; menu.delegate = self
@@ -672,7 +694,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
                         // An update waiting on the drain installs now; Sparkle then quits and relaunches the App.
                         if let install = self.pendingInstall { self.pendingInstall = nil; install() } else { NSApp.terminate(nil) }
                     }
-                    else { self.state = ["phase": "error", "error": "Host 已退出（\(process.terminationStatus)）"]; self.updateMenu() }
+                    else { self.state = ["phase": "error", "error": tr("The Host exited (%d)", process.terminationStatus)]; self.updateMenu() }
                 }
             }
             child = process; try process.run()
@@ -736,8 +758,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     private func usageMenuItems() -> [NSMenuItem] {
         guard connected, !meters.isEmpty else { return [] }
-        let heading = label("用量", size: 11, weight: .semibold, color: .secondaryLabelColor)
-        let remaining = label("剩余", size: 11, color: .secondaryLabelColor)
+        let heading = label(tr("Usage"), size: 11, weight: .semibold, color: .secondaryLabelColor)
+        let remaining = label(tr("Left"), size: 11, color: .secondaryLabelColor)
         var items = [menuRow([heading, spacer(), remaining], height: 20)]
         for meter in meters {
             let name = meter["label"] is String ? meterWindowLabel(meter)
@@ -749,11 +771,11 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             if let left = meter["remainingPercent"] as? Int {
                 let bar = UsageBar(); bar.remaining = left
                 views.append(pin(bar, width: 56, height: 5))
-                tip += " · 剩余 \(left)%"
+                tip += " · " + tr("%d%% left", left)
             } else {
                 views.append(label(meter["text"] as? String ?? "—", color: .secondaryLabelColor))
             }
-            if let reset = parseDate(meter["resetsAt"]) { tip += " · \(resetText(reset)) 重置" }
+            if let reset = parseDate(meter["resetsAt"]) { tip += " · " + tr("Resets %@", resetText(reset)) }
             let entry = menuRow(views, height: 22)
             entry.view?.toolTip = tip
             items.append(entry)
@@ -770,14 +792,14 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let usage = usageMenuItems()
         if !usage.isEmpty { menu.addItem(.separator()); usage.forEach(menu.addItem) }
         menu.addItem(.separator())
-        if phase == "attached" { item("断开", #selector(disconnect)) }
+        if phase == "attached" { item(tr("Disconnect"), #selector(disconnect)) }
         else if phase == "draining" {
-            item("取消断开", #selector(cancelDisconnect))
-            item("停止 Session 并断开…", #selector(stopAndDisconnect))
-        } else { item("接入 Codex App", #selector(connect), enabled: phase == "detached" || phase == "error") }
-        item("设置…", #selector(showSettings), key: ",")
+            item(tr("Cancel Disconnect"), #selector(cancelDisconnect))
+            item(tr("Stop Sessions and Disconnect…"), #selector(stopAndDisconnect))
+        } else { item(tr("Attach to Codex App"), #selector(connect), enabled: phase == "detached" || phase == "error") }
+        item(tr("Settings…"), #selector(showSettings), key: ",")
         menu.addItem(.separator())
-        item(quitting ? "正在退出…" : "退出 \(appName)", #selector(quitHost), key: "q", enabled: !quitting)
+        item(quitting ? tr("Quitting…") : tr("Quit %@", appName), #selector(quitHost), key: "q", enabled: !quitting)
     }
     func menuWillOpen(_ menu: NSMenu) { menuOpen = false; updateMenu(); menuOpen = true; send("status") }
     func menuDidClose(_ menu: NSMenu) { menuOpen = false; updateMenu() }
@@ -788,9 +810,9 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     @objc private func disconnect() { send("detach") }
     @objc private func cancelDisconnect() { quitting = false; pendingInstall = nil; send("cancel-drain") }
     @objc private func stopAndDisconnect() {
-        let alert = NSAlert(); alert.messageText = "停止 Session 并断开？"
-        alert.informativeText = "正在运行的 Claude Code Session 会被中断，已保存的历史会保留。Codex App 和 GPT 任务会继续运行。"
-        alert.addButton(withTitle: "停止并断开"); alert.addButton(withTitle: "继续等待")
+        let alert = NSAlert(); alert.messageText = tr("Stop Sessions and disconnect?")
+        alert.informativeText = tr("Running Claude Code Sessions are interrupted, and their saved history is kept. The Codex App and its GPT tasks keep running.")
+        alert.addButton(withTitle: tr("Stop and Disconnect")); alert.addButton(withTitle: tr("Keep Waiting"))
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn { send("stop-and-detach") }
     }
@@ -822,7 +844,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             control.selectedSegment = pane.rawValue
             paneControl = control
             let item = NSToolbarItem(itemIdentifier: identifier)
-            item.view = control; item.label = "页面"
+            item.view = control; item.label = tr("Pages")
             return item
         case .action:
             let item = NSToolbarItem(itemIdentifier: identifier)
@@ -904,8 +926,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let (usageBox, usageRows) = panel(); usageList = usageRows
         let taskSummary = label("", size: 11, color: .secondaryLabelColor); self.taskSummary = taskSummary
         let (taskBox, taskRows) = panel(); taskList = taskRows
-        return paneStack([error, section("组件", content: cards), section("用量", content: usageBox),
-                          section("Claude Code Session", accessory: taskSummary, content: taskBox)])
+        return paneStack([error, section(tr("Components"), content: cards), section(tr("Usage"), content: usageBox),
+                          section(tr("Claude Code Sessions"), accessory: taskSummary, content: taskBox)])
     }
 
     private func featuresPane() -> NSView {
@@ -930,10 +952,10 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
 
     private func settingsPane() -> NSView {
         let login = rowSwitch(self, #selector(toggleLogin(_:)))
-        let approvalNote = label("需要在“系统设置 › 通用 › 登录项”中允许", size: 11, color: Palette.warnInk)
-        let approve = NSButton(title: "打开登录项设置…", target: self, action: #selector(openLoginItems)); approve.controlSize = .small
+        let approvalNote = label(tr("Allow it in System Settings › General › Login Items"), size: 11, color: Palette.warnInk)
+        let approve = NSButton(title: tr("Open Login Items…"), target: self, action: #selector(openLoginItems)); approve.controlSize = .small
         loginToggle = login; loginApproval = [approvalNote, approve]
-        let loginRow = pin(hstack([titled("登录时启动", note: approvalNote), approve, login], spacing: 12))
+        let loginRow = pin(hstack([titled(tr("Launch at login"), note: approvalNote), approve, login], spacing: 12))
         // The login row alone changes height, growing when approval is pending.
         loginRowHeight = loginRow.heightAnchor.constraint(equalToConstant: 40); loginRowHeight?.isActive = true
         var launch: [(NSView, CGFloat?)] = [(loginRow, nil)]
@@ -947,25 +969,25 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
                 continue
             }
             toggle.isEnabled = false
-            let note = label("当前由环境变量 \(variable) 决定", size: 11, color: .secondaryLabelColor)
+            let note = label(tr("Set by the environment variable %@", variable), size: 11, color: .secondaryLabelColor)
             launch.append((hstack([titled(preference.title, note: note), toggle], spacing: 12), 56))
         }
         let launchBox = group(launch)
 
-        var sections = [section("启动", content: launchBox)]
+        var sections = [section(tr("Launch"), content: launchBox)]
         if let updater = updaterController?.updater {
             let toggle = rowSwitch(self, #selector(toggleAutomaticUpdates(_:)))
             toggle.state = updater.automaticallyChecksForUpdates ? .on : .off
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
-            let check = NSButton(title: "检查更新…", target: self, action: #selector(checkForUpdates)); check.controlSize = .small
-            let note = label("当前版本 \(version)", size: 11, color: .secondaryLabelColor)
-            sections.append(section("更新", content: group([(hstack([titled("自动检查更新", note: note), check, toggle], spacing: 12), 56)])))
+            let check = NSButton(title: tr("Check for Updates…"), target: self, action: #selector(checkForUpdates)); check.controlSize = .small
+            let note = label(tr("Version %@", version), size: 11, color: .secondaryLabelColor)
+            sections.append(section(tr("Updates"), content: group([(hstack([titled(tr("Check for updates automatically"), note: note), check, toggle], spacing: 12), 56)])))
         }
-        let (app, appField) = pathRow("Codex App", appPath, [("在 Finder 中显示", #selector(revealDesktop))])
+        let (app, appField) = pathRow("Codex App", appPath, [(tr("Show in Finder"), #selector(revealDesktop))])
         appPathLabel = appField
-        let (data, _) = pathRow("数据", dataDirectory.path, [("在 Finder 中显示", #selector(revealData))])
-        let (logs, _) = pathRow("诊断日志", logFile.path, [("打开", #selector(openLogs)), ("在 Finder 中显示", #selector(revealLogs))])
-        sections.append(section("位置", content: group([(app, 56), (data, 56), (logs, 56)])))
+        let (data, _) = pathRow(tr("Data"), dataDirectory.path, [(tr("Show in Finder"), #selector(revealData))])
+        let (logs, _) = pathRow(tr("Diagnostic log"), logFile.path, [(tr("Open"), #selector(openLogs)), (tr("Show in Finder"), #selector(revealLogs))])
+        sections.append(section(tr("Locations"), content: group([(app, 56), (data, 56), (logs, 56)])))
         return paneStack(sections)
     }
 
@@ -1038,7 +1060,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private func updateDashboard() {
         guard dashboard != nil, let taskList, let usageList else { return }
         if let actionItem {
-            actionItem.title = ["attached": "断开", "draining": "取消断开", "attaching": "接入中", "detaching": "断开中"][phase] ?? "接入"
+            actionItem.title = ["attached": tr("Disconnect"), "draining": tr("Cancel Disconnect"), "attaching": tr("Attaching"),
+                                "detaching": tr("Disconnecting")][phase] ?? tr("Attach")
             actionItem.isEnabled = phase != "attaching" && phase != "detaching"
             if #available(macOS 26.0, *) { actionItem.style = connected || !actionItem.isEnabled ? .plain : .prominent }
         }
@@ -1049,23 +1072,23 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             card.show(glyph: codexCloudImage(appPath: appPath) ?? NSWorkspace.shared.icon(forFile: appPath))
         }
         let appRunning = state["appRunning"] as? Bool == true
-        appCard?.pill.show(appRunning ? "运行中" : "未运行", tone: appRunning ? "ok" : "off")
+        appCard?.pill.show(appRunning ? tr("Running") : tr("Not running"), tone: appRunning ? "ok" : "off")
 
         let claude = (state["harnesses"] as? [[String: Any]] ?? []).first { $0["harnessId"] as? String == "claude-code" }
         let processes = state["claudeProcesses"] as? Int ?? 0
         if let claude, claude["executable"] == nil || claude["executable"] is NSNull {
-            cliCard?.pill.show("未安装", tone: "warn")
+            cliCard?.pill.show(tr("Not installed"), tone: "warn")
         } else {
-            cliCard?.pill.show(processes > 0 ? "\(processes) 个进程" : "没有进程", tone: processes > 0 ? "ok" : "off")
+            cliCard?.pill.show(processes > 0 ? tr("%d processes", processes) : tr("No processes"), tone: processes > 0 ? "ok" : "off")
         }
-        let hostPill: [String: (String, String)] = ["attached": ("已接入", "ok"), "draining": ("等待断开", "warn"),
-                                                   "attaching": ("接入中", "off"), "detaching": ("断开中", "off")]
-        let (hostText, hostTone) = hostPill[phase] ?? ("未接入", "warn")
+        let hostPill: [String: (String, String)] = ["attached": (tr("Attached"), "ok"), "draining": (tr("Waiting to disconnect"), "warn"),
+                                                   "attaching": (tr("Attaching"), "off"), "detaching": (tr("Disconnecting"), "off")]
+        let (hostText, hostTone) = hostPill[phase] ?? (tr("Not attached"), "warn")
         hostCard?.pill.show(hostText, tone: hostTone)
 
         if meters.isEmpty {
-            setRows(usageList, [noteRow(connected ? "正在读取 Codex 和 Claude Code 的剩余额度…"
-                                                  : "接入 Codex App 后显示 Codex 和 Claude Code 的剩余额度。")])
+            setRows(usageList, [noteRow(connected ? tr("Reading what is left of the Codex and Claude Code quotas…")
+                                                  : tr("Attach to the Codex App to see what is left of the Codex and Claude Code quotas."))])
         } else {
             var previous: String?
             setRows(usageList, meters.map { meter in
@@ -1076,15 +1099,15 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
 
         let running = activeTasks.count
-        taskSummary?.stringValue = tasks.isEmpty ? "" : "\(running) 个运行中 · 共 \(tasks.count) 个 Session"
+        taskSummary?.stringValue = tasks.isEmpty ? "" : tr("%d running", running) + " · " + tr("%d Sessions", tasks.count)
         if tasks.isEmpty {
-            setRows(taskList, [noteRow(connected ? "当前没有 Claude Code Session。在 Codex App 里选择 Claude 模型即可开始。"
-                                                 : "接入 Codex App 后，这里会列出每个 Claude Code Session 和它正在做的事。")])
+            setRows(taskList, [noteRow(connected ? tr("No Claude Code Sessions yet. Choose a Claude model in the Codex App to start one.")
+                                                 : tr("Once attached to the Codex App, this lists every Claude Code Session and what it is doing."))])
         } else {
             let order = ["running": 0, "background": 1, "idle": 2]
             let sorted = tasks.sorted { (order[$0["status"] as? String ?? ""] ?? 3) < (order[$1["status"] as? String ?? ""] ?? 3) }
             var rows = sorted.prefix(12).map(taskRow)
-            if sorted.count > 12 { rows.append(noteRow("另外 \(sorted.count - 12) 个 Session")) }
+            if sorted.count > 12 { rows.append(noteRow(tr("%d more Sessions", sorted.count - 12))) }
             setRows(taskList, rows)
         }
 
@@ -1109,7 +1132,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let reset = parseDate(meter["resetsAt"])
         let resetLabel = pin(tabular(label(resetText(reset), color: .tertiaryLabelColor)), width: 84)
         (resetLabel as? NSTextField)?.alignment = .right
-        resetLabel.toolTip = reset.map { dateText("M月d日 EEE HH:mm", $0) + " 重置" }
+        resetLabel.toolTip = reset.map { tr("Resets %@", dateText("MMMdEEEHHmm", $0)) }
         guard let left = meter["remainingPercent"] as? Int else {
             let text = label(meter["text"] as? String ?? "—", color: .secondaryLabelColor)
             text.alignment = .right; windowLabel.setContentHuggingPriority(.init(1), for: .horizontal)
@@ -1122,7 +1145,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         bar.setContentHuggingPriority(.init(1), for: .horizontal)
         let value = pin(tabular(label("\(left)%", color: left <= lowRemaining ? .systemOrange : .labelColor)), width: 48)
         (value as? NSTextField)?.alignment = .right
-        value.toolTip = "剩余 \(left)%"
+        value.toolTip = tr("%d%% left", left)
         return hstack([productLabel, windowLabel, bar, value, resetLabel])
     }
 
@@ -1130,8 +1153,8 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let status = task["status"] as? String ?? "idle"
         let activity = task["activity"] as? [String: Any]
         let cwd = task["cwd"] as? String ?? ""
-        var title = task["title"] as? String ?? "未命名 Session"
-        if task["subagent"] as? Bool == true { title = "子代理 · " + title }
+        var title = task["title"] as? String ?? tr("Untitled Session")
+        if task["subagent"] as? Bool == true { title = tr("Subagent") + " · " + title }
         let titleLabel = label(title)
         titleLabel.setContentHuggingPriority(.init(1), for: .horizontal)
         var statusText: String
@@ -1139,12 +1162,14 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "running":
             statusText = activityText(activity)
             if let started = activity?["startedAtMs"] as? Double { statusText += " " + clockText(since: started) }
-        case "background": statusText = "\(task["backgroundTasks"] as? Int ?? 0) 个后台任务"
-        default: statusText = "空闲"
+        case "background": statusText = tr("%d background tasks", task["backgroundTasks"] as? Int ?? 0)
+        default: statusText = tr("Idle")
         }
         let statusLabel = tabular(label(statusText, color: status == "idle" ? .tertiaryLabelColor : .secondaryLabelColor))
         statusLabel.alignment = .right
-        pin(statusLabel, width: 104)
+        // At least the column's width, and wider rather than truncated when a language runs long.
+        statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 104).isActive = true
+        statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         let row = hstack([titleLabel, statusLabel])
         row.toolTip = [displayPath(cwd), task["model"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
         return row
@@ -1157,7 +1182,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         if let build = buildInfo() {
             let revision = String((build["revision"] as? String ?? "").prefix(7))
             if !revision.isEmpty { options[.version] = revision }
-            let lines = [parseDate(build["builtAt"]).map { "构建于 " + dateText("yyyy年M月d日 HH:mm", $0) },
+            let lines = [parseDate(build["builtAt"]).map { tr("Built %@", dateText("yMMMdHHmm", $0)) },
                          (build["node"] as? String).map { "Node " + $0 }].compactMap { $0 }
             let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
             options[.credits] = NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
@@ -1171,7 +1196,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private func showPath(_ field: NSTextField, _ path: String) {
         field.stringValue = displayPath(path); field.toolTip = path
     }
-    /// A 位置 row: the name over its path, with the row's buttons on the trailing side.
+    /// A Locations row: the name over its path, with the row's buttons on the trailing side.
     private func pathRow(_ title: String, _ path: String, _ buttons: [(String, Selector)]) -> (NSStackView, NSTextField) {
         let field = label("", size: 11, color: .secondaryLabelColor)
         field.lineBreakMode = .byTruncatingMiddle; field.isSelectable = true; showPath(field, path)
@@ -1182,7 +1207,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         return (hstack([titled(title, note: field)] + actions, spacing: 8), field)
     }
 
-    /// Re-read whenever the window comes forward on 设置, since approval happens in System Settings.
+    /// Re-read whenever the window comes forward on Settings, since approval happens in System Settings.
     func windowDidBecomeKey(_ notification: Notification) {
         if notification.object as? NSWindow === dashboard, pane == .settings { refreshLoginItem() }
     }
@@ -1198,7 +1223,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         do {
             if sender.state == .on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
-            let alert = NSAlert(); alert.messageText = sender.state == .on ? "无法添加登录项" : "无法移除登录项"
+            let alert = NSAlert(); alert.messageText = sender.state == .on ? tr("Couldn’t add the login item") : tr("Couldn’t remove the login item")
             alert.informativeText = error.localizedDescription
             if let dashboard { alert.beginSheetModal(for: dashboard) } else { alert.runModal() }
         }

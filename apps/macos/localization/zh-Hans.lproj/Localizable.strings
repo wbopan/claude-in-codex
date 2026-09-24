@@ -1,0 +1,131 @@
+/* Simplified Chinese for the App. Each key is the English text in apps/macos/main.swift, or a
+   feature problem the Host sends (packages/host-runtime/src/hot-attach/features.ts). */
+
+/* Menu bar menu and application menu */
+"About %@" = "关于 %@";
+"Check for Updates…" = "检查更新…";
+"Settings…" = "设置…";
+"Close Window" = "关闭窗口";
+"Quit %@" = "退出 %@";
+"Quitting…" = "正在退出…";
+"Attach to Codex App" = "接入 Codex App";
+"Disconnect" = "断开";
+"Cancel Disconnect" = "取消断开";
+"Stop Sessions and Disconnect…" = "停止 Session 并断开…";
+"Usage" = "用量";
+"Left" = "剩余";
+"%d%% left" = "剩余 %d%%";
+"Resets %@" = "%@ 重置";
+
+/* Attach phases */
+"Not attached" = "未接入";
+"Attaching…" = "正在接入…";
+"Attached to Codex App" = "已接入 Codex App";
+"Disconnecting after Sessions finish…" = "等待 Session 完成后断开…";
+"Disconnecting…" = "正在断开…";
+"Attach did not complete" = "接入未完成";
+"The Host exited (%d)" = "Host 已退出（%d）";
+
+/* Alerts */
+"The earlier Codex Host is running" = "旧版 Codex Host 正在运行";
+"%@ takes over Codex Host's model preferences and thread records. Quit Codex Host from its menu and let it finish its tasks. %@ then continues launching on its own." = "%@ 会接管 Codex Host 的模型偏好和线程记录。请在 Codex Host 的菜单里退出它，等它的任务完成；%@ 会随后自动继续启动。";
+"Wait for Codex Host to Quit" = "等待 Codex Host 退出";
+"Stop Sessions and disconnect?" = "停止 Session 并断开？";
+"Running Claude Code Sessions are interrupted, and their saved history is kept. The Codex App and its GPT tasks keep running." = "正在运行的 Claude Code Session 会被中断，已保存的历史会保留。Codex App 和 GPT 任务会继续运行。";
+"Stop and Disconnect" = "停止并断开";
+"Keep Waiting" = "继续等待";
+"Couldn’t add the login item" = "无法添加登录项";
+"Couldn’t remove the login item" = "无法移除登录项";
+
+/* Main window */
+"Pages" = "页面";
+"Overview" = "概览";
+"Features" = "功能";
+"Settings" = "设置";
+"Attach" = "接入";
+"Attaching" = "接入中";
+"Disconnecting" = "断开中";
+
+/* Overview */
+"Components" = "组件";
+"Running" = "运行中";
+"Not running" = "未运行";
+"Not installed" = "未安装";
+"%d processes" = "%d 个进程";
+"No processes" = "没有进程";
+"Attached" = "已接入";
+"Waiting to disconnect" = "等待断开";
+"Reading what is left of the Codex and Claude Code quotas…" = "正在读取 Codex 和 Claude Code 的剩余额度…";
+"Attach to the Codex App to see what is left of the Codex and Claude Code quotas." = "接入 Codex App 后显示 Codex 和 Claude Code 的剩余额度。";
+"%d-hour" = "%d 小时";
+"%d-day" = "%d 天";
+"Weekly" = "每周";
+"Monthly" = "每月";
+"Claude Code Sessions" = "Claude Code Session";
+"%d running" = "%d 个运行中";
+"%d Sessions" = "共 %d 个 Session";
+"No Claude Code Sessions yet. Choose a Claude model in the Codex App to start one." = "当前没有 Claude Code Session。在 Codex App 里选择 Claude 模型即可开始。";
+"Once attached to the Codex App, this lists every Claude Code Session and what it is doing." = "接入 Codex App 后，这里会列出每个 Claude Code Session 和它正在做的事。";
+"%d more Sessions" = "另外 %d 个 Session";
+"Untitled Session" = "未命名 Session";
+"Subagent" = "子代理";
+"%d background tasks" = "%d 个后台任务";
+"Idle" = "空闲";
+"Starting" = "启动中";
+"Thinking" = "思考中";
+"Responding" = "回复中";
+"Running command" = "运行命令";
+"Using a tool" = "调用工具";
+"Editing files" = "编辑文件";
+"Compacting" = "压缩上下文";
+"Awaiting approval" = "等待批准";
+"Awaiting an answer" = "等待回答";
+
+/* Features */
+"Tools" = "工具";
+"Codex App tools" = "Codex App 工具";
+"Let Claude create and manage Codex threads and message them" = "让 Claude 新建、管理 Codex thread 并发消息";
+"Let Claude operate apps and browsers on this Mac" = "让 Claude 操作本机 App 和浏览器";
+"Memory" = "记忆";
+"Codex memory injection" = "Codex 记忆注入";
+"Add Codex's memory summary to Claude's system prompt" = "把 Codex 的记忆摘要附加到 Claude 的 system prompt";
+"Claude Code memory sync" = "Claude Code 记忆同步";
+"Sync Claude's auto memory into Codex's memories" = "把 Claude 的自动记忆同步到 Codex 的记忆";
+"Idle release" = "闲置释放";
+"A Session idle longer than this frees its Claude process and resumes on the next message" = "闲置超过所选时间的 Session 释放 Claude 进程，发消息时再恢复";
+"Never" = "永不";
+"%d minutes" = "%d 分钟";
+"%d hours" = "%d 小时";
+
+/* Feature problems the Host reports */
+"Codex's memory summary exceeds 64 KB, so only the first 64 KB is added" = "Codex 的记忆摘要超过 64 KB，只会注入前 64 KB";
+"Codex's memory summary is empty" = "Codex 的记忆摘要是空的";
+"Codex has not written a memory summary yet" = "Codex 还没有生成记忆摘要";
+"Codex's memory summary could not be read" = "无法读取 Codex 的记忆摘要";
+"Codex App tools failed to load. The diagnostic log says why" = "Codex App 工具加载失败，查看诊断日志了解原因";
+"The Codex App does not provide these tools" = "Codex App 没有提供这组工具";
+"The Computer Use plugin is not enabled in Codex" = "Codex 里没有启用 Computer Use 插件";
+"Codex has not loaded the Computer Use plugin. Restart the Codex App and try again" = "Codex 没有加载 Computer Use 插件，重启 Codex App 后再试";
+"Computer Use tools failed to load. The diagnostic log says why" = "Computer Use 工具加载失败，查看诊断日志了解原因";
+"The Computer Use plugin does not provide the js tool" = "Computer Use 插件没有提供 js 工具";
+"The last sync failed. The diagnostic log says why" = "上次同步失败，查看诊断日志了解原因";
+
+/* Settings */
+"Launch" = "启动";
+"Launch at login" = "登录时启动";
+"Allow it in System Settings › General › Login Items" = "需要在“系统设置 › 通用 › 登录项”中允许";
+"Open Login Items…" = "打开登录项设置…";
+"Attach to Codex App at launch" = "启动时自动接入 Codex App";
+"Open this window at launch" = "启动时打开此窗口";
+"Set by the environment variable %@" = "当前由环境变量 %@ 决定";
+"Updates" = "更新";
+"Check for updates automatically" = "自动检查更新";
+"Version %@" = "当前版本 %@";
+"Locations" = "位置";
+"Data" = "数据";
+"Diagnostic log" = "诊断日志";
+"Open" = "打开";
+"Show in Finder" = "在 Finder 中显示";
+
+/* About */
+"Built %@" = "构建于 %@";
