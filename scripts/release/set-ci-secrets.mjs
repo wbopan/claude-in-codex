@@ -4,7 +4,6 @@
 //   node scripts/release/set-ci-secrets.mjs --certificate
 //   node scripts/release/set-ci-secrets.mjs --notary-key AuthKey_X.p8 --notary-key-id X --notary-issuer UUID
 //   node scripts/release/set-ci-secrets.mjs --sparkle
-//   RELEASES_TOKEN=… node scripts/release/set-ci-secrets.mjs --releases-token
 //
 // --certificate exports only the Developer ID Application identity (never the keychain's other
 // identities), so macOS asks once for the keychain password. Uses gh from PATH or
@@ -28,7 +27,6 @@ const { values } = parseArgs({
     "notary-key-id": { type: "string" },
     "notary-issuer": { type: "string" },
     sparkle: { type: "boolean" },
-    "releases-token": { type: "boolean" },
   },
 });
 
@@ -119,7 +117,6 @@ try {
     );
     setSecret("SPARKLE_PRIVATE_KEY", (await readFile(exported, "utf8")).trim());
   }
-  if (values["releases-token"]) setSecret("RELEASES_TOKEN", process.env.RELEASES_TOKEN);
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }

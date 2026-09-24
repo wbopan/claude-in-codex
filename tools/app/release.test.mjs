@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { feedUrl, releaseVersion, releasesRepository } from "./distribution.mjs";
+import { feedUrl, releaseVersion, repository } from "./distribution.mjs";
 import { appcast, releaseNotes } from "./release.mjs";
 
 const root = new URL("../..", import.meta.url).pathname;
@@ -20,10 +20,8 @@ describe("App release", () => {
     await expect(releaseNotes("99.0.0")).rejects.toThrow(/## 99\.0\.0/);
   });
 
-  it("reads the appcast of the latest release on the public repository", () => {
-    expect(feedUrl).toBe(
-      `https://github.com/${releasesRepository}/releases/latest/download/appcast.xml`,
-    );
+  it("reads the appcast of the latest release on the repository", () => {
+    expect(feedUrl).toBe(`https://github.com/${repository}/releases/latest/download/appcast.xml`);
   });
 
   it("writes one signed item with escaped attributes and intact Markdown notes", () => {
