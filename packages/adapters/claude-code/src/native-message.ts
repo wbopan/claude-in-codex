@@ -82,6 +82,32 @@ function boundedString(value: unknown, limit: number): string | undefined {
   return trimmed.slice(0, limit);
 }
 
+/** A Claude tool call that delegates to a Subagent, as the live and history paths project it. */
+export function claudeSubagentCall(
+  toolName: string,
+  argumentsValue: unknown,
+): {
+  operation: "spawn" | "send";
+  description: string;
+  prompt?: string;
+  role?: string;
+  background: boolean;
+  nativeSubagentId?: string;
+} | null {
+  if (!SUBAGENT_TOOLS.has(toolName)) return null;
+  const prompt = subagentPrompt(argumentsValue);
+  const role = subagentRole(argumentsValue);
+  const agentId = targetedSubagentId(argumentsValue);
+  return {
+    operation: toolName === "SendMessage" ? "send" : "spawn",
+    description: subagentDescription(argumentsValue, toolName),
+    ...(prompt ? { prompt } : {}),
+    ...(role ? { role } : {}),
+    background: toolName === "SendMessage" || subagentBackground(argumentsValue),
+    ...(agentId ? { nativeSubagentId: agentId } : {}),
+  };
+}
+
 function subagentDescription(argumentsValue: unknown, toolName: string): string {
   if (!isRecord(argumentsValue)) return `${toolName} delegation`;
   return (
@@ -774,23 +800,11 @@ export class ClaudeNativeTurnAccumulator {
         if (!ignoreKnownIds) this.#protocolConflict = true;
         continue;
       }
-      const subagent = SUBAGENT_TOOLS.has(block.name);
-      this.#tools.set(block.id, { name: block.name, subagent });
-      if (subagent) this.#earlierSubagentCalls.add(block.id);
-      if (subagent) {
-        const prompt = subagentPrompt(argumentsResult.data);
-        const role = subagentRole(argumentsResult.data);
-        const agentId = targetedSubagentId(argumentsResult.data);
-        events.push({
-          type: "subagent.started",
-          callId: block.id,
-          operation: block.name === "SendMessage" ? "send" : "spawn",
-          description: subagentDescription(argumentsResult.data, block.name),
-          ...(prompt ? { prompt } : {}),
-          ...(role ? { role } : {}),
-          background: block.name === "SendMessage" || subagentBackground(argumentsResult.data),
-          ...(agentId ? { nativeSubagentId: agentId } : {}),
-        });
+      const call = claudeSubagentCall(block.name, argumentsResult.data);
+      this.#tools.set(block.id, { name: block.name, subagent: call !== null });
+      if (call) this.#earlierSubagentCalls.add(block.id);
+      if (call) {
+        events.push({ type: "subagent.started", callId: block.id, ...call });
       } else {
         events.push({
           type: "tool.started",

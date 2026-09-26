@@ -558,6 +558,12 @@ class ClaudeHarnessSession implements HarnessSession {
   #contextUsageCooldownUntilMs = 0;
   #requestUsageBoundary = 0;
   #occupancy = new ClaudeBackgroundOccupancy();
+  /**
+   * Native ids of Subagents this Session has run. SendMessage also reaches other Claude
+   * sessions on the machine; only a message to one of these ids wakes a Subagent whose
+   * continuation the Turn waits for.
+   */
+  readonly #knownSubagentIds = new Set<string>();
   #cancelEscalation: ReturnType<typeof setTimeout> | null = null;
   #continuationQuiescence: ReturnType<typeof setTimeout> | null = null;
 
@@ -1557,6 +1563,9 @@ class ClaudeHarnessSession implements HarnessSession {
         this.#observeRootOutput(active);
         return;
       case "subagents.live":
+        for (const nativeSubagentId of event.nativeSubagentIds) {
+          this.#knownSubagentIds.add(nativeSubagentId);
+        }
         this.#occupancy.observeLive(event.nativeSubagentIds);
         this.#armContinuationQuiescence(active);
         return;
@@ -1617,22 +1626,45 @@ class ClaudeHarnessSession implements HarnessSession {
       case "tool.completed":
         active.tools.complete(active.command.turnId, event, active.cancellationRequested);
         return;
-      case "subagent.started":
+      case "subagent.started": {
         this.#observeRootOutput(active);
         for (const messageId of [...active.reasoningItems.keys()]) {
           this.#completeReasoning(active, messageId, { status: "succeeded" });
         }
         this.#completeAgentItem(active, { status: "succeeded" }, false);
-        active.subagents.start(active.command.turnId, event);
         if (event.operation === "send") {
-          if (event.nativeSubagentId) this.#occupancy.occupyAgent(event.nativeSubagentId);
-        } else if (event.background) {
-          this.#occupancy.occupySpawn(event.callId, event.nativeSubagentId);
+          const target = event.nativeSubagentId;
+          if (!target || !this.#knownSubagentIds.has(target)) {
+            // A message to another Claude session is a plain delivery: no Subagent
+            // runs for it here, so it neither gets a Subagent Thread nor holds the Turn.
+            active.tools.start(active.command.turnId, {
+              type: "tool.started",
+              callId: event.callId,
+              toolName: "SendMessage",
+              arguments: {
+                ...(target ? { to: target } : {}),
+                summary: event.description,
+                ...(event.prompt ? { message: event.prompt } : {}),
+              },
+            });
+            return;
+          }
+          active.subagents.start(active.command.turnId, event);
+          this.#occupancy.occupyAgent(target);
+          return;
         }
+        active.subagents.start(active.command.turnId, event);
+        if (event.nativeSubagentId) this.#knownSubagentIds.add(event.nativeSubagentId);
+        if (event.background) this.#occupancy.occupySpawn(event.callId, event.nativeSubagentId);
         return;
+      }
       case "subagent.updated":
         active.subagents.update(active.command.turnId, event);
-        if (event.nativeSubagentId) this.#occupancy.bind(event.callId, event.nativeSubagentId);
+        if (event.nativeSubagentId) {
+          // Claude reports task lifecycle only for its own background tasks.
+          this.#knownSubagentIds.add(event.nativeSubagentId);
+          this.#occupancy.bind(event.callId, event.nativeSubagentId);
+        }
         if (
           event.status === "completed" ||
           event.status === "failed" ||
@@ -1661,11 +1693,26 @@ class ClaudeHarnessSession implements HarnessSession {
           native: event.nativeSubagentId !== undefined,
           cancellationRequested: active.cancellationRequested,
         });
+        if (active.tools.has(event.callId)) {
+          active.tools.complete(
+            active.command.turnId,
+            {
+              type: "tool.completed",
+              callId: event.callId,
+              toolName: "SendMessage",
+              ...(event.resultSummary ? { outputText: event.resultSummary } : {}),
+              isError: event.isError,
+            },
+            active.cancellationRequested,
+          );
+          return;
+        }
         const subagent = active.subagents.complete(
           active.command.turnId,
           event,
           active.cancellationRequested,
         );
+        if (subagent.nativeSubagentId) this.#knownSubagentIds.add(subagent.nativeSubagentId);
         if (subagent.status === "running") {
           if (subagent.nativeSubagentId) {
             this.#occupancy.bind(event.callId, subagent.nativeSubagentId);
@@ -2045,6 +2092,7 @@ class ClaudeHarnessSession implements HarnessSession {
       task: traceRef(nativeSubagentId ?? null),
       call: traceRef(callId ?? null),
     });
+    if (nativeSubagentId) this.#knownSubagentIds.add(nativeSubagentId);
     // The Subagent stopped, but its Root continuation runs in a later Segment.
     this.#occupancy.notify(callId, nativeSubagentId);
     const active = this.#active;
