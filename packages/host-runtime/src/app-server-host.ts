@@ -74,6 +74,7 @@ import {
   type HostTurnId,
 } from "@claude-in-codex/shared-contracts";
 import { executeExternalThreadFork } from "./external-thread-fork.js";
+import { listExternalThreadMetadata, threadListTimestamp } from "./external-thread-list.js";
 import {
   ExternalHistoryRequestError,
   listExternalItems,
@@ -1236,6 +1237,10 @@ export class AppServerHost {
       this.#dispatchDesktopRequest(() => this.#listThreads(request, listRequest));
       return;
     }
+    if (request.method === "thread/search") {
+      this.#dispatchDesktopRequest(() => this.#searchThreads(request));
+      return;
+    }
     if (request.method === "thread/archive" || request.method === "thread/unarchive") {
       let threadId: string;
       try {
@@ -2255,12 +2260,7 @@ export class AppServerHost {
       const result = await aggregateThreadList({
         query: listRequest,
         records,
-        runtimeFor: (threadId) => {
-          const thread = this.#externalRuntime.get(threadId);
-          const subagentStatus = this.#subagentThreadStatuses.get(threadId);
-          if (subagentStatus) return { running: subagentStatus === "active" };
-          return thread ? { running: thread.running } : null;
-        },
+        runtimeFor: (threadId) => this.#externalListRuntime(threadId),
         requestOfficialPage: async (params) =>
           officialThreadListPageFromResponse(
             await this.#officialRuntime.request("thread/list", params),
@@ -2274,6 +2274,71 @@ export class AppServerHost {
       }
       await this.#writer.json(rpcError(request, -32082, "Thread list aggregation failed"));
       this.#diagnose(error);
+    }
+  }
+
+  #externalListRuntime(threadId: string): { running: boolean } | null {
+    const thread = this.#externalRuntime.get(threadId);
+    const subagentStatus = this.#subagentThreadStatuses.get(threadId);
+    if (subagentStatus) return { running: subagentStatus === "active" };
+    return thread ? { running: thread.running } : null;
+  }
+
+  /**
+   * Desktop finds Threads only through `thread/search`, which the official server answers
+   * without External Threads. Their title matches join the first page.
+   */
+  async #searchThreads(request: JsonRpcRequest): Promise<void> {
+    const params = requestObject(request);
+    let response: JsonObject;
+    try {
+      response = await this.#officialRuntime.request("thread/search", params);
+    } catch (error) {
+      await this.#writer.json(rpcError(request, -32082, errorMessage(error)));
+      return;
+    }
+    const official = isRecord(response.result) ? response.result : null;
+    const firstPage = params.cursor === undefined || params.cursor === null;
+    if (!official || !Array.isArray(official.data) || !firstPage) {
+      await this.#writer.json(
+        rpcEnvelope(
+          request,
+          "error" in response ? { error: response.error } : { result: official },
+        ),
+      );
+      return;
+    }
+    try {
+      const query = decodeThreadListRequest({
+        id: request.id,
+        method: "thread/list",
+        params: {
+          archived: params.archived ?? null,
+          sourceKinds: params.sourceKinds ?? null,
+          searchTerm: params.searchTerm ?? null,
+          sortKey: params.sortKey ?? "created_at",
+          sortDirection: params.sortDirection ?? "desc",
+        },
+      });
+      if (!query || query.sortKey === "section_position") throw new Error("Invalid search");
+      const sortKey = query.sortKey;
+      const external = listExternalThreadMetadata({
+        records: await this.#repository.list(),
+        query,
+        runtimeFor: (threadId) => this.#externalListRuntime(threadId),
+        limit: 100,
+      }).data.map(({ thread }) => ({ thread, snippet: String(thread.name ?? "") }));
+      const direction = query.sortDirection === "asc" ? 1 : -1;
+      const data = [...(official.data as JsonObject[]), ...external].sort(
+        (left, right) =>
+          direction *
+          (threadListTimestamp(left.thread as JsonObject, sortKey) -
+            threadListTimestamp(right.thread as JsonObject, sortKey)),
+      );
+      await this.#writer.json(rpcEnvelope(request, { result: { ...official, data } }));
+    } catch (error) {
+      this.#diagnose(error);
+      await this.#writer.json(rpcEnvelope(request, { result: official }));
     }
   }
 

@@ -79,6 +79,48 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("adds External title matches to the first thread/search page", async () => {
+    const fixture = createFixture();
+    const threadId = await startPiThread(fixture);
+    writeRequest(fixture.desktopInput, {
+      id: 44,
+      method: "thread/name/set",
+      params: { threadId, name: "Needle in Claude" },
+    });
+    await fixture.collector.waitFor((message) => requestId(message, 44));
+    fixture.official.stdin.once("data", (chunk: Buffer) => {
+      const request = JSON.parse(chunk.toString("utf8")) as JsonObject;
+      fixture.official.stdout.write(
+        `${JSON.stringify({
+          id: request.id,
+          result: {
+            data: [
+              {
+                thread: { id: "official-thread", createdAt: 1, updatedAt: 1, recencyAt: 1 },
+                snippet: "needle",
+              },
+            ],
+            nextCursor: null,
+            backwardsCursor: null,
+          },
+        })}\n`,
+      );
+    });
+    writeRequest(fixture.desktopInput, {
+      id: 45,
+      method: "thread/search",
+      params: { archived: false, searchTerm: "needle" },
+    });
+    const response = await fixture.collector.waitFor((message) => requestId(message, 45));
+    const data = (response.result as JsonObject).data as JsonObject[];
+    expect(data.map((entry) => (entry.thread as JsonObject).id)).toEqual([
+      threadId,
+      "official-thread",
+    ]);
+    expect(data[0]).toMatchObject({ snippet: "Needle in Claude" });
+    await stopFixture(fixture);
+  });
+
   it("fails the complete aggregated list when Store or official listing fails", async () => {
     const directory = await tempDir("claude-in-codex-host-test-");
     const failingStore = new FailingListMappingStore({ directory });
