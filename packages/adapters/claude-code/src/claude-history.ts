@@ -13,6 +13,8 @@ import {
 } from "@claude-in-codex/shared-contracts";
 
 import { claudeTranscriptItemId } from "./item-identity.js";
+import { claudeSubagentCall } from "./native-message.js";
+import { isClaudeTaskTool } from "./task-tracker.js";
 
 interface ClaudeHistoryMessage {
   type: "user" | "assistant";
@@ -20,6 +22,11 @@ interface ClaudeHistoryMessage {
   message: Record<string, unknown>;
   syntheticUser: boolean;
   interrupted: boolean;
+  /** Claude Code records a failed API call on the transcript entry, not inside `message`. */
+  apiError: boolean;
+  timestampMs?: number;
+  /** Structured tool result Claude Code stores beside a `tool_result` entry. */
+  toolUseResult?: Record<string, unknown>;
 }
 
 const claudeCodeHarnessId: HarnessId = harnessIdSchema.parse("claude-code");
@@ -51,6 +58,8 @@ const commandEnvelopePattern = /^\s*(?:<(command-(?:message|name|args))>[\s\S]*?
 const controlCommandNamePattern = /<command-name>\s*\/(?:model|compact)\s*<\/command-name>/u;
 const recapCommandNamePattern = /<command-name>\s*\/recap\s*<\/command-name>/u;
 const initCommandNamePattern = /<command-name>\s*\/init\s*<\/command-name>/u;
+/** The side-chat parent context the Host puts before the user's text; never shown to the user. */
+const injectedContextPattern = /^<injected_context>\n[\s\S]*?\n<\/injected_context>\n\n/u;
 const localCommandStdoutPattern =
   /^\s*<local-command-stdout>([\s\S]*)<\/local-command-stdout>\s*$/u;
 
@@ -73,7 +82,7 @@ function isNamedCommandEnvelope(text: string, namePattern: RegExp): boolean {
 function displayedUserText(text: string): string {
   if (isNamedCommandEnvelope(text, initCommandNamePattern)) return "/init";
   if (isNamedCommandEnvelope(text, recapCommandNamePattern)) return "/recap";
-  return text;
+  return text.replace(injectedContextPattern, "");
 }
 
 function localCommandStdoutText(text: string): string | null {
@@ -135,11 +144,19 @@ function conversationMessages(values: unknown[], sessionId: string): ClaudeHisto
     // Native interruption records reuse the human promptId and omit promptSource. Their role is
     // user, but they terminate that prompt rather than starting another Host Turn.
     const interrupted = isInterruptionRecord(value, promptId);
+    const timestampMs = typeof value.timestamp === "string" ? Date.parse(value.timestamp) : NaN;
     const message: ClaudeHistoryMessage = {
       type: value.type,
       uuid: value.uuid,
       message: value.message,
       interrupted,
+      apiError:
+        value.type === "assistant" &&
+        (typeof value.error === "string" ||
+          value.isApiErrorMessage === true ||
+          typeof value.message.error === "string"),
+      ...(Number.isFinite(timestampMs) ? { timestampMs } : {}),
+      ...(isRecord(value.toolUseResult) ? { toolUseResult: value.toolUseResult } : {}),
       syntheticUser:
         value.type === "user" &&
         (interrupted ||
@@ -165,7 +182,7 @@ function turnOutcome(messages: ClaudeHistoryMessage[]): HistoricalTurnOutcome {
   if (messages.some(({ interrupted }) => interrupted))
     return { status: "cancelled", reason: "Cancelled by user" };
   const assistants = messages.filter(({ type }) => type === "assistant");
-  const failed = assistants.some(({ message }) => typeof message.error === "string");
+  const failed = assistants.some(({ apiError }) => apiError);
   if (failed) {
     return {
       status: "failed",
@@ -197,6 +214,7 @@ function itemOutcome(outcome: HistoricalTurnOutcome): HostItemOutcome {
 
 export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThreadSnapshot {
   const messages = conversationMessages(values, sessionId);
+  const spawnedAgents = spawnedSubagentIds(messages);
   const turns: HostThreadSnapshot["turns"] = [];
   for (let index = 0; index < messages.length;) {
     const user = messages[index];
@@ -209,11 +227,14 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
     const turnMessages = messages.slice(index, end);
     const outcome = turnOutcome(turnMessages);
     const results = toolResultBlocks(turnMessages);
+    const resultEntries = toolResultEntries(turnMessages);
     const checkpointMessage = turnMessages.findLast(
       ({ type, interrupted }) => type === "assistant" || interrupted,
     );
     let agentMessageOrdinal = 0;
     let reasoningOrdinal = 0;
+    const startedAtMs = user.timestampMs;
+    const completedAtMs = turnMessages.at(-1)?.timestampMs;
     turns.push({
       nativeTurnRef: nativeTurnRefSchema.parse({
         harnessId: claudeCodeHarnessId,
@@ -235,6 +256,9 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
         type: "text",
         text: displayedUserText(text),
       })),
+      ...(startedAtMs !== undefined && completedAtMs !== undefined && completedAtMs >= startedAtMs
+        ? { startedAtMs, completedAtMs }
+        : {}),
       items: turnMessages.flatMap((message) => {
         if (message.type === "user") {
           const recapOutput = visibleUserTextParts(user).some((text) =>
@@ -339,6 +363,44 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
           const itemId = hostItemIdSchema.parse(
             `claude-item-v1-${message.uuid}-tool-${blockIndex}`,
           );
+          // Live, these calls are Subagent cards linked to the child Thread; history keeps that.
+          // A SendMessage to another Claude session wakes no Subagent here and stays a Tool.
+          const subagentCall = claudeSubagentCall(block.name, block.input);
+          if (
+            subagentCall &&
+            (subagentCall.operation === "spawn" ||
+              (subagentCall.nativeSubagentId !== undefined &&
+                spawnedAgents.has(subagentCall.nativeSubagentId)))
+          ) {
+            const nativeSubagentId =
+              subagentCall.nativeSubagentId ??
+              resultSubagentId(
+                { toolUseResult: resultEntries.get(block.id)?.toolUseResult },
+                result,
+              );
+            const resultSummary = output?.trim().slice(0, 2_000);
+            items.push({
+              item: {
+                type: "subagentDelegation",
+                itemId,
+                operation: subagentCall.operation,
+                ...(subagentCall.prompt ? { prompt: subagentCall.prompt } : {}),
+                subagents: [
+                  {
+                    subagentId: nativeSubagentId ?? block.id,
+                    ...(nativeSubagentId ? { nativeSubagentId } : {}),
+                    description: subagentCall.description,
+                    ...(subagentCall.role ? { role: subagentCall.role } : {}),
+                    background: subagentCall.background,
+                    status: failed ? "failed" : "completed",
+                    ...(resultSummary ? { resultSummary } : {}),
+                  },
+                ],
+              },
+              outcome: toolOutcome,
+            });
+            continue;
+          }
           if (
             block.name === "Bash" &&
             isRecord(block.input) &&
@@ -356,12 +418,14 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
             continue;
           }
           const argumentsResult = jsonValueSchema.safeParse(block.input);
+          // The live path shows Claude's task tools as the Todo plan; history must match.
+          const taskTool = isClaudeTaskTool(block.name);
           items.push({
             item: {
               type: "toolExecution",
               itemId,
-              toolName: block.name,
-              arguments: argumentsResult.success ? argumentsResult.data : null,
+              toolName: taskTool ? "Todo" : block.name,
+              arguments: taskTool ? {} : argumentsResult.success ? argumentsResult.data : null,
               ...(output ? { output: { content: [{ type: "text" as const, text: output }] } } : {}),
             },
             outcome: toolOutcome,
@@ -374,6 +438,43 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
     index = end;
   }
   return { turns };
+}
+
+/** Native ids of the Subagents this Session spawned, which SendMessage can wake again. */
+function spawnedSubagentIds(messages: ClaudeHistoryMessage[]): Set<string> {
+  const results = toolResultBlocks(messages);
+  const entries = toolResultEntries(messages);
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (message.type !== "assistant" || !Array.isArray(message.message.content)) continue;
+    for (const block of message.message.content) {
+      if (!isRecord(block) || block.type !== "tool_use" || typeof block.id !== "string") continue;
+      if (typeof block.name !== "string") continue;
+      if (claudeSubagentCall(block.name, block.input)?.operation !== "spawn") continue;
+      const result = results.get(block.id);
+      if (!result) continue;
+      const id = resultSubagentId({ toolUseResult: entries.get(block.id)?.toolUseResult }, result);
+      if (id) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function toolResultEntries(messages: ClaudeHistoryMessage[]): Map<string, ClaudeHistoryMessage> {
+  const entries = new Map<string, ClaudeHistoryMessage>();
+  for (const message of messages) {
+    if (message.type !== "user" || !Array.isArray(message.message.content)) continue;
+    for (const block of message.message.content) {
+      if (
+        isRecord(block) &&
+        block.type === "tool_result" &&
+        typeof block.tool_use_id === "string"
+      ) {
+        entries.set(block.tool_use_id, message);
+      }
+    }
+  }
+  return entries;
 }
 
 function toolResultBlocks(messages: ClaudeHistoryMessage[]): Map<string, Record<string, unknown>> {
@@ -403,7 +504,8 @@ function resultSubagentId(
   value: Record<string, unknown>,
   block: Record<string, unknown>,
 ): string | undefined {
-  const nativeResult = value.tool_use_result;
+  // Transcripts spell it `toolUseResult`; SDK messages spell it `tool_use_result`.
+  const nativeResult = value.toolUseResult ?? value.tool_use_result;
   if (isRecord(nativeResult)) {
     const structured = nativeResult.agentId ?? nativeResult.agent_id ?? nativeResult.task_id;
     if (typeof structured === "string" && structured.length > 0) return structured;
