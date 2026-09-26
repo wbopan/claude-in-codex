@@ -83,7 +83,6 @@ interface ProjectedItem {
   item: HostItem;
   outcome: HostItemOutcome | null;
   reasoningPartStarted: boolean;
-  streamedCommandOutput: boolean;
   wireStarted: boolean;
   startedAtMs?: number;
 }
@@ -113,6 +112,37 @@ type ProjectedInteraction =
 function itemStatus(outcome: HostItemOutcome | null): "inProgress" | "completed" | "failed" {
   if (!outcome) return "inProgress";
   return outcome.status === "succeeded" ? "completed" : "failed";
+}
+
+/**
+ * A command stopped by the user stays `inProgress` without an exit code, as in Codex: Desktop
+ * renders it "Stopped" in an interrupted Turn rather than as a failure.
+ */
+function commandState(
+  outcome: HostItemOutcome | null,
+  exitCode: number | null | undefined,
+): JsonObject {
+  if (outcome?.status === "cancelled") return { status: "inProgress", exitCode: null };
+  return {
+    status: itemStatus(outcome),
+    exitCode: exitCode ?? (outcome ? (outcome.status === "succeeded" ? 0 : 1) : null),
+  };
+}
+
+/** What a lifted Read/Glob/Grep does, so Desktop groups it under "Explored". */
+function toolCommandActions(toolName: string, args: JsonValue, command: string): JsonValue[] {
+  const lower = compactToolName(toolName);
+  const path =
+    nestedString(args, ["path", "file_path", "filePath", "file", "filename", "target", "uri"]) ??
+    null;
+  const query = nestedString(args, ["pattern", "glob", "glob_pattern", "query", "regex"]) ?? null;
+  if (["read", "readfile", "fileread", "view"].includes(lower) && path) {
+    return [{ type: "read", command, name: path.split("/").at(-1) ?? path, path }];
+  }
+  if (["glob", "find", "findfiles", "grep", "grepsearch"].includes(lower)) {
+    return [{ type: "search", command, query, path }];
+  }
+  return [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -276,11 +306,29 @@ function projectFileChangeKind(kind: HostFileChange["kind"]): JsonValue {
   return { type: kind };
 }
 
+/**
+ * The file text a created or deleted file's diff carries. For `add` and `delete` Codex puts
+ * the file content in `diff`, and Desktop renders it line by line as content.
+ */
+function fileTextFromDiff(unifiedDiff: string, kind: "add" | "delete"): string {
+  const lines = unifiedDiff.split("\n");
+  const firstHunk = lines.findIndex((line) => line.startsWith("@@"));
+  if (firstHunk < 0) return unifiedDiff;
+  const marker = kind === "add" ? "+" : "-";
+  const content: string[] = [];
+  let finalNewline = true;
+  for (const line of lines.slice(firstHunk)) {
+    if (line.startsWith(marker)) content.push(line.slice(1));
+    else if (line.startsWith("\\")) finalNewline = false;
+  }
+  return content.length === 0 ? "" : content.join("\n") + (finalNewline ? "\n" : "");
+}
+
 function projectFileChanges(changes: HostFileChange[]): JsonValue[] {
   return changes.map(({ path, kind, unifiedDiff }) => ({
     path,
     kind: projectFileChangeKind(kind),
-    diff: unifiedDiff,
+    diff: kind === "update" ? unifiedDiff : fileTextFromDiff(unifiedDiff, kind),
   }));
 }
 
@@ -505,10 +553,9 @@ function projectItem(
         cwd: item.cwd ?? defaultCwd,
         processId: null,
         source: "agent",
-        status: itemStatus(outcome),
+        ...commandState(outcome, item.exitCode),
         commandActions: [],
         aggregatedOutput: includeCommandOutput ? (item.output ?? null) : null,
-        exitCode: item.exitCode ?? null,
         durationMs: item.durationMs ?? null,
       };
     case "toolExecution": {
@@ -521,10 +568,9 @@ function projectItem(
           cwd: defaultCwd,
           processId: null,
           source: "agent",
-          status: itemStatus(outcome),
-          commandActions: [],
+          ...commandState(outcome, undefined),
+          commandActions: toolCommandActions(item.toolName, item.arguments, command),
           aggregatedOutput: includeCommandOutput ? toolOutputText(item) : null,
-          exitCode: outcome ? (outcome.status === "succeeded" ? 0 : 1) : null,
           durationMs: item.durationMs ?? null,
         };
       }
@@ -561,7 +607,7 @@ function projectItem(
         id: item.itemId,
         type: "collabAgentToolCall",
         tool: item.operation === "spawn" ? "spawnAgent" : "sendInput",
-        status: itemStatus(outcome),
+        status: outcome?.status === "cancelled" ? "interrupted" : itemStatus(outcome),
         senderThreadId: senderThreadId ?? "",
         receiverThreadIds: item.subagents.map(({ subagentId }) => subagentId),
         prompt: item.prompt ?? null,
@@ -596,6 +642,56 @@ function turnError(outcome: TurnCompletedEvent["outcome"]): JsonObject | null {
     : null;
 }
 
+/** The user message of a Turn, under the id history projection also gives it. */
+function userMessageItem(
+  turnId: string,
+  input: HostTurnSnapshot["input"],
+  clientId: string | null,
+): JsonObject {
+  return {
+    id: `${turnId}-user`,
+    type: "userMessage",
+    clientId,
+    content: input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
+  };
+}
+
+/**
+ * The `item/started` and `item/completed` pair that puts a user message into Desktop's
+ * transcript. Desktop ignores the items carried by `turn/started`, so input the Host submits
+ * on the user's behalf (a queued or steering message) is only visible through these.
+ * `inputTurnId` is the Turn whose input this is; `turnId` is where Desktop shows it, which
+ * differs for a steering message: Desktop keeps it in the Turn it steered.
+ */
+export function projectUserMessageNotifications(input: {
+  threadId: string;
+  turnId: string;
+  inputTurnId?: string;
+  input: HostTurnSnapshot["input"];
+  clientId: string | null;
+  emittedAtMs: number;
+}): JsonObject[] {
+  const item = userMessageItem(input.inputTurnId ?? input.turnId, input.input, input.clientId);
+  const params = { threadId: input.threadId, turnId: input.turnId };
+  return [
+    {
+      method: "item/started",
+      emittedAtMs: input.emittedAtMs,
+      params: { ...params, startedAtMs: input.emittedAtMs, item },
+    },
+    {
+      method: "item/completed",
+      emittedAtMs: input.emittedAtMs,
+      params: {
+        ...params,
+        startedAtMs: input.emittedAtMs,
+        completedAtMs: input.emittedAtMs,
+        item,
+      },
+    },
+  ];
+}
+
 function historicalStatus(outcome: HistoricalTurnOutcome): "completed" | "interrupted" | "failed" {
   if (outcome.status === "failed") return "failed";
   if (outcome.status === "cancelled") return "interrupted";
@@ -626,12 +722,7 @@ export function projectHistoricalTurn(input: HistoricalTurnProjectionInput): Jso
     id: turnId,
     status: historicalStatus(snapshot.outcome),
     items: [
-      {
-        id: `${turnId}-user`,
-        type: "userMessage",
-        clientId: null,
-        content: snapshot.input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
-      },
+      userMessageItem(turnId, snapshot.input, null),
       ...snapshot.items.flatMap(({ item, outcome }) => {
         if (itemFileChanges(item) !== null) {
           return files?.itemId === item.itemId
@@ -683,6 +774,7 @@ function diffText(changes: HostFileChange[]): string {
 export class CodexTurnProjector {
   readonly #cwd: string;
   readonly #input: HostTurnSnapshot["input"];
+  readonly #clientUserMessageId: string | null;
   readonly #interactions = new Map<HostInteractionId, ProjectedInteraction>();
   readonly #items = new Map<HostItemId, ProjectedItem>();
   readonly #wireItemOrder: HostItemId[] = [];
@@ -690,7 +782,14 @@ export class CodexTurnProjector {
   readonly #startedAtMs: number;
   readonly #threadId: string;
   readonly #turnId: HostTurnId;
+  readonly #inputShownByDesktop: boolean;
   #completed = false;
+  #terminal: {
+    status: string;
+    error: JsonObject | null;
+    completedAt: number;
+    durationMs: number;
+  } | null = null;
   #started = false;
   #fileItemId: HostItemId | null = null;
 
@@ -700,11 +799,19 @@ export class CodexTurnProjector {
     cwd: string;
     startedAtMs: number;
     initialInput?: HostTurnSnapshot["input"];
+    clientUserMessageId?: string | null;
+    /**
+     * Desktop already shows the input of a Turn it started, so the wire carries it only for
+     * input the Host submitted itself; `historyTurn` always includes it.
+     */
+    inputShownByDesktop?: boolean;
   }) {
     this.#threadId = input.threadId;
     this.#turnId = input.turnId;
     this.#cwd = input.cwd;
     this.#input = input.initialInput ?? [];
+    this.#clientUserMessageId = input.clientUserMessageId ?? null;
+    this.#inputShownByDesktop = input.inputShownByDesktop ?? false;
     this.#startedAtMs = input.startedAtMs;
     this.#startedAt = Math.floor(input.startedAtMs / 1000);
   }
@@ -730,6 +837,39 @@ export class CodexTurnProjector {
       startedAt,
       completedAt: null,
       durationMs: null,
+      itemsView: "full",
+    };
+  }
+
+  /**
+   * The Turn as `thread/read`, `thread/resume` and the list methods serve it: the user
+   * message and every Item in its current state. Desktop takes a reopened Turn's Items and
+   * start time from this alone.
+   */
+  historyTurn(): JsonObject {
+    const summary = this.#fileItemId ? this.#fileSummary() : null;
+    const items = this.#wireItemOrder.flatMap((itemId) => {
+      const projected = this.#items.get(itemId);
+      if (!projected?.wireStarted) return [];
+      if (summary && itemId === this.#fileItemId) {
+        return [projectItem(summary, this.#completed ? { status: "succeeded" } : null, this.#cwd)];
+      }
+      return [projectItem(projected.item, projected.outcome, this.#cwd, true, this.#threadId)];
+    });
+    return {
+      id: this.#turnId,
+      status: "inProgress",
+      error: null,
+      completedAt: null,
+      durationMs: null,
+      ...this.#terminal,
+      items: [
+        ...(this.#input.length === 0
+          ? []
+          : [userMessageItem(this.#turnId, this.#input, this.#clientUserMessageId)]),
+        ...items,
+      ],
+      startedAt: this.#startedAt,
       itemsView: "full",
     };
   }
@@ -869,6 +1009,15 @@ export class CodexTurnProjector {
             turn: this.pendingTurn(this.#startedAt),
           },
         },
+        ...(this.#input.length === 0 || this.#inputShownByDesktop
+          ? []
+          : projectUserMessageNotifications({
+              threadId: this.#threadId,
+              turnId: this.#turnId,
+              input: this.#input,
+              clientId: this.#clientUserMessageId,
+              emittedAtMs: this.#startedAtMs,
+            })),
       ],
     };
   }
@@ -880,7 +1029,6 @@ export class CodexTurnProjector {
       item: event.item,
       outcome: null,
       reasoningPartStarted: false,
-      streamedCommandOutput: false,
       wireStarted: false,
       startedAtMs,
     };
@@ -942,7 +1090,6 @@ export class CodexTurnProjector {
         messages.push(...this.#reasoningDelta(projected, event.update.text, emittedAtMs));
       }
     } else if (event.update.type === "output.append") {
-      projected.streamedCommandOutput = true;
       messages.push({
         method: "item/commandExecution/outputDelta",
         emittedAtMs,
@@ -961,7 +1108,6 @@ export class CodexTurnProjector {
             previous.type === "toolExecution" ? (toolOutputText(previous) ?? "") : "";
           const delta = text.startsWith(previousText) ? text.slice(previousText.length) : text;
           if (delta.length > 0) {
-            projected.streamedCommandOutput = true;
             messages.push({
               method: "item/commandExecution/outputDelta",
               emittedAtMs,
@@ -1021,7 +1167,27 @@ export class CodexTurnProjector {
     const durationMs = resolvedItemDurationMs(projected.item, startedAtMs, emittedAtMs);
     projected.item = withResolvedDuration(projected.item, durationMs);
     if (itemFileChanges(projected.item) !== null) {
-      return { messages: this.#fileChangeUpdates(emittedAtMs) };
+      const messages = this.#fileChangeUpdates(emittedAtMs);
+      // Desktop shows an in-progress file card as "Editing" with its diff locked, so settle
+      // it once no edit is running. A later edit still updates it through `patchUpdated`.
+      const editing = [...this.#items.values()].some(
+        ({ item, outcome }) => outcome === null && itemFileChanges(item) !== null,
+      );
+      const fileItem = this.#fileItemId ? this.#items.get(this.#fileItemId) : undefined;
+      if (!editing && fileItem?.startedAtMs !== undefined) {
+        messages.push({
+          method: "item/completed",
+          emittedAtMs,
+          params: {
+            threadId: this.#threadId,
+            turnId: this.#turnId,
+            startedAtMs: fileItem.startedAtMs,
+            completedAtMs: emittedAtMs,
+            item: projectItem(this.#fileSummary(), { status: "succeeded" }, this.#cwd),
+          },
+        });
+      }
+      return { messages };
     }
     const completedItem = (item: JsonObject): JsonObject => ({
       method: "item/completed",
@@ -1047,13 +1213,9 @@ export class CodexTurnProjector {
     return {
       messages: [
         completedItem(
-          projectItem(
-            projected.item,
-            projected.outcome,
-            this.#cwd,
-            !projected.streamedCommandOutput,
-            this.#threadId,
-          ),
+          // Desktop replaces the whole Item on completion, so it carries the full output even
+          // after streamed deltas.
+          projectItem(projected.item, projected.outcome, this.#cwd, true, this.#threadId),
         ),
       ],
     };
@@ -1115,6 +1277,12 @@ export class CodexTurnProjector {
       durationMs: Math.max(0, completedAtMs - this.#startedAtMs),
       itemsView: "full",
     };
+    this.#terminal = {
+      status: turnStatus(event.outcome),
+      error,
+      completedAt,
+      durationMs: Math.max(0, completedAtMs - this.#startedAtMs),
+    };
     return {
       completedTurn: turn,
       messages: [
@@ -1126,6 +1294,8 @@ export class CodexTurnProjector {
                 params: {
                   threadId: this.#threadId,
                   turnId: this.#turnId,
+                  startedAtMs: this.#items.get(this.#fileItemId)?.startedAtMs ?? completedAtMs,
+                  completedAtMs,
                   item: projectItem(this.#fileSummary(), { status: "succeeded" }, this.#cwd),
                 },
               },
@@ -1154,16 +1324,9 @@ export class CodexTurnProjector {
   }
 
   #projectInput(): JsonObject[] {
-    return this.#input.length === 0
+    return this.#input.length === 0 || this.#inputShownByDesktop
       ? []
-      : [
-          {
-            id: `${this.#turnId}-user`,
-            type: "userMessage",
-            clientId: null,
-            content: this.#input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
-          },
-        ];
+      : [userMessageItem(this.#turnId, this.#input, this.#clientUserMessageId)];
   }
 
   #startWireItem(projected: ProjectedItem, item: HostItem, startedAtMs: number): JsonObject {

@@ -86,6 +86,10 @@ export class ClaudeToolLifecycle {
     return this.#tools.size;
   }
 
+  has(callId: string): boolean {
+    return this.#tools.has(callId);
+  }
+
   start(turnId: HostTurnId, event: Extract<ClaudeTurnEvent, { type: "tool.started" }>): void {
     if (this.#tools.has(event.callId)) throw new Error("Claude Code Tool started more than once");
     const command = event.toolName === "Bash" ? stringField(event.arguments, "command") : undefined;

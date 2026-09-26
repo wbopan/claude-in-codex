@@ -74,6 +74,7 @@ import {
   type HostTurnId,
 } from "@claude-in-codex/shared-contracts";
 import { executeExternalThreadFork } from "./external-thread-fork.js";
+import { listExternalThreadMetadata, threadListTimestamp } from "./external-thread-list.js";
 import {
   ExternalHistoryRequestError,
   listExternalItems,
@@ -155,6 +156,7 @@ import {
 } from "./thread-list-aggregator.js";
 import {
   CodexTurnProjector,
+  projectUserMessageNotifications,
   decodeCreateRoute,
   decodeExternalTransportSelection,
   encodeExternalTransportSelection,
@@ -245,7 +247,9 @@ interface PendingDesktopQuestion {
   timeout: NodeJS.Timeout | null;
 }
 
-type ExternalThreadStatus = { type: "active"; activeFlags: [] } | { type: "idle" };
+type ExternalThreadStatus =
+  | { type: "active"; activeFlags: ("waitingOnApproval" | "waitingOnUserInput")[] }
+  | { type: "idle" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -505,7 +509,7 @@ export class AppServerHost {
   readonly #desktopRequests = new DesktopRequestQueue();
   readonly #pendingDesktopElicitations = new Map<
     HostApprovalRequestId,
-    (result: JsonObject) => void
+    { threadId: string; resolve: (result: JsonObject) => void }
   >();
   #drainActiveWorkOnInputEnd = false;
   #desktopInputEnded = false;
@@ -969,7 +973,7 @@ export class AppServerHost {
       if (isRecord(parsed) && parsed.method === "initialized" && !("id" in parsed)) {
         continue;
       }
-      if (this.#handleDesktopElicitationResponse(parsed)) continue;
+      if (await this.#handleDesktopElicitationResponse(parsed)) continue;
       if (await this.#handleDesktopApprovalResponse(parsed)) continue;
       if (await this.#handleDesktopQuestionResponse(parsed)) continue;
       const requestResult = jsonRpcRequestSchema.safeParse(parsed);
@@ -1234,6 +1238,10 @@ export class AppServerHost {
         return;
       }
       this.#dispatchDesktopRequest(() => this.#listThreads(request, listRequest));
+      return;
+    }
+    if (request.method === "thread/search") {
+      this.#dispatchDesktopRequest(() => this.#searchThreads(request));
       return;
     }
     if (request.method === "thread/archive" || request.method === "thread/unarchive") {
@@ -2255,12 +2263,7 @@ export class AppServerHost {
       const result = await aggregateThreadList({
         query: listRequest,
         records,
-        runtimeFor: (threadId) => {
-          const thread = this.#externalRuntime.get(threadId);
-          const subagentStatus = this.#subagentThreadStatuses.get(threadId);
-          if (subagentStatus) return { running: subagentStatus === "active" };
-          return thread ? { running: thread.running } : null;
-        },
+        runtimeFor: (threadId) => this.#externalListRuntime(threadId),
         requestOfficialPage: async (params) =>
           officialThreadListPageFromResponse(
             await this.#officialRuntime.request("thread/list", params),
@@ -2274,6 +2277,71 @@ export class AppServerHost {
       }
       await this.#writer.json(rpcError(request, -32082, "Thread list aggregation failed"));
       this.#diagnose(error);
+    }
+  }
+
+  #externalListRuntime(threadId: string): { running: boolean } | null {
+    const thread = this.#externalRuntime.get(threadId);
+    const subagentStatus = this.#subagentThreadStatuses.get(threadId);
+    if (subagentStatus) return { running: subagentStatus === "active" };
+    return thread ? { running: thread.running } : null;
+  }
+
+  /**
+   * Desktop finds Threads only through `thread/search`, which the official server answers
+   * without External Threads. Their title matches join the first page.
+   */
+  async #searchThreads(request: JsonRpcRequest): Promise<void> {
+    const params = requestObject(request);
+    let response: JsonObject;
+    try {
+      response = await this.#officialRuntime.request("thread/search", params);
+    } catch (error) {
+      await this.#writer.json(rpcError(request, -32082, errorMessage(error)));
+      return;
+    }
+    const official = isRecord(response.result) ? response.result : null;
+    const firstPage = params.cursor === undefined || params.cursor === null;
+    if (!official || !Array.isArray(official.data) || !firstPage) {
+      await this.#writer.json(
+        rpcEnvelope(
+          request,
+          "error" in response ? { error: response.error } : { result: official },
+        ),
+      );
+      return;
+    }
+    try {
+      const query = decodeThreadListRequest({
+        id: request.id,
+        method: "thread/list",
+        params: {
+          archived: params.archived ?? null,
+          sourceKinds: params.sourceKinds ?? null,
+          searchTerm: params.searchTerm ?? null,
+          sortKey: params.sortKey ?? "created_at",
+          sortDirection: params.sortDirection ?? "desc",
+        },
+      });
+      if (!query || query.sortKey === "section_position") throw new Error("Invalid search");
+      const sortKey = query.sortKey;
+      const external = listExternalThreadMetadata({
+        records: await this.#repository.list(),
+        query,
+        runtimeFor: (threadId) => this.#externalListRuntime(threadId),
+        limit: 100,
+      }).data.map(({ thread }) => ({ thread, snippet: String(thread.name ?? "") }));
+      const direction = query.sortDirection === "asc" ? 1 : -1;
+      const data = [...(official.data as JsonObject[]), ...external].sort(
+        (left, right) =>
+          direction *
+          (threadListTimestamp(left.thread as JsonObject, sortKey) -
+            threadListTimestamp(right.thread as JsonObject, sortKey)),
+      );
+      await this.#writer.json(rpcEnvelope(request, { result: { ...official, data } }));
+    } catch (error) {
+      this.#diagnose(error);
+      await this.#writer.json(rpcEnvelope(request, { result: official }));
     }
   }
 
@@ -2751,7 +2819,20 @@ export class AppServerHost {
       await this.#writer.json(rpcError(request, result.error.code, result.error.message));
       return;
     }
-    await this.#writer.json(rpcEnvelope(request, { result: threadRevertResult(result.thread) }));
+    // Desktop resumes paging older history from these; without them it stops at the revert.
+    const current = this.#externalRuntime.get(thread.id) ?? thread;
+    const turns = this.#externalHistoryTurns(current);
+    await this.#writer.json(
+      rpcEnvelope(request, {
+        result: {
+          ...threadRevertResult(result.thread),
+          turnsBackwardsCursor: listExternalTurns(turns, { limit: 1, itemsView: "notLoaded" })
+            .backwardsCursor,
+          itemsBackwardsCursor: listExternalItems(turns, { limit: 1, sortDirection: "desc" })
+            .backwardsCursor,
+        },
+      }),
+    );
     await this.#writer.json({ method: "thread/reverted", params: { threadId: thread.id } });
   }
 
@@ -2836,8 +2917,14 @@ export class AppServerHost {
     }
     this.#externalRuntime.remove(location.record.hostThreadId);
     this.#routeObservationTracker.forgetThread(location.record.hostThreadId);
+    // Other Desktop windows drop the Thread only on this notification.
+    const deleted = {
+      method: "thread/deleted",
+      params: { threadId: location.record.hostThreadId },
+    };
     if (!thread) {
       await this.#writer.json(rpcEnvelope(request, { result: {} }));
+      await this.#writer.json(deleted);
       return;
     }
     thread.stateObserver.fault(new Error("External Thread was deleted"));
@@ -2845,6 +2932,7 @@ export class AppServerHost {
       await thread.session.close();
       await thread.outputTask;
       await this.#writer.json(rpcEnvelope(request, { result: {} }));
+      await this.#writer.json(deleted);
     } catch (error) {
       await this.#writer.json(
         rpcError(request, -32075, `External Thread could not close: ${errorMessage(error)}`),
@@ -3022,7 +3110,7 @@ export class AppServerHost {
   #externalHistoryTurns(thread: ExternalThread): JsonObject[] {
     if (!thread.activeTurnId) return this.#runningSubagentTurns(thread);
     const active = thread.projectedTurns.get(thread.activeTurnId);
-    return active ? [...thread.turns, active.projector.pendingTurn()] : thread.turns;
+    return active ? [...thread.turns, active.projector.historyTurn()] : thread.turns;
   }
 
   /**
@@ -3167,10 +3255,8 @@ export class AppServerHost {
           }
           return;
         }
-        await this.#writer.json(
-          rpcError(request, -32078, "External Harness does not expose the requested command"),
-        );
-        return;
+        // Not a Host command: Claude handles its own commands and skills, and "/tmp is full"
+        // is just a message, so the text goes to the Harness as typed.
       } finally {
         this.#pendingExternalCommandRequests.delete(thread.id);
       }
@@ -3204,6 +3290,17 @@ export class AppServerHost {
       );
       try {
         await this.#writer.json(rpcEnvelope(request, { result: { turnId: started.turnId } }));
+        // Desktop matches this to its own steering message by clientId and keeps it in the
+        // steered Turn; the id is the replacement Turn's, where history places the input.
+        for (const message of projectUserMessageNotifications({
+          threadId: thread.id,
+          turnId: started.steeredTurnId,
+          inputTurnId: started.turnId,
+          input: [{ type: "text", text: started.text }],
+          clientId: started.clientUserMessageId,
+          emittedAtMs: Date.now(),
+        }))
+          await this.#writer.json(message);
       } finally {
         started.gate.resolve();
       }
@@ -3280,7 +3377,11 @@ export class AppServerHost {
           }
           let started: ExternalTurnStart;
           try {
-            started = await this.#beginExternalTurn(thread, submission.text);
+            started = await this.#beginExternalTurn(
+              thread,
+              submission.text,
+              submission.clientUserMessageId,
+            );
           } catch (error) {
             queue.restore(thread.id, submission);
             throw error;
@@ -3331,7 +3432,11 @@ export class AppServerHost {
     const submission = this.#externalQueue.take(thread.id);
     if (!submission) return;
     try {
-      const started = await this.#beginExternalTurn(thread, submission.text);
+      const started = await this.#beginExternalTurn(
+        thread,
+        submission.text,
+        submission.clientUserMessageId,
+      );
       started.gate.resolve();
       this.#traceNativePicker({
         event: "thread/queue-drained",
@@ -3347,7 +3452,16 @@ export class AppServerHost {
     }
   }
 
-  async #beginExternalTurn(thread: ExternalThread, text: string): Promise<ExternalTurnStart> {
+  /**
+   * `announceAs` is the Desktop message identity of input the Host submits on the user's
+   * behalf (a queued message). Desktop shows only the input of Turns it started itself;
+   * without it the input still belongs to the Turn's history.
+   */
+  async #beginExternalTurn(
+    thread: ExternalThread,
+    text: string,
+    announceAs?: string,
+  ): Promise<ExternalTurnStart> {
     if (this.#closeRequested || this.#externalRuntime.get(thread.id) !== thread) {
       throw new ExternalSteerError(-32073, "External Thread is no longer available");
     }
@@ -3366,6 +3480,10 @@ export class AppServerHost {
         turnId,
         cwd: thread.cwd,
         startedAtMs,
+        initialInput: [{ type: "text", text }],
+        ...(announceAs === undefined
+          ? { inputShownByDesktop: true }
+          : { clientUserMessageId: announceAs }),
       }),
     };
     const gate = turnProjectionGate();
@@ -3420,11 +3538,12 @@ export class AppServerHost {
     // Observed children have no active Host Turn. Their latest native history
     // turn is projected as inProgress while their parent reports them running.
     const expectedTurnId = subagent ? thread.turns.at(-1)?.id : thread.activeTurnId;
-    if (
-      typeof requestedTurnId !== "string" ||
-      !thread.running ||
-      expectedTurnId !== requestedTurnId
-    ) {
+    if (!thread.running) {
+      // Codex's exact wording: Desktop then marks its Turn interrupted instead of showing an error.
+      await this.#writer.json(rpcError(request, -32074, "no active turn to interrupt"));
+      return;
+    }
+    if (typeof requestedTurnId !== "string" || expectedTurnId !== requestedTurnId) {
       await this.#writer.json(
         rpcError(request, -32074, "External turn/interrupt must reference the active Turn"),
       );
@@ -3683,7 +3802,7 @@ export class AppServerHost {
       if (ephemeralTurn) {
         thread.ephemeralTurnIds.delete(event.turnId);
       } else {
-        thread.turns.push(result.completedTurn);
+        thread.turns.push(projection.projector.historyTurn());
         thread.thread.updatedAt = completedAt;
         thread.thread.recencyAt = completedAt;
       }
@@ -3966,6 +4085,7 @@ export class AppServerHost {
       await this.#denyApproval(thread, interaction);
       throw error;
     }
+    await this.#syncWaitingFlags(thread);
   }
 
   /**
@@ -3979,7 +4099,7 @@ export class AppServerHost {
   ): Promise<JsonObject> {
     const requestId = this.#allocateApprovalRequestId();
     const answer = new Promise<JsonObject>((resolve) =>
-      this.#pendingDesktopElicitations.set(requestId, resolve),
+      this.#pendingDesktopElicitations.set(requestId, { threadId, resolve }),
     );
     this.#traceNativePicker({
       event: "desktop-tools/elicitation-forwarded",
@@ -3998,14 +4118,23 @@ export class AppServerHost {
     return answer;
   }
 
-  #handleDesktopElicitationResponse(value: JsonValue): boolean {
+  async #handleDesktopElicitationResponse(value: JsonValue): Promise<boolean> {
     if (!isRecord(value) || !isHostApprovalRequestId(value.id)) return false;
-    const resolve = this.#pendingDesktopElicitations.get(value.id);
-    if (!resolve) return false;
+    const pending = this.#pendingDesktopElicitations.get(value.id);
+    if (!pending) return false;
     this.#pendingDesktopElicitations.delete(value.id);
     // A transport error is a cancellation; only an explicit answer may decline.
-    resolve(isRecord(value.result) ? value.result : { action: "cancel" });
+    pending.resolve(isRecord(value.result) ? value.result : { action: "cancel" });
+    await this.#announceRequestResolved(pending.threadId, value.id);
     return true;
+  }
+
+  /**
+   * Codex announces an answered server request at once; Desktop only then settles the request's
+   * transcript card (for example "Approval requested") and drops it from the Thread's requests.
+   */
+  async #announceRequestResolved(threadId: string, requestId: number): Promise<void> {
+    await this.#writer.json({ method: "serverRequest/resolved", params: { threadId, requestId } });
   }
 
   async #handleDesktopApprovalResponse(value: JsonValue): Promise<boolean> {
@@ -4020,6 +4149,8 @@ export class AppServerHost {
       )
         return true;
       this.#pendingDesktopApprovals.delete(requestId);
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
 
       let response: HostApprovalResponse;
       try {
@@ -4082,10 +4213,8 @@ export class AppServerHost {
     for (const [requestId, pending] of this.#pendingDesktopApprovals) {
       if (pending.interaction.interactionId !== interactionId) continue;
       this.#pendingDesktopApprovals.delete(requestId);
-      await this.#writer.json({
-        method: "serverRequest/resolved",
-        params: { threadId: pending.thread.id, requestId },
-      });
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
     }
   }
 
@@ -4143,6 +4272,7 @@ export class AppServerHost {
     this.#pendingDesktopQuestions.set(requestId, pending);
     try {
       await this.#writer.json({ id: requestId, ...result.questionRequest.request });
+      await this.#syncWaitingFlags(thread);
     } catch (error) {
       this.#retireDesktopQuestion(interaction.interactionId);
       await thread.session
@@ -4169,6 +4299,8 @@ export class AppServerHost {
         return true;
       this.#pendingDesktopQuestions.delete(requestId);
       if (pending.timeout) clearTimeout(pending.timeout);
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
 
       let response;
       try {
@@ -4226,10 +4358,8 @@ export class AppServerHost {
       if (pending.interaction.interactionId !== interactionId) continue;
       if (pending.timeout) clearTimeout(pending.timeout);
       this.#pendingDesktopQuestions.delete(requestId);
-      await this.#writer.json({
-        method: "serverRequest/resolved",
-        params: { threadId: pending.thread.id, requestId },
-      });
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
     }
   }
 
@@ -4240,6 +4370,28 @@ export class AppServerHost {
     const requestId = this.#nextQuestionRequestId;
     this.#nextQuestionRequestId -= 1;
     return requestId;
+  }
+
+  /**
+   * Codex flags an active Thread that waits on the user. Desktop badges a Thread it is not
+   * showing ("Awaiting approval", "Needs input") only from these flags.
+   */
+  async #syncWaitingFlags(thread: ExternalThread): Promise<void> {
+    if (!thread.running) return;
+    const activeFlags: ("waitingOnApproval" | "waitingOnUserInput")[] = [];
+    if ([...this.#pendingDesktopApprovals.values()].some((pending) => pending.thread === thread))
+      activeFlags.push("waitingOnApproval");
+    if ([...this.#pendingDesktopQuestions.values()].some((pending) => pending.thread === thread))
+      activeFlags.push("waitingOnUserInput");
+    const current = thread.thread.status;
+    if (
+      isRecord(current) &&
+      current.type === "active" &&
+      Array.isArray(current.activeFlags) &&
+      current.activeFlags.join() === activeFlags.join()
+    )
+      return;
+    await this.#setThreadStatus(thread, { type: "active", activeFlags });
   }
 
   async #setThreadStatus(thread: ExternalThread, status: ExternalThreadStatus): Promise<void> {

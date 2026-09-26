@@ -432,6 +432,170 @@ describe("Claude history mapping", () => {
     ]);
   });
 
+  it("fails a Turn whose transcript entry records an API error outside the message", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        message("user", "user-1", "hello"),
+        {
+          ...message("assistant", "error", [{ type: "text", text: "API Error: Invalid URL" }]),
+          error: "unknown",
+          isApiErrorMessage: true,
+        },
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]?.outcome).toMatchObject({ status: "failed" });
+  });
+
+  it("hides the side-chat parent context the Host put before the user's text", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        message(
+          "user",
+          "user-1",
+          "<injected_context>\nparent says hi\n</injected_context>\n\nwhat did it say?",
+        ),
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]?.input).toEqual([{ type: "text", text: "what did it say?" }]);
+  });
+
+  it("shows Claude task tools as the Todo plan, as the live projection does", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        message("user", "user-1", "plan it"),
+        message("assistant", "tool", [
+          { type: "tool_use", id: "task-1", name: "TaskCreate", input: { subject: "Step" } },
+        ]),
+        message("user", "result", [{ type: "tool_result", tool_use_id: "task-1", content: "ok" }]),
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]?.items).toMatchObject([
+      { item: { type: "toolExecution", toolName: "Todo", arguments: {} } },
+    ]);
+  });
+
+  it("keeps Agent calls as Subagent cards linked to their child Thread", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        message("user", "user-1", "delegate"),
+        message("assistant", "tool", [
+          {
+            type: "tool_use",
+            id: "agent-call",
+            name: "Agent",
+            input: { description: "Audit", prompt: "Audit the RPCs", run_in_background: true },
+          },
+        ]),
+        {
+          ...message("user", "result", [
+            { type: "tool_result", tool_use_id: "agent-call", content: "Launched." },
+          ]),
+          toolUseResult: { isAsync: true, status: "async_launched", agentId: "a1b2c3" },
+        },
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]?.items).toMatchObject([
+      {
+        item: {
+          type: "subagentDelegation",
+          operation: "spawn",
+          prompt: "Audit the RPCs",
+          subagents: [
+            {
+              subagentId: "a1b2c3",
+              nativeSubagentId: "a1b2c3",
+              description: "Audit",
+              background: true,
+              status: "completed",
+              resultSummary: "Launched.",
+            },
+          ],
+        },
+        outcome: { status: "succeeded" },
+      },
+    ]);
+  });
+
+  it("keeps SendMessage to another Claude session as a Tool, not a Subagent card", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        message("user", "user-1", "delegate"),
+        message("assistant", "spawn", [
+          {
+            type: "tool_use",
+            id: "agent-call",
+            name: "Agent",
+            input: { description: "Audit", prompt: "Audit the RPCs", run_in_background: true },
+          },
+        ]),
+        {
+          ...message("user", "spawn-result", [
+            { type: "tool_result", tool_use_id: "agent-call", content: "Launched." },
+          ]),
+          toolUseResult: { isAsync: true, status: "async_launched", agentId: "a1b2c3" },
+        },
+        message("assistant", "sends", [
+          {
+            type: "tool_use",
+            id: "send-own",
+            name: "SendMessage",
+            input: { to: "a1b2c3", message: "Also check the tests" },
+          },
+          {
+            type: "tool_use",
+            id: "send-peer",
+            name: "SendMessage",
+            input: { to: "world-bench-c4", summary: "Ask c4", message: "Can I commit?" },
+          },
+        ]),
+        message("user", "send-results", [
+          { type: "tool_result", tool_use_id: "send-own", content: "Message sent." },
+          { type: "tool_result", tool_use_id: "send-peer", content: "Queued in world-bench-c4." },
+        ]),
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]?.items).toMatchObject([
+      { item: { type: "subagentDelegation", operation: "spawn" } },
+      {
+        item: {
+          type: "subagentDelegation",
+          operation: "send",
+          subagents: [{ nativeSubagentId: "a1b2c3" }],
+        },
+      },
+      {
+        item: {
+          type: "toolExecution",
+          toolName: "SendMessage",
+          arguments: { to: "world-bench-c4", summary: "Ask c4", message: "Can I commit?" },
+        },
+        outcome: { status: "succeeded" },
+      },
+    ]);
+  });
+
+  it("times a Turn from its first and last transcript entries", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        { ...message("user", "user-1", "hello"), timestamp: "2026-09-24T01:00:00.000Z" },
+        {
+          ...message("assistant", "answer", [{ type: "text", text: "hi" }]),
+          timestamp: "2026-09-24T01:00:05.000Z",
+        },
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]).toMatchObject({
+      startedAtMs: Date.parse("2026-09-24T01:00:00.000Z"),
+      completedAtMs: Date.parse("2026-09-24T01:00:05.000Z"),
+    });
+  });
+
   it("keeps an incomplete reasoning-only historical Turn without inventing success", () => {
     expect(
       mapClaudeSnapshot(

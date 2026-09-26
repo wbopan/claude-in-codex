@@ -386,6 +386,8 @@ describe("Claude Code HarnessAdapter", () => {
     await nextEvent(iterator);
     const transport = transports[0];
     if (!transport) throw new Error("Fake Claude transport was not created");
+    // Claude has reported native-agent-1 as one of this Session's background tasks.
+    transport.event({ type: "subagents.live", nativeSubagentIds: ["native-agent-1"] });
     transport.event({
       type: "subagent.started",
       operation: "send",
@@ -456,6 +458,63 @@ describe("Claude Code HarnessAdapter", () => {
       snapshot: { item: { type: "agentMessage", text: "Directory analyzed" } },
     });
     expect(await nextEvent(iterator)).toMatchObject({ type: "turn.completed" });
+    await session.close();
+  });
+
+  it("projects SendMessage to another Claude session as a Tool that does not hold the Turn", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await session.execute(textTurn("ask a peer"));
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    const transport = transports[0];
+    if (!transport) throw new Error("Fake Claude transport was not created");
+    transport.event({
+      type: "subagent.started",
+      operation: "send",
+      callId: "send-peer",
+      nativeSubagentId: "world-bench-c4",
+      description: "Ask the peer session",
+      prompt: "Can these edits be committed?",
+      background: true,
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.started",
+      item: {
+        type: "toolExecution",
+        toolName: "SendMessage",
+        arguments: {
+          to: "world-bench-c4",
+          summary: "Ask the peer session",
+          message: "Can these edits be committed?",
+        },
+      },
+    });
+    transport.event({
+      type: "subagent.completed",
+      callId: "send-peer",
+      isError: false,
+      resultSummary: "Queued in world-bench-c4",
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: {
+        item: { type: "toolExecution", toolName: "SendMessage" },
+        outcome: { status: "succeeded" },
+      },
+    });
+    transport.finish({ status: "succeeded" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: { item: { type: "agentMessage" } },
+    });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+    });
     await session.close();
   });
 });

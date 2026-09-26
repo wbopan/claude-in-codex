@@ -257,6 +257,22 @@ describe("mapping-store package", () => {
     await second.close();
   });
 
+  it("moves recency only for a new Turn, not for metadata edits", async () => {
+    const directory = await temporaryStoreDirectory();
+    let now = new Date("2026-01-01T00:00:00.000Z");
+    const store = new MappingStore({ directory, now: () => now });
+    await store.initialize();
+    await createReady(store);
+    now = new Date("2026-01-02T00:00:00.000Z");
+    const renamed = await store.setTitle(threadId, "Renamed");
+    expect(renamed.updatedAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(renamed.recencyAt).toBe("2026-01-01T00:00:00.000Z");
+    now = new Date("2026-01-03T00:00:00.000Z");
+    const continued = await store.upsertTurnMappings(threadId, [mapping(2)]);
+    expect(continued.recencyAt).toBe("2026-01-03T00:00:00.000Z");
+    await store.close();
+  });
+
   it("finds recent implicit Delegation duplicates by parent, target and task digest", async () => {
     const directory = await temporaryStoreDirectory();
     let now = new Date("2026-01-01T00:00:00.000Z");

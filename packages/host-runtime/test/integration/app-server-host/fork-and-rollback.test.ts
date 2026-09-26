@@ -326,9 +326,12 @@ describe("AppServerHost HarnessAdapter projection", () => {
       method: "thread/revert",
       params: { threadId, beforeTurnId: lastTurnId },
     });
-    await expect(
-      fixture.collector.waitFor((message) => requestId(message, 10)),
-    ).resolves.toMatchObject({ result: { thread: { id: threadId, turns: [] } } });
+    const reverted = await fixture.collector.waitFor((message) => requestId(message, 10));
+    expect(reverted).toMatchObject({ result: { thread: { id: threadId, turns: [] } } });
+    // The retained Turn stays reachable through Desktop's backwards paging.
+    const cursors = reverted.result as JsonObject;
+    expect(typeof cursors.turnsBackwardsCursor).toBe("string");
+    expect("itemsBackwardsCursor" in cursors).toBe(true);
     await expect(
       fixture.collector.waitFor((message) => method(message, "thread/reverted")),
     ).resolves.toEqual({ method: "thread/reverted", params: { threadId } });

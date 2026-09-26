@@ -102,6 +102,23 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(index((message) => requestId(message, 100))).toBeLessThan(
       index((message) => turnEvent(message, "turn/started", String(replacementId))),
     );
+    // Desktop links the steering message to its own pending copy in the steered Turn.
+    const steered = fixture.collector.messages.find(
+      (message) =>
+        method(message, "item/completed") &&
+        (messageParams(message).item as JsonObject).type === "userMessage",
+    );
+    expect(steered).toMatchObject({
+      params: {
+        threadId,
+        turnId: oldTurnId,
+        item: {
+          id: `${String(replacementId)}-user`,
+          clientId: "steer-message",
+          content: [{ type: "text", text: "new direction" }],
+        },
+      },
+    });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenNthCalledWith(2, {
       type: "turn.start",
@@ -130,10 +147,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         {
           threadId,
           expectedTurnId: oldTurnId,
-          input: [
-            { type: "text", text: "new" },
-            { type: "image", url: "image" },
-          ],
+          input: [{ type: "image", url: "image" }],
         },
       ],
     ] as const) {
@@ -236,7 +250,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("rejects an interrupt that does not reference the active Pi Turn", async () => {
+  it("answers an interrupt on an idle Pi Thread with Codex's wording", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
@@ -250,7 +264,8 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await expect(
       fixture.collector.waitFor((message) => requestId(message, 2)),
     ).resolves.toMatchObject({
-      error: { code: -32074, message: "External turn/interrupt must reference the active Turn" },
+      // Desktop recognises this text and marks its Turn interrupted without an error.
+      error: { code: -32074, message: "no active turn to interrupt" },
     });
     expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);
@@ -326,6 +341,22 @@ describe("AppServerHost External Thread message queue", () => {
         (messageParams(message).turn as JsonObject).id !== firstTurnId,
     );
     const secondTurnId = (messageParams(secondStarted).turn as JsonObject).id as string;
+    // Desktop shows only the input of Turns it started; the Host announces the queued one.
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          turnEvent(message, "item/completed", secondTurnId) &&
+          (messageParams(message).item as JsonObject).type === "userMessage",
+      ),
+    ).resolves.toMatchObject({
+      params: {
+        item: {
+          id: `${secondTurnId}-user`,
+          clientId: "client-one",
+          content: [{ type: "text", text: "queued one" }],
+        },
+      },
+    });
     writeRequest(fixture.desktopInput, {
       id: 5,
       method: "thread/queue/list",

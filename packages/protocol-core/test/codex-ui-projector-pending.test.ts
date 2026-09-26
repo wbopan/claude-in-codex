@@ -18,7 +18,14 @@ describe("CodexTurnProjector pending Turn", () => {
       cwd: "/synthetic",
       startedAtMs: 1_000,
       initialInput: [{ type: "text", text: "Review auth" }],
+      clientUserMessageId: "client-1",
     });
+    const userMessage = {
+      id: `${turnId}-user`,
+      type: "userMessage",
+      clientId: "client-1",
+      content: [{ type: "text", text: "Review auth", text_elements: [] }],
+    };
 
     const started = projector.project({ type: "turn.started", turnId });
 
@@ -37,6 +44,9 @@ describe("CodexTurnProjector pending Turn", () => {
           },
         },
       },
+      // Desktop ignores `turn/started` items; only these put the input in its transcript.
+      { method: "item/started", params: { turnId, item: userMessage } },
+      { method: "item/completed", params: { turnId, item: userMessage } },
     ]);
     expect(projector.pendingTurn()).toMatchObject({
       items: [
@@ -86,6 +96,47 @@ describe("CodexTurnProjector pending Turn", () => {
       ],
     });
     expect(JSON.stringify(projector.pendingTurn())).not.toContain("hidden");
+  });
+
+  it("serves a reopened running Turn with its prompt, every Item and its start time", () => {
+    const projector = new CodexTurnProjector({
+      threadId: "thread-1",
+      turnId,
+      cwd: "/synthetic",
+      startedAtMs: 5_000,
+      initialInput: [{ type: "text", text: "Run the tests" }],
+      inputShownByDesktop: true,
+    });
+    const started = projector.project({ type: "turn.started", turnId });
+    // Desktop already shows the prompt of a Turn it started; the wire must not repeat it.
+    expect(started.messages.map(({ method }) => method)).toEqual(["turn/started"]);
+    projector.project({
+      type: "item.started",
+      turnId,
+      item: { type: "commandExecution", itemId, command: "npm test" },
+    });
+    const turn = projector.historyTurn();
+    expect(turn).toMatchObject({
+      status: "inProgress",
+      startedAt: 5,
+      items: [
+        { id: `${turnId}-user`, type: "userMessage", content: [{ text: "Run the tests" }] },
+        { id: itemId, type: "commandExecution", command: "npm test", status: "inProgress" },
+      ],
+    });
+    projector.project({
+      type: "item.completed",
+      turnId,
+      snapshot: {
+        item: { type: "commandExecution", itemId, command: "npm test", exitCode: 0 },
+        outcome: { status: "succeeded" },
+      },
+    });
+    projector.project({ type: "turn.completed", turnId, outcome: { status: "succeeded" } });
+    expect(projector.historyTurn()).toMatchObject({
+      status: "completed",
+      items: [{ type: "userMessage" }, { type: "commandExecution", status: "completed" }],
+    });
   });
 
   it("reports the current activity without any Item content", () => {

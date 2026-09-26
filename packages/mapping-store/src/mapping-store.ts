@@ -486,6 +486,7 @@ export class MappingStore {
         turnMappings: [],
         createdAt: timestamp,
         updatedAt: timestamp,
+        recencyAt: timestamp,
       }) as StoredThreadRecordV1;
       await this.#writeNew(record);
       result = cloneRecord(record);
@@ -740,10 +741,15 @@ export class MappingStore {
         result = cloneRecord(current);
         return;
       }
+      const timestamp = this.#now().toISOString();
+      const newTurn = changed.turnMappings.some(
+        ({ hostTurnId }) => !current.turnMappings.some((known) => known.hostTurnId === hostTurnId),
+      );
       const next = storedThreadRecordV1Schema.parse({
         ...changed,
         revision: current.revision + 1,
-        updatedAt: this.#now().toISOString(),
+        updatedAt: timestamp,
+        ...(newTurn ? { recencyAt: timestamp } : {}),
       }) as StoredThreadRecordV1;
       this.#validateGlobal(next, hostThreadId);
       await this.#replaceFile(this.#recordPath(hostThreadId), next, true);

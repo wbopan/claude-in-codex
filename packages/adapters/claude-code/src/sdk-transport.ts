@@ -21,6 +21,7 @@ import { projectClaudeAccountUsage } from "./account-usage.js";
 
 import { resolveClaudeCodeExecutable, withNodeRuntimeOnPath } from "./command.js";
 import { readCodexMemoryAppend } from "./codex-memory.js";
+import { withSystemProxyEnvironment } from "./system-proxy-environment.js";
 import {
   mergeClaudeModelPickerOptions,
   readClaudeUserModelPicker,
@@ -466,6 +467,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
     // Codex core injects memory_summary.md for GPT Threads; Claude Threads bypass it, so
     // the Host appends the same file to Claude Code's preset system prompt.
     const codexMemory = await readCodexMemoryAppend(this.#environment);
+    const environment = await withSystemProxyEnvironment(this.#environment);
     // The SDK maps an omitted systemPrompt to an empty custom prompt, which drops the whole
     // Claude Code preset (task guidance, tone, auto-memory). Always request the preset.
     const systemPrompt = {
@@ -511,7 +513,7 @@ export class ClaudeSdkTransport implements ClaudeTurnTransport {
           // session-owned and are stopped explicitly when the session closes.
           perTaskStopAffordance: true,
           env: withNodeRuntimeOnPath({
-            ...this.#environment,
+            ...environment,
             CLAUDE_CODE_ENTRYPOINT: SESSION_ENTRYPOINT,
             CLAUDE_AGENT_SDK_CLIENT_APP: CLIENT_APP,
             CLAUDE_IN_CODEX_MCP_ELICITATION: "1",
@@ -1180,12 +1182,14 @@ export class ClaudeSdkModelInspector implements ClaudeModelInspector {
     this.#queryFactory = options.queryFactory ?? query;
   }
 
-  #createQuery(): Query {
+  async #createQuery(): Promise<Query> {
     if (this.#closePromise) throw new Error("Claude SDK Model inspector is closing");
     const executable = resolveClaudeCodeExecutable({
       ...(this.#command ? { command: this.#command } : {}),
       environment: this.#environment,
     });
+    const environment = await withSystemProxyEnvironment(this.#environment);
+    if (this.#closePromise) throw new Error("Claude SDK Model inspector is closing");
     const activeQuery = this.#queryFactory({
       prompt: this.#input,
       options: {
@@ -1197,7 +1201,7 @@ export class ClaudeSdkModelInspector implements ClaudeModelInspector {
         persistSession: false,
         includePartialMessages: false,
         env: withNodeRuntimeOnPath({
-          ...this.#environment,
+          ...environment,
           CLAUDE_AGENT_SDK_CLIENT_APP: CLIENT_APP,
         }),
         spawnClaudeCodeProcess: (options) => this.#spawn(options),
@@ -1209,8 +1213,11 @@ export class ClaudeSdkModelInspector implements ClaudeModelInspector {
 
   async inspectAccount(): Promise<HarnessAccountSnapshot | null> {
     const timeout = rejectAfter(10_000, "Claude SDK account inspection timed out");
+    // Creating the query awaits the system proxy lookup, so the deadline can fire before
+    // Promise.race subscribes to it; mark it handled up front.
+    timeout.promise.catch(() => undefined);
     try {
-      const activeQuery = this.#createQuery();
+      const activeQuery = await this.#createQuery();
       return await Promise.race([
         (async () => {
           await activeQuery.initializationResult();
@@ -1230,7 +1237,7 @@ export class ClaudeSdkModelInspector implements ClaudeModelInspector {
   }
 
   async inspect(): Promise<ClaudeModelInspectionSnapshot> {
-    const activeQuery = this.#createQuery();
+    const activeQuery = await this.#createQuery();
     try {
       const initialized = await activeQuery.initializationResult();
       const candidate = activeQuery as unknown as Record<string, unknown>;

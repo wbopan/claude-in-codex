@@ -36,21 +36,22 @@ function parseInput(params: JsonObject): SteeringInput {
   if (typeof params.expectedTurnId !== "string" || !params.expectedTurnId.trim()) {
     throw new ExternalSteerError(-32602, "External steering requires expectedTurnId");
   }
-  if (
-    !Array.isArray(params.input) ||
-    params.input.length === 0 ||
-    params.input.some(
-      (item) =>
-        !item ||
-        typeof item !== "object" ||
-        Array.isArray(item) ||
-        item.type !== "text" ||
-        typeof item.text !== "string",
-    )
-  ) {
+  if (!Array.isArray(params.input)) {
     throw new ExternalSteerError(-32602, "External steering requires text input");
   }
-  const text = params.input.map((item) => (item as JsonObject).text).join("\n");
+  // Like turn/start: attachments also arrive as image items, but the text item already names
+  // their files for the Harness to read, so only the text items are kept.
+  const texts = params.input
+    .filter(
+      (item): item is JsonObject =>
+        !!item && typeof item === "object" && !Array.isArray(item) && item.type === "text",
+    )
+    .map((item) => item.text)
+    .filter((value): value is string => typeof value === "string");
+  if (texts.length === 0) {
+    throw new ExternalSteerError(-32602, "External steering requires text input");
+  }
+  const text = texts.join("\n");
   if (!text.trim())
     throw new ExternalSteerError(-32602, "External steering input must not be empty");
   const clientUserMessageId = params.clientUserMessageId;
@@ -72,6 +73,13 @@ export interface ExternalSteerStarted {
   gate: TurnProjectionGate;
 }
 
+/** The replacement Turn plus the steering message it carries, for Desktop's transcript. */
+export interface ExternalSteerResult extends ExternalSteerStarted {
+  steeredTurnId: string;
+  text: string;
+  clientUserMessageId: string | null;
+}
+
 interface PendingSteer {
   turnId: string;
   resolve(outcome: TurnOutcome): void;
@@ -83,7 +91,7 @@ export class ExternalTurnSteering {
   readonly #pending = new Map<string, PendingSteer>();
   readonly #receipts = new Map<
     string,
-    { fingerprint: string; settled: boolean; result: Promise<ExternalSteerStarted> }
+    { fingerprint: string; settled: boolean; result: Promise<ExternalSteerResult> }
   >();
   #closed = false;
 
@@ -97,7 +105,7 @@ export class ExternalTurnSteering {
     thread: SteeringThread,
     params: JsonObject,
     start: (text: string) => Promise<ExternalSteerStarted>,
-  ): Promise<ExternalSteerStarted> {
+  ): Promise<ExternalSteerResult> {
     try {
       const input = parseInput(params);
       if (this.#closed)
@@ -118,7 +126,9 @@ export class ExternalTurnSteering {
       }
       if (this.hasPending(thread.id))
         throw new ExternalSteerError(-32072, "External Thread is already changing direction");
-      if (!thread.running || thread.activeTurnId !== input.expectedTurnId) {
+      // Codex's exact wording: Desktop then sends the message as a new Turn instead of dropping it.
+      if (!thread.running) throw new ExternalSteerError(-32074, "no active turn to steer");
+      if (thread.activeTurnId !== input.expectedTurnId) {
         // Do not use Codex's mismatch wording: Desktop automatically retries it against another Turn.
         throw new ExternalSteerError(-32074, "External steering must reference the active Turn");
       }
@@ -179,7 +189,7 @@ export class ExternalTurnSteering {
     thread: SteeringThread,
     input: SteeringInput,
     start: (text: string) => Promise<ExternalSteerStarted>,
-  ): Promise<ExternalSteerStarted> {
+  ): Promise<ExternalSteerResult> {
     const turnId = thread.activeTurnId;
     if (!turnId)
       throw new ExternalSteerError(-32074, "External steering must reference the active Turn");
@@ -228,7 +238,12 @@ export class ExternalTurnSteering {
       if (thread.running || thread.activeTurnId) {
         throw new ExternalSteerError(-32072, "Another External Turn started before replacement");
       }
-      return await start(input.text);
+      return {
+        ...(await start(input.text)),
+        steeredTurnId: input.expectedTurnId,
+        text: input.text,
+        clientUserMessageId: input.clientUserMessageId ?? null,
+      };
     } finally {
       clearTimeout(timeout);
       if (this.#pending.get(thread.id) === pending) this.#pending.delete(thread.id);

@@ -34,12 +34,18 @@ function fixture() {
     clientUserMessageId: "message",
     input: [{ type: "text", text: "new input" }],
   };
+  const result = {
+    ...started,
+    steeredTurnId: "old",
+    text: "new input",
+    clientUserMessageId: "message",
+  };
   const complete = () => {
     thread.running = false;
     thread.activeTurnId = null;
     coordinator.terminal("thread", "old", { status: "cancelled" });
   };
-  return { coordinator, execute, thread, start, started, params, complete };
+  return { coordinator, execute, thread, start, started, result, params, complete };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -56,9 +62,10 @@ describe("Host stop-then-start coordination", () => {
     await Promise.resolve();
     expect(f.start).not.toHaveBeenCalled();
     f.complete();
-    await expect(first).resolves.toBe(f.started);
-    await expect(duplicate).resolves.toBe(f.started);
-    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toBe(f.started);
+    const steered = await first;
+    expect(steered).toEqual(f.result);
+    await expect(duplicate).resolves.toBe(steered);
+    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toBe(steered);
     expect(f.execute).toHaveBeenCalledOnce();
     expect(f.start).toHaveBeenCalledExactlyOnceWith("new input");
     expect(f.coordinator.hasPending()).toBe(false);
@@ -73,7 +80,7 @@ describe("Host stop-then-start coordination", () => {
     await Promise.resolve();
     expect(f.start).not.toHaveBeenCalled();
     ack.resolve({ ok: true, value: { cancellationRequested: true } });
-    await expect(result).resolves.toBe(f.started);
+    await expect(result).resolves.toEqual(f.result);
   });
 
   it("registers the waiter before synchronous cancellation completion", async () => {
@@ -82,7 +89,7 @@ describe("Host stop-then-start coordination", () => {
       f.complete();
       return { ok: true, value: { cancellationRequested: true } };
     });
-    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toBe(f.started);
+    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toEqual(f.result);
   });
 
   it("rejects stale identities and invalid input without stopping anything", async () => {
@@ -93,15 +100,35 @@ describe("Host stop-then-start coordination", () => {
     for (const input of [
       [],
       [{ type: "text", text: " " }],
-      [
-        { type: "text", text: "valid" },
-        { type: "image", url: "x" },
-      ],
+      [{ type: "localImage", path: "/tmp/shot.png" }],
     ]) {
       await expect(
         f.coordinator.run(f.thread, { ...f.params, input }, f.start),
       ).rejects.toMatchObject({ code: -32602 });
     }
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps the text of a message with attachments, whose text already names the files", async () => {
+    const f = fixture();
+    const input = [
+      { type: "text", text: "new input" },
+      { type: "localImage", path: "/tmp/shot.png" },
+    ];
+    const replacement = f.coordinator.run(f.thread, { ...f.params, input }, f.start);
+    await Promise.resolve();
+    f.complete();
+    await expect(replacement).resolves.toEqual(f.result);
+    expect(f.start).toHaveBeenCalledWith("new input");
+  });
+
+  it("uses Codex's wording once the Turn has ended so Desktop starts a new Turn instead", async () => {
+    const f = fixture();
+    f.thread.running = false;
+    f.thread.activeTurnId = null;
+    await expect(f.coordinator.run(f.thread, f.params, f.start)).rejects.toMatchObject({
+      message: "no active turn to steer",
+    });
     expect(f.execute).not.toHaveBeenCalled();
   });
 
