@@ -34,12 +34,18 @@ function fixture() {
     clientUserMessageId: "message",
     input: [{ type: "text", text: "new input" }],
   };
+  const result = {
+    ...started,
+    steeredTurnId: "old",
+    text: "new input",
+    clientUserMessageId: "message",
+  };
   const complete = () => {
     thread.running = false;
     thread.activeTurnId = null;
     coordinator.terminal("thread", "old", { status: "cancelled" });
   };
-  return { coordinator, execute, thread, start, started, params, complete };
+  return { coordinator, execute, thread, start, started, result, params, complete };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -56,9 +62,10 @@ describe("Host stop-then-start coordination", () => {
     await Promise.resolve();
     expect(f.start).not.toHaveBeenCalled();
     f.complete();
-    await expect(first).resolves.toBe(f.started);
-    await expect(duplicate).resolves.toBe(f.started);
-    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toBe(f.started);
+    const steered = await first;
+    expect(steered).toEqual(f.result);
+    await expect(duplicate).resolves.toBe(steered);
+    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toBe(steered);
     expect(f.execute).toHaveBeenCalledOnce();
     expect(f.start).toHaveBeenCalledExactlyOnceWith("new input");
     expect(f.coordinator.hasPending()).toBe(false);
@@ -73,7 +80,7 @@ describe("Host stop-then-start coordination", () => {
     await Promise.resolve();
     expect(f.start).not.toHaveBeenCalled();
     ack.resolve({ ok: true, value: { cancellationRequested: true } });
-    await expect(result).resolves.toBe(f.started);
+    await expect(result).resolves.toEqual(f.result);
   });
 
   it("registers the waiter before synchronous cancellation completion", async () => {
@@ -82,7 +89,7 @@ describe("Host stop-then-start coordination", () => {
       f.complete();
       return { ok: true, value: { cancellationRequested: true } };
     });
-    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toBe(f.started);
+    await expect(f.coordinator.run(f.thread, f.params, f.start)).resolves.toEqual(f.result);
   });
 
   it("rejects stale identities and invalid input without stopping anything", async () => {

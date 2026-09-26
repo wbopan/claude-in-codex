@@ -642,6 +642,56 @@ function turnError(outcome: TurnCompletedEvent["outcome"]): JsonObject | null {
     : null;
 }
 
+/** The user message of a Turn, under the id history projection also gives it. */
+function userMessageItem(
+  turnId: string,
+  input: HostTurnSnapshot["input"],
+  clientId: string | null,
+): JsonObject {
+  return {
+    id: `${turnId}-user`,
+    type: "userMessage",
+    clientId,
+    content: input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
+  };
+}
+
+/**
+ * The `item/started` and `item/completed` pair that puts a user message into Desktop's
+ * transcript. Desktop ignores the items carried by `turn/started`, so input the Host submits
+ * on the user's behalf (a queued or steering message) is only visible through these.
+ * `inputTurnId` is the Turn whose input this is; `turnId` is where Desktop shows it, which
+ * differs for a steering message: Desktop keeps it in the Turn it steered.
+ */
+export function projectUserMessageNotifications(input: {
+  threadId: string;
+  turnId: string;
+  inputTurnId?: string;
+  input: HostTurnSnapshot["input"];
+  clientId: string | null;
+  emittedAtMs: number;
+}): JsonObject[] {
+  const item = userMessageItem(input.inputTurnId ?? input.turnId, input.input, input.clientId);
+  const params = { threadId: input.threadId, turnId: input.turnId };
+  return [
+    {
+      method: "item/started",
+      emittedAtMs: input.emittedAtMs,
+      params: { ...params, startedAtMs: input.emittedAtMs, item },
+    },
+    {
+      method: "item/completed",
+      emittedAtMs: input.emittedAtMs,
+      params: {
+        ...params,
+        startedAtMs: input.emittedAtMs,
+        completedAtMs: input.emittedAtMs,
+        item,
+      },
+    },
+  ];
+}
+
 function historicalStatus(outcome: HistoricalTurnOutcome): "completed" | "interrupted" | "failed" {
   if (outcome.status === "failed") return "failed";
   if (outcome.status === "cancelled") return "interrupted";
@@ -672,12 +722,7 @@ export function projectHistoricalTurn(input: HistoricalTurnProjectionInput): Jso
     id: turnId,
     status: historicalStatus(snapshot.outcome),
     items: [
-      {
-        id: `${turnId}-user`,
-        type: "userMessage",
-        clientId: null,
-        content: snapshot.input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
-      },
+      userMessageItem(turnId, snapshot.input, null),
       ...snapshot.items.flatMap(({ item, outcome }) => {
         if (itemFileChanges(item) !== null) {
           return files?.itemId === item.itemId
@@ -729,6 +774,7 @@ function diffText(changes: HostFileChange[]): string {
 export class CodexTurnProjector {
   readonly #cwd: string;
   readonly #input: HostTurnSnapshot["input"];
+  readonly #clientUserMessageId: string | null;
   readonly #interactions = new Map<HostInteractionId, ProjectedInteraction>();
   readonly #items = new Map<HostItemId, ProjectedItem>();
   readonly #wireItemOrder: HostItemId[] = [];
@@ -736,7 +782,14 @@ export class CodexTurnProjector {
   readonly #startedAtMs: number;
   readonly #threadId: string;
   readonly #turnId: HostTurnId;
+  readonly #inputShownByDesktop: boolean;
   #completed = false;
+  #terminal: {
+    status: string;
+    error: JsonObject | null;
+    completedAt: number;
+    durationMs: number;
+  } | null = null;
   #started = false;
   #fileItemId: HostItemId | null = null;
 
@@ -746,11 +799,19 @@ export class CodexTurnProjector {
     cwd: string;
     startedAtMs: number;
     initialInput?: HostTurnSnapshot["input"];
+    clientUserMessageId?: string | null;
+    /**
+     * Desktop already shows the input of a Turn it started, so the wire carries it only for
+     * input the Host submitted itself; `historyTurn` always includes it.
+     */
+    inputShownByDesktop?: boolean;
   }) {
     this.#threadId = input.threadId;
     this.#turnId = input.turnId;
     this.#cwd = input.cwd;
     this.#input = input.initialInput ?? [];
+    this.#clientUserMessageId = input.clientUserMessageId ?? null;
+    this.#inputShownByDesktop = input.inputShownByDesktop ?? false;
     this.#startedAtMs = input.startedAtMs;
     this.#startedAt = Math.floor(input.startedAtMs / 1000);
   }
@@ -776,6 +837,39 @@ export class CodexTurnProjector {
       startedAt,
       completedAt: null,
       durationMs: null,
+      itemsView: "full",
+    };
+  }
+
+  /**
+   * The Turn as `thread/read`, `thread/resume` and the list methods serve it: the user
+   * message and every Item in its current state. Desktop takes a reopened Turn's Items and
+   * start time from this alone.
+   */
+  historyTurn(): JsonObject {
+    const summary = this.#fileItemId ? this.#fileSummary() : null;
+    const items = this.#wireItemOrder.flatMap((itemId) => {
+      const projected = this.#items.get(itemId);
+      if (!projected?.wireStarted) return [];
+      if (summary && itemId === this.#fileItemId) {
+        return [projectItem(summary, this.#completed ? { status: "succeeded" } : null, this.#cwd)];
+      }
+      return [projectItem(projected.item, projected.outcome, this.#cwd, true, this.#threadId)];
+    });
+    return {
+      id: this.#turnId,
+      status: "inProgress",
+      error: null,
+      completedAt: null,
+      durationMs: null,
+      ...this.#terminal,
+      items: [
+        ...(this.#input.length === 0
+          ? []
+          : [userMessageItem(this.#turnId, this.#input, this.#clientUserMessageId)]),
+        ...items,
+      ],
+      startedAt: this.#startedAt,
       itemsView: "full",
     };
   }
@@ -915,6 +1009,15 @@ export class CodexTurnProjector {
             turn: this.pendingTurn(this.#startedAt),
           },
         },
+        ...(this.#input.length === 0 || this.#inputShownByDesktop
+          ? []
+          : projectUserMessageNotifications({
+              threadId: this.#threadId,
+              turnId: this.#turnId,
+              input: this.#input,
+              clientId: this.#clientUserMessageId,
+              emittedAtMs: this.#startedAtMs,
+            })),
       ],
     };
   }
@@ -1174,6 +1277,12 @@ export class CodexTurnProjector {
       durationMs: Math.max(0, completedAtMs - this.#startedAtMs),
       itemsView: "full",
     };
+    this.#terminal = {
+      status: turnStatus(event.outcome),
+      error,
+      completedAt,
+      durationMs: Math.max(0, completedAtMs - this.#startedAtMs),
+    };
     return {
       completedTurn: turn,
       messages: [
@@ -1215,16 +1324,9 @@ export class CodexTurnProjector {
   }
 
   #projectInput(): JsonObject[] {
-    return this.#input.length === 0
+    return this.#input.length === 0 || this.#inputShownByDesktop
       ? []
-      : [
-          {
-            id: `${this.#turnId}-user`,
-            type: "userMessage",
-            clientId: null,
-            content: this.#input.map(({ text }) => ({ type: "text", text, text_elements: [] })),
-          },
-        ];
+      : [userMessageItem(this.#turnId, this.#input, this.#clientUserMessageId)];
   }
 
   #startWireItem(projected: ProjectedItem, item: HostItem, startedAtMs: number): JsonObject {

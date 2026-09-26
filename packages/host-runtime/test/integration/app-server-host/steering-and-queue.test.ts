@@ -102,6 +102,23 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(index((message) => requestId(message, 100))).toBeLessThan(
       index((message) => turnEvent(message, "turn/started", String(replacementId))),
     );
+    // Desktop links the steering message to its own pending copy in the steered Turn.
+    const steered = fixture.collector.messages.find(
+      (message) =>
+        method(message, "item/completed") &&
+        (messageParams(message).item as JsonObject).type === "userMessage",
+    );
+    expect(steered).toMatchObject({
+      params: {
+        threadId,
+        turnId: oldTurnId,
+        item: {
+          id: `${String(replacementId)}-user`,
+          clientId: "steer-message",
+          content: [{ type: "text", text: "new direction" }],
+        },
+      },
+    });
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute).toHaveBeenNthCalledWith(2, {
       type: "turn.start",
@@ -326,6 +343,22 @@ describe("AppServerHost External Thread message queue", () => {
         (messageParams(message).turn as JsonObject).id !== firstTurnId,
     );
     const secondTurnId = (messageParams(secondStarted).turn as JsonObject).id as string;
+    // Desktop shows only the input of Turns it started; the Host announces the queued one.
+    await expect(
+      fixture.collector.waitFor(
+        (message) =>
+          turnEvent(message, "item/completed", secondTurnId) &&
+          (messageParams(message).item as JsonObject).type === "userMessage",
+      ),
+    ).resolves.toMatchObject({
+      params: {
+        item: {
+          id: `${secondTurnId}-user`,
+          clientId: "client-one",
+          content: [{ type: "text", text: "queued one" }],
+        },
+      },
+    });
     writeRequest(fixture.desktopInput, {
       id: 5,
       method: "thread/queue/list",

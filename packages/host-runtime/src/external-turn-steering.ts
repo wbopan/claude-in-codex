@@ -72,6 +72,13 @@ export interface ExternalSteerStarted {
   gate: TurnProjectionGate;
 }
 
+/** The replacement Turn plus the steering message it carries, for Desktop's transcript. */
+export interface ExternalSteerResult extends ExternalSteerStarted {
+  steeredTurnId: string;
+  text: string;
+  clientUserMessageId: string | null;
+}
+
 interface PendingSteer {
   turnId: string;
   resolve(outcome: TurnOutcome): void;
@@ -83,7 +90,7 @@ export class ExternalTurnSteering {
   readonly #pending = new Map<string, PendingSteer>();
   readonly #receipts = new Map<
     string,
-    { fingerprint: string; settled: boolean; result: Promise<ExternalSteerStarted> }
+    { fingerprint: string; settled: boolean; result: Promise<ExternalSteerResult> }
   >();
   #closed = false;
 
@@ -97,7 +104,7 @@ export class ExternalTurnSteering {
     thread: SteeringThread,
     params: JsonObject,
     start: (text: string) => Promise<ExternalSteerStarted>,
-  ): Promise<ExternalSteerStarted> {
+  ): Promise<ExternalSteerResult> {
     try {
       const input = parseInput(params);
       if (this.#closed)
@@ -179,7 +186,7 @@ export class ExternalTurnSteering {
     thread: SteeringThread,
     input: SteeringInput,
     start: (text: string) => Promise<ExternalSteerStarted>,
-  ): Promise<ExternalSteerStarted> {
+  ): Promise<ExternalSteerResult> {
     const turnId = thread.activeTurnId;
     if (!turnId)
       throw new ExternalSteerError(-32074, "External steering must reference the active Turn");
@@ -228,7 +235,12 @@ export class ExternalTurnSteering {
       if (thread.running || thread.activeTurnId) {
         throw new ExternalSteerError(-32072, "Another External Turn started before replacement");
       }
-      return await start(input.text);
+      return {
+        ...(await start(input.text)),
+        steeredTurnId: input.expectedTurnId,
+        text: input.text,
+        clientUserMessageId: input.clientUserMessageId ?? null,
+      };
     } finally {
       clearTimeout(timeout);
       if (this.#pending.get(thread.id) === pending) this.#pending.delete(thread.id);

@@ -156,6 +156,7 @@ import {
 } from "./thread-list-aggregator.js";
 import {
   CodexTurnProjector,
+  projectUserMessageNotifications,
   decodeCreateRoute,
   decodeExternalTransportSelection,
   encodeExternalTransportSelection,
@@ -3087,7 +3088,7 @@ export class AppServerHost {
   #externalHistoryTurns(thread: ExternalThread): JsonObject[] {
     if (!thread.activeTurnId) return this.#runningSubagentTurns(thread);
     const active = thread.projectedTurns.get(thread.activeTurnId);
-    return active ? [...thread.turns, active.projector.pendingTurn()] : thread.turns;
+    return active ? [...thread.turns, active.projector.historyTurn()] : thread.turns;
   }
 
   /**
@@ -3269,6 +3270,17 @@ export class AppServerHost {
       );
       try {
         await this.#writer.json(rpcEnvelope(request, { result: { turnId: started.turnId } }));
+        // Desktop matches this to its own steering message by clientId and keeps it in the
+        // steered Turn; the id is the replacement Turn's, where history places the input.
+        for (const message of projectUserMessageNotifications({
+          threadId: thread.id,
+          turnId: started.steeredTurnId,
+          inputTurnId: started.turnId,
+          input: [{ type: "text", text: started.text }],
+          clientId: started.clientUserMessageId,
+          emittedAtMs: Date.now(),
+        }))
+          await this.#writer.json(message);
       } finally {
         started.gate.resolve();
       }
@@ -3345,7 +3357,11 @@ export class AppServerHost {
           }
           let started: ExternalTurnStart;
           try {
-            started = await this.#beginExternalTurn(thread, submission.text);
+            started = await this.#beginExternalTurn(
+              thread,
+              submission.text,
+              submission.clientUserMessageId,
+            );
           } catch (error) {
             queue.restore(thread.id, submission);
             throw error;
@@ -3396,7 +3412,11 @@ export class AppServerHost {
     const submission = this.#externalQueue.take(thread.id);
     if (!submission) return;
     try {
-      const started = await this.#beginExternalTurn(thread, submission.text);
+      const started = await this.#beginExternalTurn(
+        thread,
+        submission.text,
+        submission.clientUserMessageId,
+      );
       started.gate.resolve();
       this.#traceNativePicker({
         event: "thread/queue-drained",
@@ -3412,7 +3432,16 @@ export class AppServerHost {
     }
   }
 
-  async #beginExternalTurn(thread: ExternalThread, text: string): Promise<ExternalTurnStart> {
+  /**
+   * `announceAs` is the Desktop message identity of input the Host submits on the user's
+   * behalf (a queued message). Desktop shows only the input of Turns it started itself;
+   * without it the input still belongs to the Turn's history.
+   */
+  async #beginExternalTurn(
+    thread: ExternalThread,
+    text: string,
+    announceAs?: string,
+  ): Promise<ExternalTurnStart> {
     if (this.#closeRequested || this.#externalRuntime.get(thread.id) !== thread) {
       throw new ExternalSteerError(-32073, "External Thread is no longer available");
     }
@@ -3431,6 +3460,10 @@ export class AppServerHost {
         turnId,
         cwd: thread.cwd,
         startedAtMs,
+        initialInput: [{ type: "text", text }],
+        ...(announceAs === undefined
+          ? { inputShownByDesktop: true }
+          : { clientUserMessageId: announceAs }),
       }),
     };
     const gate = turnProjectionGate();
@@ -3748,7 +3781,7 @@ export class AppServerHost {
       if (ephemeralTurn) {
         thread.ephemeralTurnIds.delete(event.turnId);
       } else {
-        thread.turns.push(result.completedTurn);
+        thread.turns.push(projection.projector.historyTurn());
         thread.thread.updatedAt = completedAt;
         thread.thread.recencyAt = completedAt;
       }
