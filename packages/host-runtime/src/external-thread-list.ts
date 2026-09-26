@@ -25,12 +25,6 @@ export interface ExternalThreadListPage {
   hasMore: boolean;
 }
 
-function unixTimestamp(value: string, field: string): number {
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) throw new Error(`External Thread ${field} is invalid`);
-  return Math.floor(parsed / 1_000);
-}
-
 function threadId(thread: JsonObject): string {
   if (typeof thread.id !== "string" || thread.id.length === 0) {
     throw new Error("Thread list row has no stable ID");
@@ -92,6 +86,8 @@ function includesExternalRecord(
   byId: ReadonlyMap<string, StoredThreadRecordV1>,
 ): boolean {
   if (record.state !== "ready" || !record.nativeSessionRef) return false;
+  // A side chat is ephemeral: Codex never lists one, and Desktop filters only some lists.
+  if (record.ephemeral) return false;
   // Rollback retains old records for historical links, but only rebound children
   // belong to the parent's current Native Session (including nested children).
   let current = record;
@@ -202,7 +198,8 @@ export function listExternalThreadMetadata(input: {
   anchor?: ThreadListExternalAnchor | null;
   limit?: number;
 }): ExternalThreadListPage {
-  if (!input.query.supportsExternal || input.query.sortKey === "section_position") {
+  const sortKey = input.query.sortKey;
+  if (!input.query.supportsExternal || sortKey === "section_position") {
     return { data: [], hasMore: false };
   }
   const sessionIds = resolveExternalSessionTreeIds(input.records);
@@ -222,10 +219,7 @@ export function listExternalThreadMetadata(input: {
       return {
         source: "external",
         thread,
-        timestamp:
-          input.query.sortKey === "created_at"
-            ? unixTimestamp(record.createdAt, "createdAt")
-            : unixTimestamp(record.updatedAt, "updatedAt"),
+        timestamp: threadListTimestamp(thread, sortKey),
       };
     })
     .sort((left, right) => compareThreadListEntries(left, right, input.query.sortDirection))

@@ -96,8 +96,10 @@ describe("External Thread metadata catalog", () => {
   it("projects only ready records without loading Native history", () => {
     const ready = record("ready");
     const provisional = record("provisional", { state: "creating" });
+    // Side chats are ephemeral; Codex never lists them.
+    const sideChat = record("side-chat", { ephemeral: true });
     const page = listExternalThreadMetadata({
-      records: [ready, provisional],
+      records: [ready, provisional, sideChat],
       query: query(),
       runtimeFor: () => null,
     });
@@ -208,6 +210,28 @@ describe("External Thread metadata catalog", () => {
     });
     expect(second.data.map((entry) => entry.thread.id)).toEqual(["b"]);
     expect(second.hasMore).toBe(false);
+  });
+
+  it("orders by the last Turn rather than by metadata edits", () => {
+    const records = [
+      record("renamed", {
+        updatedAt: "2026-08-02T00:00:00.000Z",
+        recencyAt: "2026-08-01T00:00:00.000Z",
+      }),
+      record("recent", {
+        updatedAt: "2026-08-01T05:00:00.000Z",
+        recencyAt: "2026-08-01T05:00:00.000Z",
+      }),
+    ];
+    const page = listExternalThreadMetadata({
+      records,
+      query: query({ sortKey: "recency_at", sortDirection: "desc" }),
+      runtimeFor: () => null,
+    });
+    expect(page.data.map((entry) => entry.thread.id)).toEqual(["recent", "renamed"]);
+    expect(page.data[1]?.thread).toMatchObject({
+      recencyAt: Date.parse("2026-08-01T00:00:00.000Z") / 1000,
+    });
   });
 
   it("filters and returns the first page from 1000 in-memory records", () => {

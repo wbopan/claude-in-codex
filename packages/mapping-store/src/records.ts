@@ -68,6 +68,8 @@ export const storedThreadRecordV1Schema = z
     turnMappings: z.array(storedTurnMappingV1Schema),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema,
+    /** Last user activity (a new Turn); metadata edits move only `updatedAt`. */
+    recencyAt: isoDateSchema.optional(),
   })
   .strict()
   .superRefine((record, context) => {

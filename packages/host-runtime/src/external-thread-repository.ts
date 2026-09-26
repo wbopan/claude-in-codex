@@ -489,6 +489,7 @@ export function externalThreadValue(input: {
   const { record } = input;
   const createdAt = Math.floor(Date.parse(record.createdAt) / 1_000);
   const updatedAt = Math.floor(Date.parse(record.updatedAt) / 1_000);
+  const recencyAt = Math.floor(Date.parse(record.recencyAt ?? record.updatedAt) / 1_000);
   const preview = input.turns
     .flatMap((turn) => (Array.isArray(turn.items) ? turn.items : []))
     .find(
@@ -537,7 +538,7 @@ export function externalThreadValue(input: {
     cliVersion: "claude-in-codex",
     createdAt,
     updatedAt,
-    recencyAt: updatedAt,
+    recencyAt,
     status:
       input.loaded === false
         ? { type: "notLoaded" }
