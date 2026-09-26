@@ -71,7 +71,8 @@ describe("external Harness file summaries", () => {
         expect(files(projector.pendingTurn())[0]?.changes).toHaveLength(1);
       }
       expect(messages.filter((message) => message.method === "item/started")).toHaveLength(1);
-      expect(messages.filter((message) => message.method === "item/completed")).toHaveLength(0);
+      // The card settles after each edit; later edits update it in place.
+      expect(messages.filter((message) => message.method === "item/completed")).toHaveLength(3);
       const completed = projector.project({
         type: "turn.completed",
         turnId,

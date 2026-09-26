@@ -231,7 +231,7 @@ describe("Codex UI projector", () => {
           item: {
             type: "commandExecution",
             status: "completed",
-            aggregatedOutput: null,
+            aggregatedOutput: "done\n",
             exitCode: 0,
             durationMs: 25,
           },
@@ -1064,7 +1064,7 @@ describe("Codex UI projector", () => {
             type: "commandExecution",
             command: "read src/app.ts",
             status: "completed",
-            aggregatedOutput: null,
+            aggregatedOutput: "export const app = 1;\n",
           },
         },
       },
@@ -1277,6 +1277,8 @@ describe("Codex UI projector", () => {
         params: { itemId: "edit-1", changes: [{ path: "src/app.ts" }] },
       },
       { method: "turn/diff/updated" },
+      // No edit is running, so the card settles instead of showing "Editing" all Turn.
+      { method: "item/completed", params: { item: { id: "edit-1", status: "completed" } } },
     ]);
   });
 
@@ -1344,7 +1346,8 @@ describe("Codex UI projector", () => {
           type: "fileChange",
           id: "file-1",
           status: "completed",
-          changes: [{ path: "sample.txt" }, { path: "other.txt" }],
+          // A created file carries its content, not a diff: Desktop renders `diff` as the text.
+          changes: [{ path: "sample.txt" }, { path: "other.txt", diff: "other\n" }],
         },
       ],
     });
