@@ -693,6 +693,9 @@ describe("AppServerHost HarnessAdapter projection", () => {
       result: {},
     });
     expect(close).toHaveBeenCalledOnce();
+    await expect(
+      fixture.collector.waitFor((message) => method(message, "thread/deleted")),
+    ).resolves.toEqual({ method: "thread/deleted", params: { threadId } });
     expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);
   });

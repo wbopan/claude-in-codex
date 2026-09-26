@@ -2819,7 +2819,20 @@ export class AppServerHost {
       await this.#writer.json(rpcError(request, result.error.code, result.error.message));
       return;
     }
-    await this.#writer.json(rpcEnvelope(request, { result: threadRevertResult(result.thread) }));
+    // Desktop resumes paging older history from these; without them it stops at the revert.
+    const current = this.#externalRuntime.get(thread.id) ?? thread;
+    const turns = this.#externalHistoryTurns(current);
+    await this.#writer.json(
+      rpcEnvelope(request, {
+        result: {
+          ...threadRevertResult(result.thread),
+          turnsBackwardsCursor: listExternalTurns(turns, { limit: 1, itemsView: "notLoaded" })
+            .backwardsCursor,
+          itemsBackwardsCursor: listExternalItems(turns, { limit: 1, sortDirection: "desc" })
+            .backwardsCursor,
+        },
+      }),
+    );
     await this.#writer.json({ method: "thread/reverted", params: { threadId: thread.id } });
   }
 
@@ -2904,8 +2917,14 @@ export class AppServerHost {
     }
     this.#externalRuntime.remove(location.record.hostThreadId);
     this.#routeObservationTracker.forgetThread(location.record.hostThreadId);
+    // Other Desktop windows drop the Thread only on this notification.
+    const deleted = {
+      method: "thread/deleted",
+      params: { threadId: location.record.hostThreadId },
+    };
     if (!thread) {
       await this.#writer.json(rpcEnvelope(request, { result: {} }));
+      await this.#writer.json(deleted);
       return;
     }
     thread.stateObserver.fault(new Error("External Thread was deleted"));
@@ -2913,6 +2932,7 @@ export class AppServerHost {
       await thread.session.close();
       await thread.outputTask;
       await this.#writer.json(rpcEnvelope(request, { result: {} }));
+      await this.#writer.json(deleted);
     } catch (error) {
       await this.#writer.json(
         rpcError(request, -32075, `External Thread could not close: ${errorMessage(error)}`),
