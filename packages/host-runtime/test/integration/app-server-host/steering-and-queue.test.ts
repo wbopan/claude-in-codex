@@ -253,7 +253,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
-  it("rejects an interrupt that does not reference the active Pi Turn", async () => {
+  it("answers an interrupt on an idle Pi Thread with Codex's wording", async () => {
     const fixture = createFixture();
     const officialWrite = vi.fn();
     fixture.official.stdin.on("data", officialWrite);
@@ -267,7 +267,8 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await expect(
       fixture.collector.waitFor((message) => requestId(message, 2)),
     ).resolves.toMatchObject({
-      error: { code: -32074, message: "External turn/interrupt must reference the active Turn" },
+      // Desktop recognises this text and marks its Turn interrupted without an error.
+      error: { code: -32074, message: "no active turn to interrupt" },
     });
     expect(officialWrite).not.toHaveBeenCalled();
     await stopFixture(fixture);

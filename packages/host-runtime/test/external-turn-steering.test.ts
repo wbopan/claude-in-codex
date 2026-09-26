@@ -112,6 +112,16 @@ describe("Host stop-then-start coordination", () => {
     expect(f.execute).not.toHaveBeenCalled();
   });
 
+  it("uses Codex's wording once the Turn has ended so Desktop starts a new Turn instead", async () => {
+    const f = fixture();
+    f.thread.running = false;
+    f.thread.activeTurnId = null;
+    await expect(f.coordinator.run(f.thread, f.params, f.start)).rejects.toMatchObject({
+      message: "no active turn to steer",
+    });
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
   it("rejects concurrent replacements and conflicting message-id reuse", async () => {
     const f = fixture();
     const first = f.coordinator.run(f.thread, f.params, f.start);

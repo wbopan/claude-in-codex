@@ -3520,11 +3520,12 @@ export class AppServerHost {
     // Observed children have no active Host Turn. Their latest native history
     // turn is projected as inProgress while their parent reports them running.
     const expectedTurnId = subagent ? thread.turns.at(-1)?.id : thread.activeTurnId;
-    if (
-      typeof requestedTurnId !== "string" ||
-      !thread.running ||
-      expectedTurnId !== requestedTurnId
-    ) {
+    if (!thread.running) {
+      // Codex's exact wording: Desktop then marks its Turn interrupted instead of showing an error.
+      await this.#writer.json(rpcError(request, -32074, "no active turn to interrupt"));
+      return;
+    }
+    if (typeof requestedTurnId !== "string" || expectedTurnId !== requestedTurnId) {
       await this.#writer.json(
         rpcError(request, -32074, "External turn/interrupt must reference the active Turn"),
       );

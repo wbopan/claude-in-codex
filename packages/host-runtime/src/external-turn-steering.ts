@@ -125,7 +125,9 @@ export class ExternalTurnSteering {
       }
       if (this.hasPending(thread.id))
         throw new ExternalSteerError(-32072, "External Thread is already changing direction");
-      if (!thread.running || thread.activeTurnId !== input.expectedTurnId) {
+      // Codex's exact wording: Desktop then sends the message as a new Turn instead of dropping it.
+      if (!thread.running) throw new ExternalSteerError(-32074, "no active turn to steer");
+      if (thread.activeTurnId !== input.expectedTurnId) {
         // Do not use Codex's mismatch wording: Desktop automatically retries it against another Turn.
         throw new ExternalSteerError(-32074, "External steering must reference the active Turn");
       }
