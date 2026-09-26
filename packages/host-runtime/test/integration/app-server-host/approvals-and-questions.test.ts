@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "@claude-in-codex/protocol-core";
 
 import { createFixture, startPiThread, startPiTurn, stopFixture } from "./fixture.js";
-import { method, requestId, turnEvent, writeRequest } from "./json-rpc.js";
+import { messageParams, method, requestId, turnEvent, writeRequest } from "./json-rpc.js";
 
 describe("AppServerHost HarnessAdapter projection", () => {
   it("deletes an active external Thread after retiring its pending Question", async () => {
@@ -116,6 +116,16 @@ describe("AppServerHost HarnessAdapter projection", () => {
     );
     expect(request).toMatchObject({ params: { _meta: { persist: "always" } } });
     if (typeof request.id !== "number") throw new Error("Approval request has no numeric ID");
+    // Desktop badges a Thread it is not showing only from these flags.
+    const latestStatus = () =>
+      messageParams(
+        fixture.collector.messages.findLast((message) =>
+          method(message, "thread/status/changed"),
+        ) ?? {},
+      ).status;
+    await vi.waitFor(() =>
+      expect(latestStatus()).toEqual({ type: "active", activeFlags: ["waitingOnApproval"] }),
+    );
     writeRequest(fixture.desktopInput, {
       id: request.id,
       result: { action: "accept", content: {}, _meta: { persist: "always" } },
@@ -125,6 +135,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
         { response: { type: "approval", actionId: "allowAlways" } },
       ]);
     });
+    await vi.waitFor(() => expect(latestStatus()).toEqual({ type: "active", activeFlags: [] }));
+    // Answered while the Turn still runs: Desktop settles the approval card only on this.
+    expect(
+      fixture.collector.messages.find((message) => method(message, "serverRequest/resolved")),
+    ).toMatchObject({ params: { threadId, requestId: request.id } });
     session.succeedTurn();
     await fixture.collector.waitFor((message) => method(message, "turn/completed"));
     await stopFixture(fixture);

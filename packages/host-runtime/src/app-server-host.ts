@@ -247,7 +247,9 @@ interface PendingDesktopQuestion {
   timeout: NodeJS.Timeout | null;
 }
 
-type ExternalThreadStatus = { type: "active"; activeFlags: [] } | { type: "idle" };
+type ExternalThreadStatus =
+  | { type: "active"; activeFlags: ("waitingOnApproval" | "waitingOnUserInput")[] }
+  | { type: "idle" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -507,7 +509,7 @@ export class AppServerHost {
   readonly #desktopRequests = new DesktopRequestQueue();
   readonly #pendingDesktopElicitations = new Map<
     HostApprovalRequestId,
-    (result: JsonObject) => void
+    { threadId: string; resolve: (result: JsonObject) => void }
   >();
   #drainActiveWorkOnInputEnd = false;
   #desktopInputEnded = false;
@@ -971,7 +973,7 @@ export class AppServerHost {
       if (isRecord(parsed) && parsed.method === "initialized" && !("id" in parsed)) {
         continue;
       }
-      if (this.#handleDesktopElicitationResponse(parsed)) continue;
+      if (await this.#handleDesktopElicitationResponse(parsed)) continue;
       if (await this.#handleDesktopApprovalResponse(parsed)) continue;
       if (await this.#handleDesktopQuestionResponse(parsed)) continue;
       const requestResult = jsonRpcRequestSchema.safeParse(parsed);
@@ -4064,6 +4066,7 @@ export class AppServerHost {
       await this.#denyApproval(thread, interaction);
       throw error;
     }
+    await this.#syncWaitingFlags(thread);
   }
 
   /**
@@ -4077,7 +4080,7 @@ export class AppServerHost {
   ): Promise<JsonObject> {
     const requestId = this.#allocateApprovalRequestId();
     const answer = new Promise<JsonObject>((resolve) =>
-      this.#pendingDesktopElicitations.set(requestId, resolve),
+      this.#pendingDesktopElicitations.set(requestId, { threadId, resolve }),
     );
     this.#traceNativePicker({
       event: "desktop-tools/elicitation-forwarded",
@@ -4096,14 +4099,23 @@ export class AppServerHost {
     return answer;
   }
 
-  #handleDesktopElicitationResponse(value: JsonValue): boolean {
+  async #handleDesktopElicitationResponse(value: JsonValue): Promise<boolean> {
     if (!isRecord(value) || !isHostApprovalRequestId(value.id)) return false;
-    const resolve = this.#pendingDesktopElicitations.get(value.id);
-    if (!resolve) return false;
+    const pending = this.#pendingDesktopElicitations.get(value.id);
+    if (!pending) return false;
     this.#pendingDesktopElicitations.delete(value.id);
     // A transport error is a cancellation; only an explicit answer may decline.
-    resolve(isRecord(value.result) ? value.result : { action: "cancel" });
+    pending.resolve(isRecord(value.result) ? value.result : { action: "cancel" });
+    await this.#announceRequestResolved(pending.threadId, value.id);
     return true;
+  }
+
+  /**
+   * Codex announces an answered server request at once; Desktop only then settles the request's
+   * transcript card (for example "Approval requested") and drops it from the Thread's requests.
+   */
+  async #announceRequestResolved(threadId: string, requestId: number): Promise<void> {
+    await this.#writer.json({ method: "serverRequest/resolved", params: { threadId, requestId } });
   }
 
   async #handleDesktopApprovalResponse(value: JsonValue): Promise<boolean> {
@@ -4118,6 +4130,8 @@ export class AppServerHost {
       )
         return true;
       this.#pendingDesktopApprovals.delete(requestId);
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
 
       let response: HostApprovalResponse;
       try {
@@ -4180,10 +4194,8 @@ export class AppServerHost {
     for (const [requestId, pending] of this.#pendingDesktopApprovals) {
       if (pending.interaction.interactionId !== interactionId) continue;
       this.#pendingDesktopApprovals.delete(requestId);
-      await this.#writer.json({
-        method: "serverRequest/resolved",
-        params: { threadId: pending.thread.id, requestId },
-      });
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
     }
   }
 
@@ -4241,6 +4253,7 @@ export class AppServerHost {
     this.#pendingDesktopQuestions.set(requestId, pending);
     try {
       await this.#writer.json({ id: requestId, ...result.questionRequest.request });
+      await this.#syncWaitingFlags(thread);
     } catch (error) {
       this.#retireDesktopQuestion(interaction.interactionId);
       await thread.session
@@ -4267,6 +4280,8 @@ export class AppServerHost {
         return true;
       this.#pendingDesktopQuestions.delete(requestId);
       if (pending.timeout) clearTimeout(pending.timeout);
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
 
       let response;
       try {
@@ -4324,10 +4339,8 @@ export class AppServerHost {
       if (pending.interaction.interactionId !== interactionId) continue;
       if (pending.timeout) clearTimeout(pending.timeout);
       this.#pendingDesktopQuestions.delete(requestId);
-      await this.#writer.json({
-        method: "serverRequest/resolved",
-        params: { threadId: pending.thread.id, requestId },
-      });
+      await this.#announceRequestResolved(pending.thread.id, requestId);
+      await this.#syncWaitingFlags(pending.thread);
     }
   }
 
@@ -4338,6 +4351,28 @@ export class AppServerHost {
     const requestId = this.#nextQuestionRequestId;
     this.#nextQuestionRequestId -= 1;
     return requestId;
+  }
+
+  /**
+   * Codex flags an active Thread that waits on the user. Desktop badges a Thread it is not
+   * showing ("Awaiting approval", "Needs input") only from these flags.
+   */
+  async #syncWaitingFlags(thread: ExternalThread): Promise<void> {
+    if (!thread.running) return;
+    const activeFlags: ("waitingOnApproval" | "waitingOnUserInput")[] = [];
+    if ([...this.#pendingDesktopApprovals.values()].some((pending) => pending.thread === thread))
+      activeFlags.push("waitingOnApproval");
+    if ([...this.#pendingDesktopQuestions.values()].some((pending) => pending.thread === thread))
+      activeFlags.push("waitingOnUserInput");
+    const current = thread.thread.status;
+    if (
+      isRecord(current) &&
+      current.type === "active" &&
+      Array.isArray(current.activeFlags) &&
+      current.activeFlags.join() === activeFlags.join()
+    )
+      return;
+    await this.#setThreadStatus(thread, { type: "active", activeFlags });
   }
 
   async #setThreadStatus(thread: ExternalThread, status: ExternalThreadStatus): Promise<void> {
