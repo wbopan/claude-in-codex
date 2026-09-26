@@ -36,21 +36,22 @@ function parseInput(params: JsonObject): SteeringInput {
   if (typeof params.expectedTurnId !== "string" || !params.expectedTurnId.trim()) {
     throw new ExternalSteerError(-32602, "External steering requires expectedTurnId");
   }
-  if (
-    !Array.isArray(params.input) ||
-    params.input.length === 0 ||
-    params.input.some(
-      (item) =>
-        !item ||
-        typeof item !== "object" ||
-        Array.isArray(item) ||
-        item.type !== "text" ||
-        typeof item.text !== "string",
-    )
-  ) {
+  if (!Array.isArray(params.input)) {
     throw new ExternalSteerError(-32602, "External steering requires text input");
   }
-  const text = params.input.map((item) => (item as JsonObject).text).join("\n");
+  // Like turn/start: attachments also arrive as image items, but the text item already names
+  // their files for the Harness to read, so only the text items are kept.
+  const texts = params.input
+    .filter(
+      (item): item is JsonObject =>
+        !!item && typeof item === "object" && !Array.isArray(item) && item.type === "text",
+    )
+    .map((item) => item.text)
+    .filter((value): value is string => typeof value === "string");
+  if (texts.length === 0) {
+    throw new ExternalSteerError(-32602, "External steering requires text input");
+  }
+  const text = texts.join("\n");
   if (!text.trim())
     throw new ExternalSteerError(-32602, "External steering input must not be empty");
   const clientUserMessageId = params.clientUserMessageId;

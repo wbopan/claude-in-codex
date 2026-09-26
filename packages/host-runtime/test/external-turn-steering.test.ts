@@ -100,16 +100,26 @@ describe("Host stop-then-start coordination", () => {
     for (const input of [
       [],
       [{ type: "text", text: " " }],
-      [
-        { type: "text", text: "valid" },
-        { type: "image", url: "x" },
-      ],
+      [{ type: "localImage", path: "/tmp/shot.png" }],
     ]) {
       await expect(
         f.coordinator.run(f.thread, { ...f.params, input }, f.start),
       ).rejects.toMatchObject({ code: -32602 });
     }
     expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps the text of a message with attachments, whose text already names the files", async () => {
+    const f = fixture();
+    const input = [
+      { type: "text", text: "new input" },
+      { type: "localImage", path: "/tmp/shot.png" },
+    ];
+    const replacement = f.coordinator.run(f.thread, { ...f.params, input }, f.start);
+    await Promise.resolve();
+    f.complete();
+    await expect(replacement).resolves.toEqual(f.result);
+    expect(f.start).toHaveBeenCalledWith("new input");
   });
 
   it("uses Codex's wording once the Turn has ended so Desktop starts a new Turn instead", async () => {

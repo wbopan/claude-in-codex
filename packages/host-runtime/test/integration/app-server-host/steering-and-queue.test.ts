@@ -147,10 +147,7 @@ describe("AppServerHost HarnessAdapter projection", () => {
         {
           threadId,
           expectedTurnId: oldTurnId,
-          input: [
-            { type: "text", text: "new" },
-            { type: "image", url: "image" },
-          ],
+          input: [{ type: "image", url: "image" }],
         },
       ],
     ] as const) {
