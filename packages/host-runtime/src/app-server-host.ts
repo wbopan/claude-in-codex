@@ -3255,10 +3255,8 @@ export class AppServerHost {
           }
           return;
         }
-        await this.#writer.json(
-          rpcError(request, -32078, "External Harness does not expose the requested command"),
-        );
-        return;
+        // Not a Host command: Claude handles its own commands and skills, and "/tmp is full"
+        // is just a message, so the text goes to the Harness as typed.
       } finally {
         this.#pendingExternalCommandRequests.delete(thread.id);
       }

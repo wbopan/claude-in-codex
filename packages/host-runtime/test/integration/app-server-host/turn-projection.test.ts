@@ -242,6 +242,36 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("sends a slash-led message the Harness catalog does not list as ordinary text", async () => {
+    const fixture = createFixture();
+    try {
+      const threadId = await startPiThread(fixture);
+      const session = fixture.adapter.sessions[0];
+      if (!session) throw new Error("Fake Pi Session was not opened");
+      const executeCommand = vi.fn();
+      session.commands = {
+        list: async () => ({ ok: true, value: { commands: [] } }),
+        execute: executeCommand,
+      };
+      const execute = vi.spyOn(session, "execute");
+      const text = "/tmp is full, clean it";
+      writeRequest(fixture.desktopInput, {
+        id: 2,
+        method: "turn/start",
+        params: { threadId, input: [{ type: "text", text }] },
+      });
+      await expect(
+        fixture.collector.waitFor((message) => requestId(message, 2)),
+      ).resolves.toMatchObject({ result: { turn: { status: "inProgress" } } });
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "turn.start", input: [{ type: "text", text }] }),
+      );
+      expect(executeCommand).not.toHaveBeenCalled();
+    } finally {
+      await stopFixture(fixture);
+    }
+  });
+
   it.each([
     ["bare", "/compact"],
     ["space", "/compact "],
