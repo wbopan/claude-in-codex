@@ -10,7 +10,7 @@ import type { ClaudeModelInspectionSnapshot } from "./model-catalog.js";
 import type { ClaudePermissionMode } from "./permission-modes.js";
 
 export type ClaudeTransportFailureKind =
-  "authentication" | "cancellationUnproven" | "native" | "protocol" | "textConflict";
+  "authentication" | "cancellationUnproven" | "native" | "protocol";
 
 export type ClaudeTransportTurnResult =
   | { status: "succeeded" }
@@ -80,6 +80,8 @@ export type ClaudeTurnEvent =
   | { type: "compaction.started" }
   | { type: "compaction.completed"; outcome: "succeeded" | "failed" }
   | { type: "text.delta"; messageId: string; delta: string }
+  /** The complete message differs from the text streamed so far and replaces it. */
+  | { type: "text.replaced"; messageId: string; text: string }
   | { type: "reasoning.delta"; messageId: string; delta: string }
   | { type: "reasoning.completed"; messageId: string }
   | {

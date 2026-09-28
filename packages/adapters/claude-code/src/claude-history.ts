@@ -14,6 +14,7 @@ import {
 
 import { claudeTranscriptItemId } from "./item-identity.js";
 import { claudeSubagentCall } from "./native-message.js";
+import { visibleClaudeText } from "./native-text.js";
 import { isClaudeTaskTool } from "./task-tracker.js";
 
 interface ClaudeHistoryMessage {
@@ -286,8 +287,8 @@ export function mapClaudeSnapshot(values: unknown[], sessionId: string): HostThr
         }
         if (message.type !== "assistant") return [];
         const content = message.message.content;
-        const text = textParts(content).join("");
-        const reasoning = thinkingParts(content).join("");
+        const text = visibleClaudeText(textParts(content).join(""));
+        const reasoning = visibleClaudeText(thinkingParts(content).join(""));
         if (!Array.isArray(content)) {
           return text.length > 0
             ? [
@@ -582,18 +583,20 @@ export function mapClaudeSubagentSnapshot(
           `claude-subagent-item-v2-${nativeSubagentId}-${message.uuid}-${blockIndex}`,
         );
         if (block.type === "thinking" && typeof block.thinking === "string") {
-          if (block.thinking.length > 0) {
+          const text = visibleClaudeText(block.thinking);
+          if (text.length > 0) {
             items.push({
-              item: { type: "reasoning", itemId, text: block.thinking },
+              item: { type: "reasoning", itemId, text },
               outcome: itemOutcome(outcome),
             });
           }
           continue;
         }
         if (block.type === "text" && typeof block.text === "string") {
-          if (block.text.length > 0) {
+          const text = visibleClaudeText(block.text);
+          if (text.length > 0) {
             items.push({
-              item: { type: "agentMessage", itemId, text: block.text },
+              item: { type: "agentMessage", itemId, text },
               outcome: itemOutcome(outcome),
             });
           }

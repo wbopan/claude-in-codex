@@ -379,6 +379,8 @@ export type HostItem =
 
 export type HostItemUpdate =
   | { type: "text.append"; text: string }
+  /** Replaces a message's text when its source revises what it already streamed. */
+  | { type: "text.replace"; text: string }
   | { type: "output.append"; text: string }
   | { type: "output.replace"; output: HostToolOutput }
   | { type: "fileChanges.replace"; changes: HostFileChange[] }

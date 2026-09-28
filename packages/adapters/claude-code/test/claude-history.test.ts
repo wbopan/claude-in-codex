@@ -461,6 +461,26 @@ describe("Claude history mapping", () => {
     expect(snapshot.turns[0]?.input).toEqual([{ type: "text", text: "what did it say?" }]);
   });
 
+  it("hides the memory citation tags Claude Code keeps in its transcript", () => {
+    const snapshot = mapClaudeSnapshot(
+      [
+        message("user", "user-1", "what is the key?"),
+        message("assistant", "assistant-1", [
+          { type: "thinking", thinking: 'check <cc-memory filenames="a.md">notes</cc-memory>' },
+          {
+            type: "text",
+            text: 'Rotate it. <cc-memory filenames="a.md">Both feeds share it.</cc-memory> Done.',
+          },
+        ]),
+      ],
+      sessionId,
+    );
+    expect(snapshot.turns[0]?.items.map(({ item }) => item)).toMatchObject([
+      { type: "reasoning", text: "check notes" },
+      { type: "agentMessage", text: "Rotate it. Both feeds share it. Done." },
+    ]);
+  });
+
   it("shows Claude task tools as the Todo plan, as the live projection does", () => {
     const snapshot = mapClaudeSnapshot(
       [

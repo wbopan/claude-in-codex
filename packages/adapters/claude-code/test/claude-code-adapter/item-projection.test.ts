@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { hostTurnIdSchema } from "@claude-in-codex/shared-contracts";
 
 import { fixture, nextEvent, openSession, textTurn } from "./fixture.js";
@@ -50,6 +50,49 @@ describe("Claude Code HarnessAdapter", () => {
       outcome: { status: "succeeded" },
     });
     expect(transport.getContextUsage).not.toHaveBeenCalled();
+    await session.close();
+  });
+
+  it("completes a message with the text Claude Code reports when it differs from the stream", async () => {
+    const { adapter, transports } = fixture();
+    const session = await openSession(adapter);
+    const iterator = session.outputs[Symbol.asyncIterator]();
+
+    await session.execute(textTurn("replaced-text"));
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    await nextEvent(iterator);
+    const transport = transports[0];
+    if (!transport) throw new Error("Fake Claude transport was not created");
+
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      transport.delta("streamed preview", "assistant-replaced");
+      expect(await nextEvent(iterator)).toMatchObject({
+        type: "item.updated",
+        update: { type: "text.append", text: "streamed preview" },
+      });
+      transport.event({ type: "text.replaced", messageId: "assistant-replaced", text: "final" });
+      expect(await nextEvent(iterator)).toMatchObject({
+        type: "item.updated",
+        update: { type: "text.replace", text: "final" },
+      });
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining("streamed 16 chars, complete 5 chars, first difference at 0"),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+    transport.event({ type: "message.completed", messageId: "assistant-replaced" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "item.completed",
+      snapshot: { item: { type: "agentMessage", text: "final" }, outcome: { status: "succeeded" } },
+    });
+    transport.finish({ status: "succeeded" });
+    expect(await nextEvent(iterator)).toMatchObject({
+      type: "turn.completed",
+      outcome: { status: "succeeded" },
+    });
     await session.close();
   });
 

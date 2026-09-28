@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { ClaudeNativeTurnAccumulator, parseClaudePlanLimitEvent } from "../src/native-message.js";
@@ -861,12 +864,65 @@ describe("Claude native Turn interpretation", () => {
     expect(malformed.consume(result()).terminal).toEqual({ status: "failed", kind: "protocol" });
   });
 
-  it("fails rather than replaying conflicting native text", () => {
+  it("replaces streamed text with a complete message that disagrees with it", () => {
     const turn = new ClaudeNativeTurnAccumulator();
 
     turn.consume(partial("first"));
-    expect(turn.consume(assistant("different"))).toEqual({ events: [] });
-    expect(turn.consume(result()).terminal).toEqual({ status: "failed", kind: "textConflict" });
+    expect(turn.consume(assistant("different")).events).toEqual([
+      { type: "text.replaced", messageId: "assistant-1", text: "different" },
+      { type: "message.completed", messageId: "assistant-1", checkpointId: "assistant-1" },
+    ]);
+    expect(turn.consume(partial("late"))).toEqual({ events: [] });
+    expect(turn.consume(result()).terminal).toEqual({ status: "succeeded" });
+  });
+
+  it("replays a recorded memory citation without streaming its tags", () => {
+    // Recorded from Claude Code 2.1.282: the model streams `<cc-memory>` tags split across
+    // deltas, and Claude Code reports the complete message with them removed.
+    const recording = readFileSync(
+      path.join(import.meta.dirname, "fixtures/memory-citation-stream.jsonl"),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as unknown);
+    const turn = new ClaudeNativeTurnAccumulator();
+    const results = recording.map((message) => turn.consume(message));
+    const events = results.flatMap((result) => result.events);
+    const text = events.flatMap((event) => (event.type === "text.delta" ? [event.delta] : []));
+
+    expect(text.join("")).toBe(
+      "Keys rotate monthly. Both feeds share one key. Change them together.",
+    );
+    expect(text.some((delta) => /[<>]/u.test(delta))).toBe(false);
+    expect(events.some((event) => event.type === "text.replaced")).toBe(false);
+    expect(results.at(-1)?.terminal).toEqual({ status: "succeeded" });
+  });
+
+  it("holds back a possible memory tag until the next delta settles it", () => {
+    const turn = new ClaudeNativeTurnAccumulator();
+    const deltas = ["a <", "b and <C", "C_MEMORY>c</CC_MEMORY", "> d <cc-memo", "ir"].map(
+      (text) => turn.consume(partial(text)).events,
+    );
+
+    expect(deltas).toEqual([
+      [{ type: "text.delta", messageId: "assistant-1", delta: "a " }],
+      [{ type: "text.delta", messageId: "assistant-1", delta: "<b and " }],
+      [{ type: "text.delta", messageId: "assistant-1", delta: "c" }],
+      [{ type: "text.delta", messageId: "assistant-1", delta: " d " }],
+      [{ type: "text.delta", messageId: "assistant-1", delta: "<cc-memoir" }],
+    ]);
+    expect(turn.consume(assistant("a <b and c d <cc-memoir")).events).toEqual([
+      { type: "message.completed", messageId: "assistant-1", checkpointId: "assistant-1" },
+    ]);
+  });
+
+  it("removes memory tags from streamed thinking", () => {
+    const turn = new ClaudeNativeTurnAccumulator();
+
+    expect(
+      turn.consume(thinkingPartial('recall <cc-memory filenames="a.md">x</cc-memory>')).events,
+    ).toEqual([{ type: "reasoning.delta", messageId: "assistant-1", delta: "recall x" }]);
   });
 
   it("uses only streamed thinking when the complete wrapper contains more thinking", () => {

@@ -73,6 +73,7 @@ import {
 import { ClaudeBackgroundOccupancy } from "./background-occupancy.js";
 import { syncClaudeMemoryToCodex } from "./claude-memory-sync.js";
 import { traceClaude, traceRef } from "./debug-trace.js";
+import { describeTextDivergence } from "./native-text.js";
 import {
   ClaudeCodeExecutableError,
   readClaudeCodeVersion,
@@ -370,12 +371,10 @@ function transportFailure(kind: ClaudeTransportFailureKind): HarnessError {
   return {
     code: "nativeFailure",
     message:
-      kind === "textConflict"
-        ? "Claude Code returned inconsistent streamed text"
-        : kind === "cancellationUnproven"
-          ? "Claude Code cancellation could not be proven"
-          : "Claude Code Turn failed",
-    retryable: kind !== "textConflict",
+      kind === "cancellationUnproven"
+        ? "Claude Code cancellation could not be proven"
+        : "Claude Code Turn failed",
+    retryable: true,
   };
 }
 
@@ -1580,6 +1579,9 @@ class ClaudeHarnessSession implements HarnessSession {
         if (event.delta.length > 0) this.#observeRootOutput(active);
         this.#appendText(active, event.messageId, event.delta);
         return;
+      case "text.replaced":
+        this.#replaceText(active, event.messageId, event.text);
+        return;
       case "reasoning.delta":
         if (event.delta.length > 0) this.#observeRootOutput(active);
         this.#activateAssistantMessage(active, event.messageId);
@@ -1928,6 +1930,26 @@ class ClaudeHarnessSession implements HarnessSession {
       turnId: active.command.turnId,
       itemId: active.item.itemId,
       update: { type: "text.append", text: delta },
+    });
+  }
+
+  /**
+   * Claude Code's complete message differs from what it streamed. The complete text wins: the
+   * Item completes with it, and Codex App replaces the streamed preview on completion. The Host
+   * log records the shape of the difference so a new upstream rewrite can be recognised.
+   */
+  #replaceText(active: ActiveTurn, messageId: string, text: string): void {
+    const item = active.item;
+    if (this.#active !== active || !item || active.assistantMessageId !== messageId) return;
+    process.stderr.write(
+      `Claude Code completed a message with text other than it streamed; showing the complete text (${describeTextDivergence(item.text, text)})\n`,
+    );
+    active.item = { ...item, text };
+    this.#event({
+      type: "item.updated",
+      turnId: active.command.turnId,
+      itemId: item.itemId,
+      update: { type: "text.replace", text },
     });
   }
 

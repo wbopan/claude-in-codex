@@ -752,6 +752,9 @@ function applyUpdate(item: HostItem, update: HostItemUpdate): HostItem {
   ) {
     return { ...item, text: item.text + update.text };
   }
+  if (item.type === "agentMessage" && update.type === "text.replace") {
+    return { ...item, text: update.text };
+  }
   if (item.type === "commandExecution" && update.type === "output.append") {
     return { ...item, output: (item.output ?? "") + update.text };
   }
@@ -1088,6 +1091,22 @@ export class CodexTurnProjector {
           messages.push(this.#startWireItem(projected, { ...next, text: "" }, emittedAtMs));
         }
         messages.push(...this.#reasoningDelta(projected, event.update.text, emittedAtMs));
+      }
+    } else if (event.update.type === "text.replace") {
+      // Codex has no notification that rewrites streamed text. A started message takes its new
+      // text from `item/completed`, which replaces the streamed item; an unstarted one streams it.
+      if (!projected.wireStarted && next.type === "agentMessage" && next.text.length > 0) {
+        messages.push(this.#startWireItem(projected, { ...next, text: "" }, emittedAtMs));
+        messages.push({
+          method: "item/agentMessage/delta",
+          emittedAtMs,
+          params: {
+            threadId: this.#threadId,
+            turnId: this.#turnId,
+            itemId: event.itemId,
+            delta: next.text,
+          },
+        });
       }
     } else if (event.update.type === "output.append") {
       messages.push({

@@ -155,6 +155,63 @@ describe("Codex UI projector", () => {
     });
   });
 
+  it("completes an Agent Message with replaced text, streaming it when nothing was shown", () => {
+    const value = projector();
+    const shownId = itemId("agent-shown");
+    const unshownId = itemId("agent-unshown");
+    value.project({ type: "turn.started", turnId });
+
+    value.project({
+      type: "item.started",
+      turnId,
+      item: { type: "agentMessage", itemId: shownId, text: "" },
+    });
+    value.project({
+      type: "item.updated",
+      turnId,
+      itemId: shownId,
+      update: { type: "text.append", text: "preview <tag>" },
+    });
+    expect(
+      value.project({
+        type: "item.updated",
+        turnId,
+        itemId: shownId,
+        update: { type: "text.replace", text: "final" },
+      }).messages,
+    ).toEqual([]);
+    // Desktop replaces the streamed Item with the one `item/completed` carries.
+    expect(
+      value.project({
+        type: "item.completed",
+        turnId,
+        snapshot: {
+          item: { type: "agentMessage", itemId: shownId, text: "final" },
+          outcome: { status: "succeeded" },
+        },
+      }).messages,
+    ).toMatchObject([
+      { method: "item/completed", params: { item: { type: "agentMessage", text: "final" } } },
+    ]);
+
+    value.project({
+      type: "item.started",
+      turnId,
+      item: { type: "agentMessage", itemId: unshownId, text: "" },
+    });
+    expect(
+      value.project({
+        type: "item.updated",
+        turnId,
+        itemId: unshownId,
+        update: { type: "text.replace", text: "whole" },
+      }).messages,
+    ).toMatchObject([
+      { method: "item/started", params: { item: { type: "agentMessage", text: "" } } },
+      { method: "item/agentMessage/delta", params: { delta: "whole" } },
+    ]);
+  });
+
   it("projects Agent Message and Command Execution lifecycles", () => {
     const value = projector();
     const agentId = itemId("agent-1");

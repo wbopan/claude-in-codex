@@ -1,6 +1,7 @@
 import { jsonValueSchema } from "@claude-in-codex/shared-contracts";
 
 import { parseClaudeNativeFileChange } from "./file-change.js";
+import { ClaudeVisibleTextStream, visibleClaudeText } from "./native-text.js";
 import type {
   ClaudePlanLimitEvent,
   ClaudeTransportFailureKind,
@@ -22,7 +23,9 @@ type ClaudeNativeEvent = Exclude<
 interface AssistantMessageState {
   completed: boolean;
   reasoning: string;
+  reasoningStream: ClaudeVisibleTextStream;
   text: string;
+  textStream: ClaudeVisibleTextStream;
   usagePublished: boolean;
 }
 
@@ -433,7 +436,6 @@ export class ClaudeNativeTurnAccumulator {
   #messageOrdinal = 0;
   #messages = new Map<string, AssistantMessageState>();
   #protocolConflict = false;
-  #textConflict = false;
   #tools = new Map<string, ActiveNativeTool>();
   /**
    * Every Agent call this accumulator knows, including calls delegated before
@@ -534,8 +536,6 @@ export class ClaudeNativeTurnAccumulator {
     let terminal: ClaudeTransportTurnResult;
     if (this.#protocolConflict) {
       terminal = failure("protocol");
-    } else if (this.#textConflict) {
-      terminal = failure("textConflict");
     } else if (includesAuthenticationFailure(message, this.#assistantErrors)) {
       terminal = failure("authentication");
     } else if (this.#cancelRequested && ABORTED_TERMINALS.has(terminalReason)) {
@@ -707,20 +707,20 @@ export class ClaudeNativeTurnAccumulator {
       this.#activeRootStreamMessageId ?? nativeUuid(message) ?? this.#nextMessageId();
     if (!this.#activeRootStreamMessageId) this.#activeRootStreamMessageId = messageId;
     const state = this.#messageState(messageId);
-    if (state.completed) {
-      if (event.delta.type === "text_delta") this.#textConflict = true;
-      return;
-    }
+    // The complete message already settled this text; a late delta cannot change it.
+    if (state.completed) return;
     if (event.delta.type === "text_delta" && typeof event.delta.text === "string") {
-      if (event.delta.text.length === 0) return;
-      state.text += event.delta.text;
-      events.push({ type: "text.delta", messageId, delta: event.delta.text });
+      const delta = state.textStream.push(event.delta.text);
+      if (delta.length === 0) return;
+      state.text += delta;
+      events.push({ type: "text.delta", messageId, delta });
       return;
     }
     if (event.delta.type === "thinking_delta" && typeof event.delta.thinking === "string") {
-      if (event.delta.thinking.length === 0) return;
-      state.reasoning += event.delta.thinking;
-      events.push({ type: "reasoning.delta", messageId, delta: event.delta.thinking });
+      const delta = state.reasoningStream.push(event.delta.thinking);
+      if (delta.length === 0) return;
+      state.reasoning += delta;
+      events.push({ type: "reasoning.delta", messageId, delta });
     }
   }
 
@@ -749,22 +749,25 @@ export class ClaudeNativeTurnAccumulator {
       events.push({ type: "reasoning.completed", messageId });
     }
 
-    const completeText = assistantText(message);
-    if (completeText !== null && completeText.length > 0) {
+    const nativeText = assistantText(message);
+    if (nativeText !== null && nativeText.length > 0) {
+      // The complete message is authoritative; the stream was only a preview of it.
+      const completeText = visibleClaudeText(nativeText);
       if (completeText.startsWith(state.text)) {
         const suffix = completeText.slice(state.text.length);
         if (suffix.length > 0) {
           state.text += suffix;
           events.push({ type: "text.delta", messageId, delta: suffix });
         }
-      } else if (completeText !== state.text) {
-        this.#textConflict = true;
+      } else {
+        state.text = completeText;
+        events.push({ type: "text.replaced", messageId, text: completeText });
       }
     }
 
     this.#consumeToolUseBlocks(message, events, false);
 
-    if (!this.#protocolConflict && !this.#textConflict) {
+    if (!this.#protocolConflict) {
       const usage = assistantRequestUsage(message, this.#provider);
       state.usagePublished = usage !== undefined;
       events.push({
@@ -905,7 +908,14 @@ export class ClaudeNativeTurnAccumulator {
   #messageState(messageId: string): AssistantMessageState {
     const existing = this.#messages.get(messageId);
     if (existing) return existing;
-    const created = { completed: false, reasoning: "", text: "", usagePublished: false };
+    const created = {
+      completed: false,
+      reasoning: "",
+      reasoningStream: new ClaudeVisibleTextStream(),
+      text: "",
+      textStream: new ClaudeVisibleTextStream(),
+      usagePublished: false,
+    };
     this.#messages.set(messageId, created);
     return created;
   }
