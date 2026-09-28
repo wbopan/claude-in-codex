@@ -69,3 +69,5 @@ Test conventions:
 - Large test files are split by feature into a folder of the same name, with shared fixtures in a non-test module inside it.
 
 [docs/architecture.md](architecture.md) explains how attaching works. The hot attach code is in `packages/host-runtime/src/hot-attach/`, the native menu in `apps/macos/main.swift`, and the packaging and install entry points in `tools/app/`. Data and log locations are resolved in one place, `packages/shared-contracts/src/app-paths.ts`, and compatibility with pre-rename identifiers sits in each reader. Protocol, adapters, model projection, permissions, history, tools and the remote implementation reuse the existing Host.
+
+Startup connections use the packaged Host entry `--claude-in-codex-desktop-cli`. `desktop-cli` and the private `startup-session.json` control descriptor live in the normal data folder. The descriptor is removed when its owning backend exits. Use a distinct data folder and Codex profile for tests. Do not send `SIGUSR1` to a Desktop build whose inspector capability has not been verified.

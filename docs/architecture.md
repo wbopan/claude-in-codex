@@ -15,9 +15,15 @@ unsubscribed contexts for a 30-minute grace period. Tests check `notSubscribed`/
 after Host exit, rather than requiring the native loaded-thread cache to be empty. These cached
 contexts remain owned by the original app-server. See the [official unsubscribe contract](https://developers.openai.com/codex/app-server).
 
+## Startup connection
+
+On builds that disable Node inspection, the menu bar offers a normal Desktop restart with a per-launch `CODEX_CLI_PATH` override. `startup-connection.ts` generates a private shell entrypoint that runs the packaged Host. It handles only Desktop stdio `app-server` invocations and delegates all other commands to the current signed app's bundled CLI, including its newer `codex-cli/CodexCLI.app` location. Neither the official bundle nor its fuses are modified.
+
+The Desktop owns the stdio Host and its native backend. The menu bar reads status and changes feature settings over a private, token-authenticated Unix control socket. It can exit without stopping the Desktop's sessions. Disconnecting requires restarting Desktop without the override. A replacement backend waits briefly for the old Host to release its Mapping Store, and old-process cleanup cannot remove the new owner's control descriptor. This path does not inject the hot-attach footer or intercept the Desktop usage response.
+
 ## Attaching
 
-The Codex App's main process is an Electron app. The Host sends it `SIGUSR1`, which opens the Node inspector on loopback, and evaluates a small agent in the main process. The agent finds the Desktop's connection class among the loaded modules by the shape of its methods (`routeResponse`, `listModels`, `getPendingRequestCount`), not by minified class names or export aliases, which change with every build. It then installs restorable wrappers on that class's prototype. The code is in `packages/host-runtime/src/hot-attach/`.
+The Codex App's main process is an Electron app. Before sending `SIGUSR1`, the Host reads the Electron framework's fuse wire and requires `EnableNodeCliInspectArguments` to be enabled. Disabled or unrecognized configurations are rejected without signaling Desktop: when the fuse is disabled, `SIGUSR1` can terminate the app. On supported builds the signal opens the Node inspector on loopback, and the Host evaluates a small agent in the main process. The agent finds the Desktop's connection class among the loaded modules by the shape of its methods (`routeResponse`, `listModels`, `getPendingRequestCount`), not by minified class names or export aliases, which change with every build. It then installs restorable wrappers on that class's prototype. The code is in `packages/host-runtime/src/hot-attach/`.
 
 The agent never scans heap objects. `Runtime.queryObjects` crashed the Desktop process in testing, so the attachment relies only on exported modules and prototypes.
 

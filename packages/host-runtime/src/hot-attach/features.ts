@@ -16,7 +16,13 @@ import {
   writeIdleReleaseMinutes,
 } from "@claude-in-codex/shared-contracts/features-file";
 import type { DesktopToolServerStatus } from "../official-desktop-tools.js";
-import type { HotAttachSession } from "./session.js";
+import type { AppServerHost } from "../app-server-host.js";
+
+export interface FeatureSession {
+  attached: boolean;
+  hello: { codexHome: string };
+  host: Pick<AppServerHost, "desktopToolServers" | "applyIdleRelease">;
+}
 
 export interface FeatureReport extends FeatureState {
   /**
@@ -124,7 +130,7 @@ function computerUseProblem(servers: Servers | null, plugin: boolean | null): st
  */
 export class FeatureHealth {
   #reports: FeatureReport[];
-  #servers: { at: number; session: HotAttachSession; value: Servers | null } | undefined;
+  #servers: { at: number; session: FeatureSession; value: Servers | null } | undefined;
   #serversRead: Promise<void> | undefined;
   #logged = new Set<string>();
 
@@ -143,7 +149,7 @@ export class FeatureHealth {
   }
 
   /** `deep` lists the official servers now, ignoring the cache. */
-  async refresh(session: HotAttachSession | undefined, deep = false): Promise<void> {
+  async refresh(session: FeatureSession | undefined, deep = false): Promise<void> {
     const environment = this.options.environment;
     const settings = await readFeatureSettings(environment);
     const enabled = (id: FeatureId) => settings[id];
@@ -183,7 +189,7 @@ export class FeatureHealth {
   }
 
   /** Writes the switch and applies what can change without a new Claude Session. */
-  async set(id: FeatureId, enabled: boolean, session: HotAttachSession | undefined): Promise<void> {
+  async set(id: FeatureId, enabled: boolean, session: FeatureSession | undefined): Promise<void> {
     const settings = await writeFeatureSetting(id, enabled, this.options.environment);
     if (id === "idleRelease") session?.host.applyIdleRelease(idleReleaseSettings(settings));
     // A server switched back on gets a fresh listing instead of a stale problem.
@@ -192,13 +198,13 @@ export class FeatureHealth {
   }
 
   /** Writes the idle release choice (0 is never) and applies it to the live Host. */
-  async setIdleRelease(minutes: number, session: HotAttachSession | undefined): Promise<void> {
+  async setIdleRelease(minutes: number, session: FeatureSession | undefined): Promise<void> {
     const settings = await writeIdleReleaseMinutes(minutes, this.options.environment);
     session?.host.applyIdleRelease(idleReleaseSettings(settings));
     await this.refresh(session);
   }
 
-  async #readServers(session: HotAttachSession): Promise<void> {
+  async #readServers(session: FeatureSession): Promise<void> {
     let value: Servers | null;
     let timer: NodeJS.Timeout | undefined;
     try {

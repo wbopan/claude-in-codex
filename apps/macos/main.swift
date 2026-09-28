@@ -707,6 +707,9 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             let line = readBuffer[..<newline]; readBuffer.removeSubrange(...newline)
             guard let message = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if message["type"] as? String == "status" { state = message; updateMenu() }
+            if message["type"] as? String == "desktop-launch" { restartDesktop(message) }
+            if message["type"] as? String == "reply", message["ok"] as? Bool == false,
+               let error = message["error"] as? String { showConnectionError(error) }
         }
     }
     private func send(_ command: String, _ fields: [String: Any] = [:]) {
@@ -796,7 +799,7 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         else if phase == "draining" {
             item(tr("Cancel Disconnect"), #selector(cancelDisconnect))
             item(tr("Stop Sessions and Disconnect…"), #selector(stopAndDisconnect))
-        } else { item(tr("Attach to Codex App"), #selector(connect), enabled: phase == "detached" || phase == "error") }
+        } else { item(restartRequired ? tr("Restart and Connect") : tr("Attach to Codex App"), #selector(connect), enabled: phase == "detached" || phase == "error") }
         item(tr("Settings…"), #selector(showSettings), key: ",")
         menu.addItem(.separator())
         item(quitting ? tr("Quitting…") : tr("Quit %@", appName), #selector(quitHost), key: "q", enabled: !quitting)
@@ -806,8 +809,74 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
 
     // MARK: Actions
 
-    @objc private func connect() { if child?.isRunning != true { startHost(autoAttach: true) } else { send("attach") } }
-    @objc private func disconnect() { send("detach") }
+    private var startupConnection: Bool { state["connectionMode"] as? String == "startup" }
+    private var restartRequired: Bool { state["restartRequired"] as? Bool == true }
+    private var restartingDesktop = false
+    @objc private func connect() {
+        if restartRequired { confirmDesktopRestart(connect: true) }
+        else if child?.isRunning != true { startHost(autoAttach: true) }
+        else { send("attach") }
+    }
+    @objc private func disconnect() {
+        if startupConnection { confirmDesktopRestart(connect: false) } else { send("detach") }
+    }
+    private func confirmDesktopRestart(connect: Bool) {
+        guard !restartingDesktop else { return }
+        let alert = NSAlert()
+        alert.messageText = connect ? tr("Restart Codex and connect Claude?") : tr("Restart Codex and disconnect Claude?")
+        alert.informativeText = tr("This Codex version requires connecting at startup. Restarting interrupts running tasks; saved chats are kept. Wait for your tasks to finish before continuing.")
+        alert.addButton(withTitle: connect ? tr("Restart and Connect") : tr("Restart and Disconnect"))
+        alert.addButton(withTitle: tr("Cancel"))
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { send(connect ? "prepare-startup" : "prepare-standard") }
+    }
+    private func showConnectionError(_ message: String) {
+        restartingDesktop = false
+        let alert = NSAlert(); alert.messageText = tr("Couldn’t connect to Codex")
+        alert.informativeText = message; alert.runModal()
+    }
+    /// Ask Desktop to quit normally, then launch the signed bundle with a per-launch CLI override.
+    private func restartDesktop(_ plan: [String: Any]) {
+        guard !restartingDesktop, let targetPath = plan["appPath"] as? String, targetPath == appPath,
+              let cliPath = plan["cliPath"] as? String, let folder = plan["dataDirectory"] as? String,
+              let connect = plan["connect"] as? Bool else { return }
+        let target = URL(fileURLWithPath: targetPath).standardizedFileURL
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex")
+            .filter { $0.bundleURL?.standardizedFileURL == target && !$0.isTerminated }
+        guard running.count <= 1 else {
+            showConnectionError(tr("Multiple Codex App instances are running. Close the extra instances before restarting.")); return
+        }
+        restartingDesktop = true
+        let launch = { [weak self] in
+            var values = environment
+            for key in ["CODEX_CLI_PATH", "NODE_OPTIONS", "ELECTRON_RUN_AS_NODE"] { values.removeValue(forKey: key) }
+            if connect {
+                values["CODEX_CLI_PATH"] = cliPath
+                values["CLAUDE_IN_CODEX_DESKTOP_APP"] = targetPath
+                values["CLAUDE_IN_CODEX_DATA_DIR"] = folder
+            }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            configuration.environment = values
+            NSWorkspace.shared.openApplication(at: target, configuration: configuration) { _, error in
+                DispatchQueue.main.async {
+                    self?.restartingDesktop = false
+                    if let error { self?.showConnectionError(error.localizedDescription) }
+                    self?.send("status")
+                }
+            }
+        }
+        guard let desktop = running.first else { launch(); return }
+        guard desktop.terminate() else { showConnectionError(tr("Codex did not accept the restart request. Finish your tasks and try again.")); return }
+        let deadline = Date().addingTimeInterval(60)
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+            if desktop.isTerminated { timer.invalidate(); launch() }
+            else if Date() >= deadline {
+                timer.invalidate()
+                self?.showConnectionError(tr("Codex is still running. The restart was cancelled."))
+            }
+        }
+    }
     @objc private func cancelDisconnect() { quitting = false; pendingInstall = nil; send("cancel-drain") }
     @objc private func stopAndDisconnect() {
         let alert = NSAlert(); alert.messageText = tr("Stop Sessions and disconnect?")
@@ -1060,12 +1129,12 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private func updateDashboard() {
         guard dashboard != nil, let taskList, let usageList else { return }
         if let actionItem {
-            actionItem.title = ["attached": tr("Disconnect"), "draining": tr("Cancel Disconnect"), "attaching": tr("Attaching"),
+            actionItem.title = restartRequired ? tr("Restart and Connect") : ["attached": tr("Disconnect"), "draining": tr("Cancel Disconnect"), "attaching": tr("Attaching"),
                                 "detaching": tr("Disconnecting")][phase] ?? tr("Attach")
             actionItem.isEnabled = phase != "attaching" && phase != "detaching"
             if #available(macOS 26.0, *) { actionItem.style = connected || !actionItem.isEnabled ? .plain : .prominent }
         }
-        let error = state["error"] as? String ?? ""
+        let error = restartRequired ? tr("Restart Codex once to connect Claude with this version.") : (state["error"] as? String ?? "")
         errorLabel?.stringValue = error; errorLabel?.isHidden = error.isEmpty
 
         if let card = appCard, card.icon.image == nil {

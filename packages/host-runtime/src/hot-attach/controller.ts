@@ -8,6 +8,7 @@ import { DATA_DIRECTORY_ENV, type FeatureId } from "@claude-in-codex/shared-cont
 import { dataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 import { installDesktopAgent, refreshDesktopQueries } from "./desktop-agent.js";
 import { FeatureHealth } from "./features.js";
+import { assertInspectorSupport, InspectorDisabledError } from "./inspector-support.js";
 import { HotAttachSession, type DesktopHello } from "./session.js";
 import { accountUsageMeters, type UsageMeter } from "./usage-meters.js";
 
@@ -90,6 +91,7 @@ export class HotAttachController {
   #error: string | null = null;
   #target: DesktopProcess | undefined;
   #drainGeneration = 0;
+  #restartRequired = false;
   constructor(
     readonly options: {
       appPath: string;
@@ -119,6 +121,7 @@ export class HotAttachController {
     const state = this.#session?.state();
     return {
       phase: this.#phase,
+      restartRequired: this.#restartRequired,
       error: this.#error,
       appPath: this.options.appPath,
       appRunning: this.#session ? true : this.#appRunning,
@@ -238,6 +241,7 @@ export class HotAttachController {
       return;
     }
     this.#phase = "attaching";
+    this.#restartRequired = false;
     this.#error = null;
     this.#changed();
     let cdp: CdpClient | undefined,
@@ -252,8 +256,7 @@ export class HotAttachController {
             : "Open the Codex App first",
         );
       this.#target = target;
-      // Any genuinely signed Desktop is accepted; the injected agent verifies the connection
-      // layout at runtime and refuses to patch anything it does not recognize.
+      // Verify provenance before reading capabilities or injecting the connection agent.
       try {
         execFileSync(
           "/usr/bin/codesign",
@@ -273,6 +276,9 @@ export class HotAttachController {
       const owners = inspectorOwners();
       if (owners.some((pid) => pid !== target.pid))
         throw new Error("Inspector port 9229 is in use by another process");
+      // Disabled Node inspection makes SIGUSR1 fatal. Check before signaling, then
+      // recheck process identity after the asynchronous capability read.
+      if (!owners.length) await assertInspectorSupport(this.options.appPath);
       if (
         !desktopProcesses(this.options.appPath).some(
           (p) => p.pid === target.pid && p.started === target.started,
@@ -416,6 +422,7 @@ export class HotAttachController {
       await this.#cleanup();
       this.#phase = "error";
       this.#error = errorText(error);
+      this.#restartRequired = error instanceof InspectorDisabledError;
       throw error;
     } finally {
       if (openedInspector)

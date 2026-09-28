@@ -15,9 +15,9 @@ The App's interface follows the macOS language: English by default, and Simplifi
 3. Choose Disconnect or Quit Claude in Codex and the App waits for running Claude Code Sessions and background tasks to finish. While it waits you can cancel the disconnect, or explicitly stop the Sessions.
 4. The Codex App and its GPT tasks keep running. Reopen the App or choose Attach to Codex App to attach again.
 
-Before attaching, the App checks only that the Codex App carries OpenAI's signature, then checks the internal connection layout at runtime. If the layout does not match, it stops and shows the reason instead of patching anything. The Host uses the Claude Code that is installed and signed in on the Mac, and the App bundles its own Node.js and plugins.
+Before attaching, the App verifies OpenAI's signature and, before opening the connection interface, checks that the Codex App enables it. It then checks the internal connection layout at runtime. If either check fails, it stops and shows the reason. The Host uses the Claude Code that is installed and signed in on the Mac, and the App bundles its own Node.js and plugins.
 
-If the running Codex App was started by the old launcher, quit it and open the Codex App from Finder. The Host recognizes the old `CODEX_CLI_PATH` and refuses to attach on top of it.
+If the running Codex App was started by a legacy launcher, quit it and open the Codex App from Finder. The current startup connection is recognized through its private control socket. The Host recognizes the old `CODEX_CLI_PATH` and refuses to attach on top of it.
 
 This project was previously called Codex Host. If an old Codex Host.app is still running, Claude in Codex asks you to quit it first and continues starting once it has quit. The two never attach to the same Codex App at once.
 
@@ -26,6 +26,10 @@ This project was previously called Codex Host. If an old Codex Host.app is still
 The App checks for a new version every six hours. You can check manually or turn automatic checks off under Settings › Updates. Before installing an update, the App waits for running Claude Code Sessions to finish, exactly as it does when quitting, then relaunches into the new version. Updates carry an EdDSA signature, and the App accepts only updates whose signature matches.
 
 When the Codex App updates and attaching starts failing, the new Codex App has usually changed its internals. The App stops attaching and shows why, and a fixed version arrives through the automatic update. Each release lists the Codex App versions it was verified with.
+
+Codex App 26.924.22138 disables the Node inspector interface required by hot attachment. Choose **Restart and Connect** to use a startup connection instead. Wait for running tasks to finish first: restarting interrupts them, while saved chats remain. The official app bundle and signature stay unchanged.
+
+With a startup connection, the Codex App owns the adapter process. Quitting or reopening the menu bar App does not interrupt Claude Sessions. **Disconnect** offers **Restart and Disconnect**, which relaunches Codex without the startup override. Opening Codex normally from Finder also starts it without the override. Older Claude in Codex builds can terminate this Codex version because they send the activation signal without checking its capability.
 
 ## Menu and main window
 

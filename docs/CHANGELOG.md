@@ -2,6 +2,15 @@
 
 Each version's notes appear as written in the App's update prompt and on its GitHub Release. Before releasing, add a `## <version>` section here.
 
+## 0.2.3
+
+- Fix a crash when connecting to Codex App versions that disable live attachment. The App now checks support before sending the activation signal.
+- Add **Restart and Connect** for newer Codex versions. Claude connects at startup without modifying the official App. Wait for running tasks to finish before restarting.
+- Startup connections keep running when the menu bar App closes. **Restart and Disconnect** returns Codex to a normal launch.
+- Improve Claude thread search, history, queued and steering messages, attachment handling, and tool activity display. Claude Code also uses the macOS system proxy.
+- Add an English interface with Simplified Chinese localization and a notarized DMG installer.
+- Verified startup connections with Codex App 26.924.22138, including a real Claude response.
+
 ## 0.2.2
 
 - Releases now live on this repository, which is public. Copies of 0.2.0 and 0.2.1 read their updates from the former `claude-in-codex-releases` repository, and this version moves them over. Later updates come from here.

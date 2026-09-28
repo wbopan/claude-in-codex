@@ -6,6 +6,11 @@ import {
 } from "@claude-in-codex/shared-contracts";
 import { HotAttachController, defaultMenuBarEnvironment } from "./controller.js";
 import { migrateLegacyDataDirectory } from "./legacy-data.js";
+import {
+  prepareStartupConnection,
+  startupRequest,
+  type StartupStatus,
+} from "../startup-connection.js";
 
 /** JSONL control pipe owned by the native MenuBar app. Never publishes an HTTP control port. */
 export async function runMenuBarHost(
@@ -14,8 +19,9 @@ export async function runMenuBarHost(
 ): Promise<number> {
   let previous = "";
   let outputAvailable = true;
+  let startup: StartupStatus | null = null;
   const publish = () => {
-    const value = JSON.stringify({ type: "status", ...controller.status() });
+    const value = JSON.stringify({ type: "status", ...(startup ?? controller.status()) });
     if (outputAvailable && value !== previous) {
       previous = value;
       process.stdout.write(`${value}\n`);
@@ -40,6 +46,11 @@ export async function runMenuBarHost(
     hostRuntimeUrl,
     changed: publish,
   });
+  const refresh = async () => {
+    startup = await startupRequest(environment, "status").catch(() => null);
+    if (!startup) await controller.refresh();
+    publish();
+  };
   let quitting = false;
   let ownerGone = false;
   let finished = false;
@@ -69,9 +80,29 @@ export async function runMenuBarHost(
       try {
         switch (request.command) {
           case "attach":
+            await refresh();
+            if (startup) break;
             await controller.attach();
             break;
+          case "prepare-startup": {
+            await prepare();
+            await controller.detach();
+            const plan = await prepareStartupConnection(environment, hostRuntimeUrl);
+            process.stdout.write(
+              `${JSON.stringify({ type: "desktop-launch", ...plan, connect: true })}\n`,
+            );
+            break;
+          }
+          case "prepare-standard": {
+            const plan = await prepareStartupConnection(environment, hostRuntimeUrl);
+            process.stdout.write(
+              `${JSON.stringify({ type: "desktop-launch", ...plan, connect: false })}\n`,
+            );
+            break;
+          }
           case "detach":
+            if (startup)
+              throw new Error("Restart the Codex App to disconnect a startup connection");
             await controller.detach();
             break;
           case "stop-and-detach":
@@ -82,19 +113,28 @@ export async function runMenuBarHost(
             quitting = false;
             break;
           case "status":
-            await controller.refresh();
+            await refresh();
             break;
           case "set-feature": {
             const feature = featureIdSchema.safeParse(request.feature);
             if (!feature.success || typeof request.enabled !== "boolean")
               throw new Error("Invalid feature switch");
-            await controller.setFeature(feature.data, request.enabled);
+            if (startup)
+              startup = await startupRequest(environment, "set-feature", {
+                feature: feature.data,
+                enabled: request.enabled,
+              });
+            else await controller.setFeature(feature.data, request.enabled);
             break;
           }
           case "set-idle-release": {
             const minutes = idleReleaseMinutesSchema.safeParse(request.minutes);
             if (!minutes.success) throw new Error("Invalid idle release minutes");
-            await controller.setIdleRelease(minutes.data);
+            if (startup)
+              startup = await startupRequest(environment, "set-idle-release", {
+                minutes: minutes.data,
+              });
+            else await controller.setIdleRelease(minutes.data);
             break;
           }
           case "quit":
@@ -135,12 +175,24 @@ export async function runMenuBarHost(
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
   publish();
-  void controller.refresh().catch(() => {});
-  if (environment.CLAUDE_IN_CODEX_AUTO_ATTACH !== "0") void controller.attach().catch(() => {});
+  await refresh();
+  if (!startup && environment.CLAUDE_IN_CODEX_AUTO_ATTACH !== "0")
+    void controller.attach().catch(() => {});
+  let refreshing = false;
+  const refreshTimer = setInterval(() => {
+    if (refreshing || quitting) return;
+    refreshing = true;
+    void refresh()
+      .catch(() => {})
+      .finally(() => {
+        refreshing = false;
+      });
+  }, 2000);
   try {
     await done.promise;
     return 0;
   } finally {
+    clearInterval(refreshTimer);
     process.removeListener("SIGTERM", stop);
     process.removeListener("SIGINT", stop);
     process.stdout.removeListener("error", ownerLost);

@@ -129,3 +129,15 @@
 
 /* About */
 "Built %@" = "构建于 %@";
+
+"Restart Codex and connect Claude?" = "重启 Codex 并连接 Claude？";
+"Restart Codex and disconnect Claude?" = "重启 Codex 并断开 Claude？";
+"This Codex version requires connecting at startup. Restarting interrupts running tasks; saved chats are kept. Wait for your tasks to finish before continuing." = "此版本 Codex 需要在启动时连接。重启会中断正在运行的任务，已保存的对话会保留。请等任务完成后再继续。";
+"Restart and Connect" = "重启并连接";
+"Restart and Disconnect" = "重启并断开";
+"Cancel" = "取消";
+"Couldn’t connect to Codex" = "无法连接 Codex";
+"Multiple Codex App instances are running. Close the extra instances before restarting." = "当前有多个 Codex 实例。请先关闭多余的实例，再重启。";
+"Codex did not accept the restart request. Finish your tasks and try again." = "Codex 未接受重启请求。请完成任务后重试。";
+"Codex is still running. The restart was cancelled." = "Codex 仍在运行，已取消重启。";
+"Restart Codex once to connect Claude with this version." = "此版本需要重启一次 Codex 来连接 Claude。";

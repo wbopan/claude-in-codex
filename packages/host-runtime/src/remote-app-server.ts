@@ -98,6 +98,30 @@ function appServerSubcommandIndex(arguments_: readonly string[]): number | null 
   return null;
 }
 
+/** Only the local Desktop's stdio service, never help, schemas or network listeners. */
+export function isDesktopStdioInvocation(arguments_: readonly string[]): boolean {
+  const index = appServerSubcommandIndex(arguments_);
+  if (index === null) return false;
+  for (let i = index + 1; i < arguments_.length; i++) {
+    const argument = arguments_[i];
+    if (!argument) return false;
+    if (["-c", "--config", "--enable", "--disable", "--code-mode-host"].includes(argument)) {
+      if (!arguments_[++i]) return false;
+    } else if (argument === "--listen") {
+      if (arguments_[++i] !== "stdio://") return false;
+    } else if (argument.startsWith("--listen=")) {
+      if (argument !== "--listen=stdio://") return false;
+    } else if (
+      !APP_SERVER_FLAG_OPTIONS.has(argument) &&
+      !["--config=", "--enable=", "--disable=", "--code-mode-host="].some((prefix) =>
+        argument.startsWith(prefix),
+      )
+    )
+      return false;
+  }
+  return true;
+}
+
 export function remoteUnixListenerUrl(arguments_: readonly string[]): string | null {
   const appServerIndex = appServerSubcommandIndex(arguments_);
   if (appServerIndex === null) return null;
