@@ -140,4 +140,5 @@
 "Multiple Codex App instances are running. Close the extra instances before restarting." = "当前有多个 Codex 实例。请先关闭多余的实例，再重启。";
 "Codex did not accept the restart request. Finish your tasks and try again." = "Codex 未接受重启请求。请完成任务后重试。";
 "Codex is still running. The restart was cancelled." = "Codex 仍在运行，已取消重启。";
+"Codex was opened again before the restart finished. Quit Codex and try again." = "重启完成前 Codex 又被打开了。请退出 Codex 后再试一次。";
 "Restart Codex once to connect Claude with this version." = "此版本需要重启一次 Codex 来连接 Claude。";

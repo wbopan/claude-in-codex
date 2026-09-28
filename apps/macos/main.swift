@@ -833,7 +833,9 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     private func showConnectionError(_ message: String) {
         restartingDesktop = false
         let alert = NSAlert(); alert.messageText = tr("Couldn’t connect to Codex")
-        alert.informativeText = message; alert.runModal()
+        alert.informativeText = message
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
     /// Ask Desktop to quit normally, then launch the signed bundle with a per-launch CLI override.
     private func restartDesktop(_ plan: [String: Any]) {
@@ -868,10 +870,27 @@ final class HostMenu: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
         guard let desktop = running.first else { launch(); return }
         guard desktop.terminate() else { showConnectionError(tr("Codex did not accept the restart request. Finish your tasks and try again.")); return }
+        let pid = desktop.processIdentifier
+        /// Desktop helpers outlive the main process, and LaunchServices can keep its record open until the
+        /// bundle is opened again, leaving isTerminated false long after the process exited (observed as a
+        /// 10 s stall that ended only when the Dock relaunched Codex). The process itself is checked too.
+        let processExited = { desktop.isTerminated || (kill(pid, 0) == -1 && errno == ESRCH) }
+        /// A copy opened meanwhile, e.g. from the Dock, runs without the override and would keep the
+        /// single-instance lock, so launching next to it would connect nothing.
+        let openedMeanwhile = {
+            NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").contains {
+                $0.bundleURL?.standardizedFileURL == target && !$0.isTerminated
+                    && $0.processIdentifier != pid && kill($0.processIdentifier, 0) == 0
+            }
+        }
         let deadline = Date().addingTimeInterval(60)
         Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
-            if desktop.isTerminated { timer.invalidate(); launch() }
-            else if Date() >= deadline {
+            if processExited() {
+                timer.invalidate()
+                if openedMeanwhile() {
+                    self?.showConnectionError(tr("Codex was opened again before the restart finished. Quit Codex and try again."))
+                } else { launch() }
+            } else if Date() >= deadline {
                 timer.invalidate()
                 self?.showConnectionError(tr("Codex is still running. The restart was cancelled."))
             }
