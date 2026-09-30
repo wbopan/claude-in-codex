@@ -36,6 +36,7 @@ const createSchema = z
     cwd: cwdSchema,
     executionPolicy: z.enum(["default", "unattended-full-access"]).optional(),
     environment: brokerEnvironmentSchema.optional(),
+    clientToolsId: z.string().uuid().optional(),
     model: harnessModelRefSchema.optional(),
     thinkingOptionId: harnessThinkingOptionIdSchema.optional(),
     permissionModeId: harnessPermissionModeIdSchema.optional(),
@@ -45,6 +46,7 @@ const resumeSchema = z
   .object({
     kind: z.literal("resume"),
     environment: brokerEnvironmentSchema.optional(),
+    clientToolsId: z.string().uuid().optional(),
     permissionModeId: harnessPermissionModeIdSchema.optional(),
     model: harnessModelRefSchema.optional(),
     thinkingOptionId: harnessThinkingOptionIdSchema.optional(),
@@ -57,6 +59,7 @@ const forkSchema = z
   .object({
     kind: z.literal("fork"),
     environment: brokerEnvironmentSchema.optional(),
+    clientToolsId: z.string().uuid().optional(),
     sourceRef: nativeSessionRefSchema,
     checkpoint: nativeCheckpointRefSchema,
     cwd: cwdSchema,
@@ -66,6 +69,7 @@ const rollbackSchema = z
   .object({
     kind: z.literal("rollbackLastTurn"),
     environment: brokerEnvironmentSchema.optional(),
+    clientToolsId: z.string().uuid().optional(),
     model: harnessModelRefSchema.optional(),
     thinkingOptionId: harnessThinkingOptionIdSchema.optional(),
     permissionModeId: harnessPermissionModeIdSchema.optional(),

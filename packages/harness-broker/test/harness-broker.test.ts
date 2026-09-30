@@ -235,7 +235,8 @@ describe("macOS Aqua Harness broker", () => {
       },
     });
     expect(opened.ok).toBe(true);
-    expect(nativeOpen.mock.calls[0]?.[0]).not.toHaveProperty("clientTools");
+    expect(nativeOpen.mock.calls[0]?.[0].clientTools).toBeDefined();
+    await expect(nativeOpen.mock.calls[0]?.[0].clientTools?.list()).resolves.toEqual([]);
     if (!opened.ok) throw new Error(opened.error.message);
     const output = opened.value.outputs[Symbol.asyncIterator]();
     const accepted = await opened.value.execute({
@@ -255,7 +256,11 @@ describe("macOS Aqua Harness broker", () => {
 
     expect(native.sessions).toHaveLength(1);
     expect(native.sessions[0]?.cwd).toBe(root);
-    expect(nativeOpen).toHaveBeenCalledWith({ kind: "create", cwd: root });
+    expect(nativeOpen).toHaveBeenCalledWith({
+      kind: "create",
+      cwd: root,
+      clientTools: expect.any(Object),
+    });
     const sourceRef = opened.value.initialState.nativeRef;
     if (!sourceRef) throw new Error("Fixture Session has no native identity");
     const rollback = {

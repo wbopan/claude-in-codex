@@ -44,6 +44,7 @@ import {
   type HarnessCommandCatalog,
 } from "@claude-in-codex/shared-contracts";
 
+import { BrokerClientTools } from "./client-tools.js";
 import { consumeBrokerFrames, writeBrokerFrame } from "./framing.js";
 import { defaultHarnessBrokerDescriptorPath } from "./paths.js";
 import {
@@ -184,6 +185,8 @@ async function readDescriptor(descriptorPath: string): Promise<HarnessBrokerDesc
 }
 
 class BrokerConnection {
+  readonly tools: BrokerClientTools;
+  supportsClientTools = false;
   #onClose: (() => void) | undefined;
 
   onClose(callback: () => void): void {
@@ -202,6 +205,9 @@ class BrokerConnection {
   private constructor(descriptor: HarnessBrokerDescriptorV1, socket: Socket) {
     this.#descriptor = descriptor;
     this.#socket = socket;
+    this.tools = new BrokerClientTools(descriptor.generation, (frame) =>
+      writeBrokerFrame(socket, frame),
+    );
     consumeBrokerFrames(
       socket,
       (raw) => this.#frame(raw),
@@ -308,6 +314,7 @@ class BrokerConnection {
 
   #frame(raw: unknown): void {
     if (this.#closed) return;
+    if (this.tools.accept(raw)) return;
     const frame = harnessBrokerServerFrameSchema.parse(raw);
     if (
       frame.generation !== this.#descriptor.generation ||
@@ -326,8 +333,14 @@ class BrokerConnection {
       if (hello) {
         clearTimeout(hello.timeout);
         this.#pending.delete("__hello__");
-        if (frame.ok) hello.resolve(frame.value);
-        else hello.reject(new Error(frame.error?.message ?? "Broker authentication failed"));
+        if (frame.ok) {
+          this.supportsClientTools =
+            typeof frame.value === "object" &&
+            frame.value !== null &&
+            "clientTools" in frame.value &&
+            frame.value.clientTools === true;
+          hello.resolve(frame.value);
+        } else hello.reject(new Error(frame.error?.message ?? "Broker authentication failed"));
       }
       return;
     }
@@ -345,6 +358,7 @@ class BrokerConnection {
   #fail(error: Error): void {
     if (this.#failed) return;
     this.#failed = true;
+    this.tools.close();
     if (!this.#closed) this.#closed = true;
     this.#socket.destroy();
     this.#onClose?.();
@@ -373,7 +387,7 @@ class BrokeredHarnessSession implements HarnessSession {
     connection: BrokerConnection,
     metadata: SessionMetadata,
     harnessId: HarnessId,
-    readonly openInput: OpenSessionInput,
+    readonly openInput: OpenSessionInput & { clientToolsId?: string },
     readonly reconnect: () => Promise<BrokerConnection>,
     readonly onClose: () => void,
   ) {
@@ -512,6 +526,9 @@ class BrokeredHarnessSession implements HarnessSession {
     await this.#recovery?.catch(() => {});
     this.#connection.unregister(this.sessionId);
     await this.#request("session.close", {}).catch(() => undefined);
+    if (this.openInput.clientToolsId)
+      this.#connection.tools.unregister(this.openInput.clientToolsId);
+    this.openInput.clientTools?.close?.();
     this.#channel.end();
     this.onClose();
   }
@@ -533,6 +550,11 @@ class BrokeredHarnessSession implements HarnessSession {
   async #recover(): Promise<HarnessResult<void>> {
     const previous = this.#connection;
     const connection = previous.closed ? await this.reconnect() : previous;
+    if (connection !== previous && this.openInput.clientTools && this.openInput.clientToolsId) {
+      if (!connection.supportsClientTools)
+        throw new Error("Harness broker does not support Desktop tools; update the broker");
+      connection.tools.register(this.openInput.clientToolsId, this.openInput.clientTools);
+    }
     const nativeRef = this.#state.nativeRef;
     if (!nativeRef)
       return {
@@ -545,6 +567,9 @@ class BrokeredHarnessSession implements HarnessSession {
         : connection.request("adapter.open", {
             kind: "resume",
             cwd: this.openInput.cwd,
+            ...(this.openInput.clientToolsId
+              ? { clientToolsId: this.openInput.clientToolsId }
+              : {}),
             nativeRef,
             ...(this.openInput.environment ? { environment: this.openInput.environment } : {}),
             ...(this.#state.effectiveModel ? { model: this.#state.effectiveModel } : {}),
@@ -685,12 +710,14 @@ export class BrokeredHarnessAdapter implements HarnessAdapter {
     if (this.#closed)
       return { ok: false, error: unavailable("Aqua Harness broker adapter is closed", false) };
     let connection: BrokerConnection | undefined;
+    let clientToolsId: string | undefined;
     try {
       const safeInput = { ...input } as OpenSessionInput & {
         environment?: Record<string, string | undefined>;
+        clientToolsId?: string;
       };
       delete safeInput.environment;
-      // Client tools are local callbacks, not a serializable Broker capability.
+      // Callbacks stay in the Host; only a connection-owned capability ID crosses the wire.
       delete safeInput.clientTools;
       if (this.#forwardEnvironment && input.environment) {
         const allowed = [
@@ -707,15 +734,26 @@ export class BrokeredHarnessAdapter implements HarnessAdapter {
         if (Object.keys(environment).length) safeInput.environment = environment;
       }
       connection = await this.#connect();
+      if (input.clientTools) {
+        if (!connection.supportsClientTools)
+          throw new Error("Harness broker does not support Desktop tools; update the broker");
+        clientToolsId = randomUUID();
+        connection.tools.register(clientToolsId, input.clientTools);
+        safeInput.clientToolsId = clientToolsId;
+      }
       const result = parseHarnessResult<unknown>(
         await connection.request("adapter.open", safeInput),
       );
-      if (!result.ok) return result;
+      if (!result.ok) {
+        if (clientToolsId) connection.tools.unregister(clientToolsId);
+        input.clientTools?.close?.();
+        return result;
+      }
       const session = new BrokeredHarnessSession(
         connection,
         parseSessionMetadata(result.value),
         this.harnessId,
-        safeInput,
+        { ...safeInput, ...(input.clientTools ? { clientTools: input.clientTools } : {}) },
         () => this.#connect(),
         () => {
           this.#sessions.delete(session);
@@ -724,6 +762,8 @@ export class BrokeredHarnessAdapter implements HarnessAdapter {
       this.#sessions.add(session);
       return { ok: true, value: session };
     } catch (error) {
+      if (clientToolsId) connection?.tools.unregister(clientToolsId);
+      input.clientTools?.close?.();
       connection?.close();
       this.#connection = null;
       return {

@@ -16,6 +16,7 @@ import {
   harnessAccountSnapshotSchema,
   harnessPluginIdSchema,
 } from "@claude-in-codex/shared-contracts";
+import { BrokerClientTools } from "./client-tools.js";
 import { consumeBrokerFrames, writeBrokerFrame } from "./framing.js";
 import {
   HARNESS_BROKER_MAX_PENDING_REQUESTS,
@@ -43,6 +44,7 @@ interface ServerSession {
   generation: number;
   owner: string;
   cwd: string;
+  clientToolsId?: string;
   environment?: OpenSessionInput["environment"];
   nativeId?: string;
   nativeRef?: HarnessSession["initialState"]["nativeRef"];
@@ -285,6 +287,7 @@ export async function startHarnessBrokerServer(input: {
         ...frame,
       });
     };
+    const tools = new BrokerClientTools(generation, (frame) => writeBrokerFrame(socket, frame));
     const respond = async (
       request: HarnessBrokerRequest,
       result: { ok: true; value: unknown } | { ok: false; error: ReturnType<typeof protocolError> },
@@ -478,7 +481,11 @@ export async function startHarnessBrokerServer(input: {
         return subagents.readSnapshot(params);
       }
       if (request.method === "adapter.open") {
-        const openInput = brokerOpenInputSchema.parse(request.params) as OpenSessionInput;
+        const { clientToolsId, ...wireInput } = brokerOpenInputSchema.parse(request.params);
+        const openInput = {
+          ...wireInput,
+          ...(clientToolsId ? { clientTools: tools.remote(clientToolsId) } : {}),
+        } as OpenSessionInput;
         const sourceRef =
           openInput.kind === "create"
             ? undefined
@@ -587,6 +594,7 @@ export async function startHarnessBrokerServer(input: {
           generation: 1,
           owner: state.id,
           cwd: openInput.cwd,
+          ...(clientToolsId ? { clientToolsId } : {}),
           ...(openInput.environment ? { environment: openInput.environment } : {}),
           ...(nativeId ? { nativeId } : {}),
           ...(opened.value.initialState.nativeRef
@@ -746,6 +754,7 @@ export async function startHarnessBrokerServer(input: {
         const reopened = await input.adapter.open({
           kind: "resume",
           cwd: record.cwd,
+          ...(record.clientToolsId ? { clientTools: tools.remote(record.clientToolsId) } : {}),
           nativeRef,
           ...(record.environment ? { environment: record.environment } : {}),
         });
@@ -823,6 +832,7 @@ export async function startHarnessBrokerServer(input: {
     consumeBrokerFrames(
       socket,
       (raw) => {
+        if (state.authenticated && !state.closed && tools.accept(raw)) return;
         state.queuedFrames += 1;
         if (state.queuedFrames > HARNESS_BROKER_MAX_PENDING_REQUESTS) {
           state.closed = true;
@@ -844,7 +854,12 @@ export async function startHarnessBrokerServer(input: {
               }
               state.authenticated = true;
               state.inputSequence = 1;
-              await send({ kind: "response", id: randomUUID(), ok: true, value: { ready: true } });
+              await send({
+                kind: "response",
+                id: randomUUID(),
+                ok: true,
+                value: { ready: true, clientTools: true },
+              });
               return;
             }
             const parsed = harnessBrokerRequestSchema.safeParse(raw);
@@ -880,6 +895,7 @@ export async function startHarnessBrokerServer(input: {
     );
 
     socket.once("close", () => {
+      tools.close();
       state.closed = true;
       connections.delete(state);
       for (const sessionId of [...state.sessions]) {
