@@ -1,4 +1,7 @@
 import type { ChildProcess, spawn } from "node:child_process";
+import { symlink, lstat } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tempDir } from "../../../tests/helpers/temp-dir.js";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -154,4 +157,31 @@ describe("shared remote official app-server", () => {
     await expect(listener.close()).resolves.toBeUndefined();
     expect(child.kill).toHaveBeenCalledTimes(2);
   });
+});
+
+it("accepts a native socket symlink and removes only that link on stop", async () => {
+  const root = await tempDir("cx-link-");
+  const target = path.join(root, "target.sock");
+  const socketPath = path.join(root, "native.sock");
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(target, resolve));
+  await symlink(target, socketPath);
+  const child = new FakeOfficialListenerProcess();
+  const listener = createRemoteOfficialAppServerListener({
+    stockCodexPath: "/synthetic/codex",
+    arguments: [],
+    socketPath,
+    environment: {},
+    diagnosticOutput: new PassThrough(),
+    spawnOfficial: (() => child) as unknown as typeof spawn,
+  });
+  try {
+    await listener.listen();
+    await listener.close();
+    await expect(lstat(socketPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(target)).isSocket()).toBe(true);
+  } finally {
+    await listener.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

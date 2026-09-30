@@ -7,6 +7,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dataDirectory } from "@claude-in-codex/shared-contracts/app-paths";
 import { featureIdSchema, idleReleaseMinutesSchema } from "@claude-in-codex/shared-contracts";
+import { OfficialRuntimeScope } from "./codex-runtime/official-runtime-scope.js";
+import { createOwnedUnixBackend } from "./codex-runtime/owned-official-backends.js";
 import { AppServerHost, officialEnvironment } from "./app-server-host.js";
 import { MappingStoreError } from "@claude-in-codex/mapping-store";
 import {
@@ -179,6 +181,25 @@ export async function runDesktopCli(
   }
 }
 
+/** Desktop keeps stdio; independent Host clients share a private native listener. */
+export function desktopOfficialListenerArguments(
+  arguments_: string[],
+  socketPath: string,
+): string[] {
+  if (!isDesktopStdioInvocation(arguments_) || !path.isAbsolute(socketPath))
+    throw new Error("Expected Desktop stdio arguments and an absolute socket path");
+  const result: string[] = [];
+  for (let index = 0; index < arguments_.length; index++) {
+    const argument = arguments_[index];
+    if (!argument) continue;
+    if (["-c", "--config", "--enable", "--disable", "--code-mode-host"].includes(argument)) {
+      result.push(argument, arguments_[++index] as string);
+    } else if (argument === "--listen") index++;
+    else if (!argument.startsWith("--listen=")) result.push(argument);
+  }
+  return [...result, "--listen", `unix://${socketPath}`];
+}
+
 async function runDesktopHost(
   arguments_: string[],
   environment: NodeJS.ProcessEnv,
@@ -187,7 +208,23 @@ async function runDesktopHost(
   stock: string,
   mappingStore: ExternalThreadStore,
 ): Promise<number> {
+  const directory = await mkdtemp("/tmp/claude-in-codex-startup-");
+  await chmod(directory, 0o700);
+  const socketPath = path.join(directory, "official.sock");
+  const officialRuntimeScope = new OfficialRuntimeScope({
+    permanentHome: path.resolve(environment.CODEX_HOME ?? path.join(os.homedir(), ".codex")),
+    diagnosticOutput: process.stderr,
+    createBackend: () =>
+      createOwnedUnixBackend({
+        stockCodexPath: stock,
+        arguments: desktopOfficialListenerArguments(arguments_, socketPath),
+        environment: officialEnvironment(environment),
+        socketPath,
+        diagnosticOutput: process.stderr,
+      }),
+  });
   const host = new AppServerHost({
+    officialRuntimeScope,
     stockCodexPath: stock,
     arguments: arguments_,
     defaultAgent: "codex",
@@ -247,8 +284,6 @@ async function runDesktopHost(
     );
     usageObservedAt = new Date().toISOString();
   };
-  const directory = await mkdtemp("/tmp/claude-in-codex-startup-");
-  await chmod(directory, 0o700);
   const descriptor: Descriptor = {
     socket: path.join(directory, "control.sock"),
     token: randomBytes(32).toString("hex"),
@@ -319,6 +354,8 @@ async function runDesktopHost(
     process.removeListener("SIGTERM", stop);
     process.removeListener("SIGINT", stop);
     session.attached = false;
+    await host.close();
+    await officialRuntimeScope.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     // A Desktop backend restart may already have published the next owner's descriptor.
     const saved = await readFile(descriptorPath(environment), "utf8").then(JSON.parse, () => null);

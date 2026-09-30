@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, rm } from "node:fs/promises";
+import { lstat, stat, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Writable } from "node:stream";
 
@@ -58,7 +58,13 @@ async function socketIdentity(socketPath: string): Promise<UnixFileIdentity | nu
     throw error;
   });
   if (metadata === null) return null;
-  if (!metadata.isSocket()) {
+  // New native builds publish a symlink to their user-owned daemon socket. Keep
+  // the link identity for cleanup so stopping this listener never removes the target.
+  const target = metadata.isSymbolicLink() ? await stat(socketPath) : metadata;
+  if (process.getuid && (metadata.uid !== process.getuid() || target.uid !== process.getuid())) {
+    throw new Error("Shared official app-server socket belongs to another user");
+  }
+  if (!target.isSocket()) {
     throw new Error(`Shared official app-server path is not a socket: ${socketPath}`);
   }
   return { dev: metadata.dev, ino: metadata.ino };

@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isDesktopStdioInvocation } from "../src/remote-app-server.js";
 import {
+  desktopOfficialListenerArguments,
   prepareStartupConnection,
   startupRequest,
   stockDesktopCli,
@@ -119,3 +120,22 @@ it("authenticates status requests over the local socket and closes the connectio
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+it.each([
+  ["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled"],
+  ["app-server", "--listen", "stdio://"],
+  ["app-server", "--listen=stdio://", "-c", "plugins.x.enabled=true"],
+  ["app-server", "-c", "--listen=stdio://"],
+])(
+  "gives Desktop tool clients a private listener while preserving config arguments %j",
+  (...args) => {
+    const result = desktopOfficialListenerArguments(args, "/tmp/test/official.sock");
+    expect(result.slice(-2)).toEqual(["--listen", "unix:///tmp/test/official.sock"]);
+    expect(result).toContain("app-server");
+    if (args.includes("-c"))
+      expect(result.slice(result.indexOf("-c"), result.indexOf("-c") + 2)).toEqual(
+        args.slice(args.indexOf("-c"), args.indexOf("-c") + 2),
+      );
+    expect(result.filter((value) => value === "--listen")).toHaveLength(1);
+  },
+);
